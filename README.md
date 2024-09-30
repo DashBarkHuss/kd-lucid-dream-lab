@@ -1,6 +1,6 @@
 # kd-lucid-dream-lab
 
-## How to run streaming from OpenBCI GUI
+## How to stream from OpenBCI GUI to Brainflow
 
 1. Open OpenBCI GUI
 2. System Control Panel -> Ganglion Live
