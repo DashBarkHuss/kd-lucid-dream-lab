@@ -55,5 +55,31 @@ In the terminal you'll see the samples ploted out in a vertical stream.
     </a>
   </div>
 
-  ## .toml file isn't complete at all
+## How to playback data from a file
+
+### Recording Data
+You need to use the BrainFlow-RAW.csv file to play from the file
+1. Open OpenBCI GUI
+2. System Control Panel -> Ganglion Live
+3.  Setting to record data:
+  1. Pick Transfer Protocol: BLED112 Dongle
+  2.  BLE Device: select your ganglion board
+  3. Session Data: OpenBCI (I don't know if this actually matter, but it will cause an error the current GUI if you choose BDF+)
+  4. Brainflow Streamer: File
+3. Start Session 
+4. Start Data Stream
+5. Record your EEG/ECG/etc data
+5. When done recording your session: Stop Data Stream
+6. Stop Session
+7. The session should be saved as BrainFlow-RAW_<whatever you put in the session data name>.csv
+
+### Playback Data
+
+1. Move the BrainFlow CSV file to the same folder as this script. Add the path absolut path, or the path relative to the root directory of the project, but not relative to the python script.
+2. Run the script, and you should see the data you previosly recorded show up in the plot.
+
+
+
+
+## .toml file isn't complete at all
   I need to add the dependancies to the .toml file but for now just manually install needed dependancies
