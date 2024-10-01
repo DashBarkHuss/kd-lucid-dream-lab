@@ -27,12 +27,12 @@ In the terminal you'll see the samples ploted out in a vertical stream.
     </a>
   </div>
 
-## How to plot data from Brainflow with pyqtgraph
+## How to plot data from Brainflow with python
 
 1. Follow steps 1-5 in the "How to stream from OpenBCI GUI to Brainflow" section
 2. Run the script `plot_python_example.py`
 
-## How to filter and plot data from Brainflow with pyqtgraph
+## How to filter and plot data from Brainflow
 
 1. Follow steps 1-5 in the "How to stream from OpenBCI GUI to Brainflow" section
 2. Run the script `filtered_plot.py`
