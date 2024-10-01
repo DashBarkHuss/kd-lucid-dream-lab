@@ -10,7 +10,8 @@
 # 5. Remove the filters if you want it to match the logs in this script
 # - Filters -> Click "All" to turn the channel icons black which means no filters are applied
 
-# get brainflow streamserial port stream from openbci
+# In the terminal you'll see the samples ploted out in a vertical stream.
+
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 import time
 import numpy as np
