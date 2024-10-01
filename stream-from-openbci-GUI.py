@@ -41,7 +41,6 @@ def main():
     params.master_board = BoardIds.GANGLION_BOARD
     
 
-    # board = BoardShim(BoardIds.GANGLION_BOARD, params)
     board = BoardShim(BoardIds.STREAMING_BOARD, params)
 
     try:
@@ -84,7 +83,7 @@ def main():
             graph = create_horizontal_graph(sample)
             print(graph)
             # print Value
-            # print(most_recent_sample)
+            # print(most_recent_sample) # if you want to see the value
 
             time.sleep(0.01)
 
