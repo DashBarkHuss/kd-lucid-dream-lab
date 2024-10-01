@@ -71,7 +71,7 @@ You need to use the BrainFlow-RAW.csv file to play from the file
 5. Record your EEG/ECG/etc data
 5. When done recording your session: Stop Data Stream
 6. Stop Session
-7. The session should be saved as BrainFlow-RAW_<whatever you put in the session data name>.csv
+7. The session should be saved as `BrainFlow-RAW_<whatever you put in the session data name>.csv`
 
 ### Playback Data
 
