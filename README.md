@@ -54,3 +54,6 @@ In the terminal you'll see the samples ploted out in a vertical stream.
       <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/ee904b05f8484db69ce555ad0e6a11c5-fd57ab856caa8c2d-full-play.gif">
     </a>
   </div>
+
+  ## .toml file isn't complete at all
+  I need to add the dependancies to the .toml file but for now just manually install needed dependancies
