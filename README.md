@@ -32,8 +32,25 @@ In the terminal you'll see the samples ploted out in a vertical stream.
 1. Follow steps 1-5 in the "How to stream from OpenBCI GUI to Brainflow" section
 2. Run the script `plot_python_example.py`
 
+<div>
+    <a href="https://www.loom.com/share/7783bd62fe1b4170b1a8eb21419f26f6">
+      <p>python - BrainFlow Plot  - Watch Video</p>
+    </a>
+    <a href="https://www.loom.com/share/7783bd62fe1b4170b1a8eb21419f26f6">
+      <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/7783bd62fe1b4170b1a8eb21419f26f6-54ac665bd899918e-full-play.gif">
+    </a>
+  </div>
+
 ## How to filter and plot data from Brainflow
 
 1. Follow steps 1-5 in the "How to stream from OpenBCI GUI to Brainflow" section
 2. Run the script `filtered_plot.py`
 
+<div>
+    <a href="https://www.loom.com/share/ee904b05f8484db69ce555ad0e6a11c5">
+      <p>filtered python plot brainflow - Watch Video</p>
+    </a>
+    <a href="https://www.loom.com/share/ee904b05f8484db69ce555ad0e6a11c5">
+      <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/ee904b05f8484db69ce555ad0e6a11c5-fd57ab856caa8c2d-full-play.gif">
+    </a>
+  </div>

@@ -1,4 +1,3 @@
-import argparse
 import logging
 
 import pyqtgraph as pg
