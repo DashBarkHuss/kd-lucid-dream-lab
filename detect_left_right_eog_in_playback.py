@@ -1,4 +1,4 @@
-# This is not perfec. We neeed to tweak thr scrip to better detect the left and right eye movements
+# This is not perfect. We neeed to tweak thr scrip to better detect the left and right eye movements
 
 
 
@@ -260,7 +260,7 @@ def main():
     params.master_board = BoardIds.GANGLION_BOARD
     # I needed to use the full path or the path from the root because I run the script from the root directory using .vscode/launch.json   
     params.file = "data/BrainFlow-RAW.csv"
-    # params.file = "/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/playback/BrainFlow-RAW.csv"
+    # params.file = "/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/BrainFlow-RAW.csv"
 
 
     board_shim = BoardShim(BoardIds.PLAYBACK_FILE_BOARD, params)
