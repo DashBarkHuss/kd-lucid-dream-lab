@@ -12,9 +12,11 @@
 # 6. Stop Session
 # 7. The session should be saved as BrainFlow-RAW_<whatever you put in the session data name>.csv
 
-# To play back the data from the file, move the BrainFlow CSV file to the same folder as this script. Add the path absolut path, or the path relative to the root directory of the project, but not relative to the python script.
-# Run the script, and you should see the data in the plot.
+### Playback Data
 
+# 1. Move the BrainFlow CSV file to the same folder as this script. 
+# 2. Write your .csv's path into `/data/playback_from_file.py`
+# 3. Run the script, and you should see the data you previosly recorded show up in the plot.
 
 
 
@@ -103,8 +105,8 @@ def main():
     # params board_id PLAYBACK_FILE_BOARD
     params.board_id = BoardIds.PLAYBACK_FILE_BOARD
     params.master_board = BoardIds.GANGLION_BOARD
-    # i need to use the full path or the path from the root
-    params.file = "playback/BrainFlow-RAW.csv"
+    # I needed to use the full path or the path from the root because I run the script from the root directory using .vscode/launch.json   
+    params.file = "data/BrainFlow-RAW.csv"
     # params.file = "/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/playback/BrainFlow-RAW.csv"
 
 

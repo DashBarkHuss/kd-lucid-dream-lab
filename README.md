@@ -75,8 +75,9 @@ You need to use the BrainFlow-RAW.csv file to play from the file
 
 ### Playback Data
 
-1. Move the BrainFlow CSV file to the same folder as this script. Add the path absolut path, or the path relative to the root directory of the project, but not relative to the python script.
-2. Run the script, and you should see the data you previosly recorded show up in the plot.
+1. Move the BrainFlow CSV file to the same folder as this script. 
+2. Write your .csv's path into `/data/playback_from_file.py`
+3. Run the script, and you should see the data you previosly recorded show up in the plot.
 
 
 
