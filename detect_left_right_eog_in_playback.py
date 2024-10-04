@@ -1,5 +1,7 @@
 # This is not perfec. We neeed to tweak thr scrip to better detect the left and right eye movements
 
+
+
 import logging
 from scipy.signal import find_peaks, detrend
 
@@ -152,7 +154,7 @@ class Graph:
             return
 
         self.remove_all_infinite_lines() #if we don't do this, the markers will stack on top of each other
-        for count, channel in enumerate(self.`exg_channels): # this line means for each channel in the exg_channels list, enumerate returns a tuple containing the index and the value
+        for count, channel in enumerate(self.exg_channels): # this line means for each channel in the exg_channels list, enumerate returns a tuple containing the index and the value
             channel_data = data[channel]
             
             # Add new data to our buffer
@@ -258,7 +260,7 @@ def main():
     params.master_board = BoardIds.GANGLION_BOARD
     # I needed to use the full path or the path from the root because I run the script from the root directory using .vscode/launch.json   
     params.file = "data/BrainFlow-RAW.csv"
-    # params.file = "/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/BrainFlow-RAW.csv"
+    # params.file = "/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/playback/BrainFlow-RAW.csv"
 
 
     board_shim = BoardShim(BoardIds.PLAYBACK_FILE_BOARD, params)
