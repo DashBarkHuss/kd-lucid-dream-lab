@@ -1,0 +1,16 @@
+myenv/
+.venv/
+
+sandbox/
+**/sandbox/
+
+.DS_Store
+.DS_Store?
+
+__pycache__/
+*.pyc
+
+# Data files
+data/
+*.fdt
+*.set
