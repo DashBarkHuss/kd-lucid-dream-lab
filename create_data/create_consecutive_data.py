@@ -54,7 +54,7 @@ def create_consecutive_data(output_file, duration=30):
     output_file.parent.mkdir(exist_ok=True, parents=True)
     
     # Create format string for each column (32 columns total)
-    fmt = '%.6f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f'
+    fmt = '%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f'
     
     # Save to CSV in BrainFlow format
     np.savetxt(
@@ -75,4 +75,4 @@ def create_consecutive_data(output_file, duration=30):
 if __name__ == "__main__":
     # Create test data with 30 seconds of consecutive numbers
     output_file = "data/test_data/consecutive_data.csv"
-    create_consecutive_data(output_file, duration=300)
+    create_consecutive_data(output_file, duration=60)

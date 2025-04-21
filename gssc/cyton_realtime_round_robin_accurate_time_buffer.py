@@ -763,9 +763,8 @@ class BufferManager:
             data_array = np.array(self.saved_data)
             
             # Create format specifiers to match original file
-            fmt = ['%.6f'] * data_array.shape[1]  # Default to float format
-            fmt[1] = '%d'  # Second column should be integer
-            fmt[2:17] = ['%d'] * 15  # EEG channels should be integers
+            # All columns should use %.6f for consistent floating-point precision
+            fmt = ['%.6f'] * data_array.shape[1]
             
             # Save with exact format matching
             np.savetxt(output_path, data_array, delimiter='\t', fmt=fmt)
@@ -944,9 +943,10 @@ def main():
     # input_file = "data/tiny_gap.csv"
     # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
     # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
-    input_file = "data/test_data/gapped_data.csv"
+    # input_file = "data/test_data/segmend_of_real_data.csv"   
+    # input_file = "data/test_data/gapped_data.csv"
     
-    # input_file = "data/test_data/consecutive_data.csv"
+    input_file = "data/test_data/consecutive_data.csv"
     data_acquisition = DataAcquisition(input_file)
     
     # Set up output file path
@@ -1023,7 +1023,9 @@ def main():
             if new_data.size == 0:
                 consecutive_empty_count += 1
                 sleep_time = min(1.0, sleep_time * 1.5)
-                print("\r\033[2K", end="", flush=True)  # Clear the entire line
+                last_timestamp = data_acquisition.last_chunk_last_timestamp
+                timestamp_str = f"Last timestamp: {last_timestamp:.3f}s" if last_timestamp is not None else "No previous timestamp"
+                print(f"\r\033[2KNo data received. Sleeping for {sleep_time:.2f}s. {timestamp_str} Empty count: {consecutive_empty_count}", end="", flush=True)
                 time.sleep(sleep_time)
                 continue
             
