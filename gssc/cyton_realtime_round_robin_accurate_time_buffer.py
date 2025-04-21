@@ -573,13 +573,34 @@ class BufferManager:
             self.saved_data = []
             
         new_rows = new_data.T.tolist()
-        if not is_initial and self.last_saved_timestamp is not None:
-            # Only save rows with timestamps we haven't seen
-            new_rows = [row for row in new_rows if row[self.buffer_timestamp_index] > self.last_saved_timestamp]
-            
-        if new_rows:
+        
+        # For initial data, save everything
+        if is_initial:
             self.saved_data.extend(new_rows)
-            self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+            if new_rows:
+                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+            return
+            
+        # For subsequent data, only filter out exact duplicates
+        if self.last_saved_timestamp is not None:
+            # Find the first row with a timestamp greater than the last saved timestamp
+            start_idx = 0
+            for i, row in enumerate(new_rows):
+                if row[self.buffer_timestamp_index] > self.last_saved_timestamp:
+                    start_idx = i
+                    break
+            
+            # Save all rows from that point forward
+            if start_idx < len(new_rows):
+                self.saved_data.extend(new_rows[start_idx:])
+                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+                print(f"\nSaved {len(new_rows[start_idx:])} new rows")
+        else:
+            # If no last saved timestamp, save all rows
+            self.saved_data.extend(new_rows)
+            if new_rows:
+                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+                print(f"\nSaved {len(new_rows)} new rows (no previous timestamp)")
 
     def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
         """Validate the epoch has no gaps
@@ -742,6 +763,13 @@ class BufferManager:
         try:
             # Convert to numpy array
             data_array = np.array(self.saved_data)
+            
+            # Log data statistics
+            print(f"\nData Statistics:")
+            print(f"- Total rows saved: {len(self.saved_data)}")
+            print(f"- Data shape: {data_array.shape}")
+            print(f"- First timestamp: {data_array[0, self.buffer_timestamp_index]}")
+            print(f"- Last timestamp: {data_array[-1, self.buffer_timestamp_index]}")
             
             # Create format specifiers to match original file
             fmt = ['%.6f'] * data_array.shape[1]  # Default to float format
@@ -925,9 +953,9 @@ def main():
     # input_file = "data/tiny_gap.csv"
     # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
     # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
-    # input_file = "data/test_data/gapped_data.csv"
+    input_file = "data/test_data/gapped_data.csv"
     
-    input_file = "data/test_data/consecutive_data.csv"
+    # input_file = "data/test_data/consecutive_data.csv"
     data_acquisition = DataAcquisition(input_file)
     
     # Set up output file path
@@ -1009,25 +1037,28 @@ def main():
             
             # Successfully got data
             if buffer_manager.add_data(new_data):
+                # Save data first, before any processing
                 buffer_manager.save_new_data(new_data)
+                
+                # Then try to process
+                consecutive_empty_count = 0
+                sleep_time = 0.1
+                next_buffer_id = buffer_manager._calculate_next_buffer_id_to_process()
+
+                # Process next epoch on next buffer
+                can_process, reason, epoch_start_idx, epoch_end_idx = buffer_manager.next_available_epoch_on_buffer(next_buffer_id)
+
+                if can_process:
+                    # Process the buffer
+                    print("\r\033[2K", end="", flush=True)  # Clear the entire line
+                    buffer_manager.manage_epoch(buffer_id=next_buffer_id, epoch_start_idx=epoch_start_idx, epoch_end_idx=epoch_end_idx)
             else:
                 print("\r\033[2K", end="", flush=True)  # Clear the entire line
                 print("\nFailed to add new data to buffer:")
                 print(f"- Data shape: {new_data.shape}")
+                # Still try to save the data even if processing failed
+                buffer_manager.save_new_data(new_data)
                 continue
-            
-            consecutive_empty_count = 0
-            sleep_time = 0.1
-            next_buffer_id = buffer_manager._calculate_next_buffer_id_to_process()
-
-            # Process next epoch on next buffer
-            can_process, reason, epoch_start_idx, epoch_end_idx = buffer_manager.next_available_epoch_on_buffer(next_buffer_id)
-
-            if can_process:
-                # Process the buffer
-                print("\r\033[2K", end="", flush=True)  # Clear the entire line
-                buffer_manager.manage_epoch(buffer_id=next_buffer_id, epoch_start_idx=epoch_start_idx, epoch_end_idx=epoch_end_idx)
-
             
             # Check for end of file
             if (data_acquisition.file_data is not None and 
