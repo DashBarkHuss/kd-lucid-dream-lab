@@ -594,13 +594,11 @@ class BufferManager:
             if start_idx < len(new_rows):
                 self.saved_data.extend(new_rows[start_idx:])
                 self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
-                print(f"\nSaved {len(new_rows[start_idx:])} new rows")
         else:
             # If no last saved timestamp, save all rows
             self.saved_data.extend(new_rows)
             if new_rows:
                 self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
-                print(f"\nSaved {len(new_rows)} new rows (no previous timestamp)")
 
     def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
         """Validate the epoch has no gaps
@@ -763,13 +761,6 @@ class BufferManager:
         try:
             # Convert to numpy array
             data_array = np.array(self.saved_data)
-            
-            # Log data statistics
-            print(f"\nData Statistics:")
-            print(f"- Total rows saved: {len(self.saved_data)}")
-            print(f"- Data shape: {data_array.shape}")
-            print(f"- First timestamp: {data_array[0, self.buffer_timestamp_index]}")
-            print(f"- Last timestamp: {data_array[-1, self.buffer_timestamp_index]}")
             
             # Create format specifiers to match original file
             fmt = ['%.6f'] * data_array.shape[1]  # Default to float format
@@ -1025,6 +1016,7 @@ def main():
                 # Calculate chunk duration
                 chunk_duration = end_timestamp - start_timestamp
                 
+                # Use \r to return to start of line and \033[2K to clear the line
                 print(f"\r\033[2KTimestamps: Start={start_timestamp:.3f}s, End={end_timestamp:.3f}s, Chunk={chunk_duration:.3f}s, Total={hours}h {minutes}m {seconds:.3f}s", end="", flush=True)
             
             # Handle empty or invalid data
