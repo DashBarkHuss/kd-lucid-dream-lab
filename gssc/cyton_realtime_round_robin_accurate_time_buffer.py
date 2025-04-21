@@ -476,6 +476,9 @@ class BufferManager:
         self.validate_consecutive_values = True  # Set to True to enable consecutive value validation
         self.validation_channel = 0  # Channel to validate (default to first channel)
         self.last_validated_value = None  # Track last validated value
+        self.saved_data = []
+        self.output_csv_path = None
+        self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
 
     def _init_channels(self):
         """Initialize channel information"""
@@ -556,11 +559,29 @@ class BufferManager:
         
         # Update all_previous_data
         if not is_initial:
-            for i, channel in enumerate(self.all_channels_with_timestamp):
+            for i, channel in enumerate(self.all_previous_buffers_data):
                 self.all_previous_buffers_data[i].extend(new_data[channel].tolist())
         else:
-            for i, channel in enumerate(self.all_channels_with_timestamp):
+            for i, channel in enumerate(self.all_previous_buffers_data):
                 self.all_previous_buffers_data[i] = new_data[channel].tolist()
+        
+        # Handle data saving - only save new data
+        new_rows = new_data.T.tolist()
+        if not is_initial:
+            # For subsequent data, only save rows with timestamps we haven't seen
+            if self.last_saved_timestamp is not None:
+                new_rows = [row for row in new_rows if row[self.buffer_timestamp_index] > self.last_saved_timestamp]
+            
+            if new_rows:
+                if not hasattr(self, 'saved_data'):
+                    self.saved_data = new_rows
+                else:
+                    self.saved_data.extend(new_rows)
+                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+        else:
+            # For initial data, save everything and set last timestamp
+            self.saved_data = new_rows
+            self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
                 
         return True
 
@@ -680,15 +701,14 @@ class BufferManager:
         
         print(f"\nProcessing buffer {buffer_id}")
         print(f"Epoch range: {start_idx} to {end_idx}")
-        # print seconds range. example: "Buffer 0: Epoch range: 0 to 30 seconds"
         print(f"Buffer {buffer_id}: Epoch range: {start_idx * self.expected_interval} to {end_idx * self.expected_interval} seconds")
+        
         # Extract EXACTLY points_per_epoch data points from the correct slice
         epoch_data = np.array([
             self.all_previous_buffers_data[channel][start_idx:end_idx]
             for channel in self.electrode_channels
         ])
         
-            
         # Verify we have exactly the right number of points
         assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
         
@@ -716,7 +736,60 @@ class BufferManager:
         
         self.buffer_hidden_states[buffer_id] = new_hidden_states
 
-   
+    def save_to_csv(self, output_path):
+        """Save raw data to CSV file"""
+        self.output_csv_path = output_path
+        if not self.saved_data:
+            print("No data to save")
+            return False
+            
+        try:
+            # Convert to numpy array
+            data_array = np.array(self.saved_data)
+            
+            # Create format specifiers to match original file
+            fmt = ['%.6f'] * data_array.shape[1]  # Default to float format
+            fmt[1] = '%d'  # Second column should be integer
+            fmt[2:17] = ['%d'] * 15  # EEG channels should be integers
+            
+            # Save with exact format matching
+            np.savetxt(output_path, data_array, delimiter='\t', fmt=fmt)
+            print(f"Data saved to {output_path}")
+            return True
+        except Exception as e:
+            print(f"Error saving to CSV: {str(e)}")
+            return False
+
+    def validate_saved_csv(self, original_csv_path):
+        """Validate that the saved CSV matches the original format exactly"""
+        try:
+            # Read both CSVs as strings first
+            with open(self.output_csv_path, 'r') as f:
+                saved_lines = f.readlines()
+            with open(original_csv_path, 'r') as f:
+                original_lines = f.readlines()
+            
+            print("\nCSV Validation Results:")
+            
+            # Check number of lines
+            if len(saved_lines) != len(original_lines):
+                print(f"❌ Line count mismatch: Original={len(original_lines)}, Saved={len(saved_lines)}")
+                return False
+            print(f"✅ Line count matches: {len(original_lines)} lines")
+            
+            # Compare each line exactly
+            for i, (saved_line, original_line) in enumerate(zip(saved_lines, original_lines)):
+                if saved_line != original_line:
+                    print(f"❌ Line {i+1} does not match exactly:")
+                    print(f"Original: {original_line.strip()}")
+                    print(f"Saved:    {saved_line.strip()}")
+                    return False
+            
+            print("✅ All lines match exactly")
+            return True
+        except Exception as e:
+            print(f"Error validating CSV: {str(e)}")
+            return False
 
     def _get_affected_buffer(self, timestamp):
         """
@@ -855,13 +928,21 @@ def main():
     print(f"Cyton EXG channels: {BoardShim.get_exg_channels(BoardIds.CYTON_BOARD)}")
 
     # Create data acquisition instance
-    # data_acquisition = DataAcquisition("data/cyton_BrainFlow-gap_short.csv")
-    # data_acquisition = DataAcquisition("gssc/sandbox/test_data")
-    # data_acquisition = DataAcquisition("data/tiny_gap.csv")
-    # data_acquisition = DataAcquisition("data/cyton_BrainFlow-adjusted-timestamps.csv")
-    # data_acquisition = DataAcquisition("data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv")   
-    # data_acquisition = DataAcquisition("test_data/gapped_data.csv")
-    data_acquisition = DataAcquisition("data/test_data/consecutive_data.csv")
+    # input_file = "data/cyton_BrainFlow-gap_short.csv"
+    # input_file = "gssc/sandbox/test_data"
+    # input_file = "data/tiny_gap.csv"
+    # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
+    # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
+    # input_file = "test_data/gapped_data.csv"
+    
+    input_file = "data/test_data/consecutive_data.csv"
+    data_acquisition = DataAcquisition(input_file)
+    
+    # Set up output file path
+    output_dir = "data/processed"
+    os.makedirs(output_dir, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = os.path.join(output_dir, f"processed_{timestamp}.csv")
     
     try:
         # Setup and start board
@@ -960,6 +1041,18 @@ def main():
                 print(f"\nReached end of file:")
                 print(f"- Final timestamp: {data_acquisition.last_chunk_last_timestamp}")
                 print(f"- Total iterations: {iteration_count}")
+                
+                # Save processed data to CSV
+                print("\nSaving processed data to CSV...")
+                if buffer_manager.save_to_csv(output_file):
+                    print(f"Data saved to {output_file}")
+                    
+                    # Validate saved CSV
+                    print("\nValidating saved CSV...")
+                    if buffer_manager.validate_saved_csv(input_file):
+                        print("✅ CSV validation passed!")
+                    else:
+                        print("❌ CSV validation failed!")
                 break
                 
             time.sleep(0.1)
