@@ -72,6 +72,8 @@ test that we find a gap in all buffers
 
 seens we'r detecting gaps in both 0 and 1 buffer. next test longer data- how does the script handle continuing after
 
+we're now detecting gaps in all buffers. lets save the main buffer to a csv and compare it to the original csv. Then we should alter there visualizer to show all 8 channels, see if filtering is necessary, compares the detection with the scored file, and handle the visualizatoin of the main buffer vs the other buffers: we updated the scoring every 5 seconds but really the main buffer is every 30 seconds.
+
 ## 3-18-25
 
 when streaming brainflow is it in milivolts? does gssc accept milivolts?
@@ -91,3 +93,9 @@ we need a scored brainflow .csv file.
 1. Detect REM but also within REM when is the best time to send sound or light?
 1. Z3Score 70% accurate in real time https://github.com/amiyapatanaik/z3score-api https://github.com/amiyapatanaik/FASST-Z3Score
 1. Newer than Z3 https://github.com/jshanna100/gssc/
+
+## 3-21-25
+
+- Fixed CSV formatting in save_to_csv to preserve original number formatting (integers vs floats with 6 decimal places)
+- Verified that saved CSV now exactly matches original format
+- Next: Test with different types of input data to ensure formatting is preserved in all cases
