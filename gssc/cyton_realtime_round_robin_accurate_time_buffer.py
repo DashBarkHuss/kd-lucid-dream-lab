@@ -473,7 +473,7 @@ class BufferManager:
         self.buffer_timestamp_index = self.all_channels_with_timestamp.index(self.timestamp_channel)
         
         # Add validation settings
-        self.validate_consecutive_values = True  # Set to True to enable consecutive value validation
+        self.validate_consecutive_values = False  # Set to True to enable consecutive value validation
         self.validation_channel = 0  # Channel to validate (default to first channel)
         self.last_validated_value = None  # Track last validated value
         self.saved_data = []
@@ -559,11 +559,12 @@ class BufferManager:
         
         # Update all_previous_data
         if not is_initial:
-            for i, channel in enumerate(self.all_previous_buffers_data):
+            for i, channel in enumerate(self.all_channels_with_timestamp):
                 self.all_previous_buffers_data[i].extend(new_data[channel].tolist())
         else:
-            for i, channel in enumerate(self.all_previous_buffers_data):
+            for i, channel in enumerate(self.all_channels_with_timestamp):
                 self.all_previous_buffers_data[i] = new_data[channel].tolist()
+                
         
         # Handle data saving - only save new data
         new_rows = new_data.T.tolist()
@@ -627,30 +628,38 @@ class BufferManager:
                 - bool: True if we can process this buffer, False otherwise
                 - str: Reason why we can't process if False, empty string if we can
         """
-        # Check if we have enough data points
+        # For the first buffer, we just need enough points for one epoch
         if buffer_id == 0:
             required_points = self.points_per_epoch
         else:
+            # For other buffers, we need enough points for the buffer delay plus one epoch
             buffer_delay = buffer_id * self.points_per_step
             required_points = buffer_delay + self.points_per_epoch
             
+        # Check if we have enough data points
         if len(self.all_previous_buffers_data[0]) < required_points:
-            return False, "Not enough data points"
+            return False, f"Not enough data points (have {len(self.all_previous_buffers_data[0])}, need {required_points})"
+            
+        # For the first epoch, we can process it immediately
+        if self.last_processed_buffer == -1:
+            return True, ""
             
         # Get the current timestamp from the data
         current_timestamp = self.all_previous_buffers_data[self.buffer_timestamp_index][-1]
         
-        # For the first epoch, we can process it
-        if self.last_processed_buffer == -1:
+        # Get the last processed epoch's timestamp
+        try:
+            last_epoch_timestamp = self.all_previous_buffers_data[self.buffer_timestamp_index][
+                self.processed_epoch_start_indices[self.last_processed_buffer][-1]
+            ]
+        except (IndexError, KeyError):
+            # If we can't get the last epoch timestamp, we can still process
             return True, ""
             
-        # For subsequent epochs, check if we've moved forward by buffer_step seconds
-        last_epoch_timestamp = self.all_previous_buffers_data[self.buffer_timestamp_index][
-            self.processed_epoch_start_indices[self.last_processed_buffer][-1]
-        ]
-        
-        if current_timestamp - last_epoch_timestamp < self.buffer_step:
-            return False, "Not enough time has passed"
+        # Check if we've moved forward by at least buffer_step seconds
+        time_since_last_epoch = current_timestamp - last_epoch_timestamp
+        if time_since_last_epoch < self.buffer_step:
+            return False, f"Not enough time has passed since last epoch ({time_since_last_epoch:.2f}s < {self.buffer_step}s)"
             
         return True, ""
 
@@ -1023,6 +1032,9 @@ def main():
             consecutive_empty_count = 0
             sleep_time = 0.1
             next_buffer_id = buffer_manager._calculate_next_buffer_id_to_process()
+            print(f"\nAttempting to process buffer {next_buffer_id}")
+            print(f"Total data points collected: {buffer_manager.points_collected}")
+            print(f"Last processed buffer: {buffer_manager.last_processed_buffer}")
 
             # Process next epoch on next buffer
             can_process, reason, epoch_start_idx, epoch_end_idx = buffer_manager.next_available_epoch_on_buffer(next_buffer_id)
@@ -1031,6 +1043,8 @@ def main():
                 # Process the buffer
                 print("\r\033[2K", end="", flush=True)  # Clear the entire line
                 buffer_manager.manage_epoch(buffer_id=next_buffer_id, epoch_start_idx=epoch_start_idx, epoch_end_idx=epoch_end_idx)
+            else:
+                print(f"Cannot process buffer {next_buffer_id}: {reason}")
 
             
             # Check for end of file
