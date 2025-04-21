@@ -565,26 +565,21 @@ class BufferManager:
             for i, channel in enumerate(self.all_channels_with_timestamp):
                 self.all_previous_buffers_data[i] = new_data[channel].tolist()
                 
-        
-        # Handle data saving - only save new data
-        new_rows = new_data.T.tolist()
-        if not is_initial:
-            # For subsequent data, only save rows with timestamps we haven't seen
-            if self.last_saved_timestamp is not None:
-                new_rows = [row for row in new_rows if row[self.buffer_timestamp_index] > self.last_saved_timestamp]
-            
-            if new_rows:
-                if not hasattr(self, 'saved_data'):
-                    self.saved_data = new_rows
-                else:
-                    self.saved_data.extend(new_rows)
-                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
-        else:
-            # For initial data, save everything and set last timestamp
-            self.saved_data = new_rows
-            self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
-                
         return True
+
+    def save_new_data(self, new_data, is_initial=False):
+        """Save new data to the saved_data buffer for later CSV export"""
+        if not hasattr(self, 'saved_data'):
+            self.saved_data = []
+            
+        new_rows = new_data.T.tolist()
+        if not is_initial and self.last_saved_timestamp is not None:
+            # Only save rows with timestamps we haven't seen
+            new_rows = [row for row in new_rows if row[self.buffer_timestamp_index] > self.last_saved_timestamp]
+            
+        if new_rows:
+            self.saved_data.extend(new_rows)
+            self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
 
     def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
         """Validate the epoch has no gaps
@@ -923,10 +918,6 @@ def update_status_line(message):
     print(f"\r{message}", end="", flush=True)
 
 def main():
-    print(f"Ganglion timestamp channel: {BoardShim.get_timestamp_channel(BoardIds.GANGLION_BOARD)}")
-    print(f"Cyton timestamp channel: {BoardShim.get_timestamp_channel(BoardIds.CYTON_BOARD)}")
-    print(f"Ganglion EXG channels: {BoardShim.get_exg_channels(BoardIds.GANGLION_BOARD)}")
-    print(f"Cyton EXG channels: {BoardShim.get_exg_channels(BoardIds.CYTON_BOARD)}")
 
     # Create data acquisition instance
     # input_file = "data/cyton_BrainFlow-gap_short.csv"
@@ -934,7 +925,7 @@ def main():
     # input_file = "data/tiny_gap.csv"
     # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
     # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
-    # input_file = "test_data/gapped_data.csv"
+    # input_file = "data/test_data/gapped_data.csv"
     
     input_file = "data/test_data/consecutive_data.csv"
     data_acquisition = DataAcquisition(input_file)
@@ -966,6 +957,8 @@ def main():
         initial_data = data_acquisition.get_initial_data()
         if initial_data.size > 0:
             success = buffer_manager.add_data(initial_data, is_initial=True)
+            if success:
+                buffer_manager.save_new_data(initial_data, is_initial=True)
             print(f"\nInitial data processing:")
             print(f"- Added to buffer: {'Success' if success else 'Failed'}")
             print(f"- Samples: {len(initial_data[0])}")
@@ -1015,7 +1008,9 @@ def main():
                 continue
             
             # Successfully got data
-            if not buffer_manager.add_data(new_data):
+            if buffer_manager.add_data(new_data):
+                buffer_manager.save_new_data(new_data)
+            else:
                 print("\r\033[2K", end="", flush=True)  # Clear the entire line
                 print("\nFailed to add new data to buffer:")
                 print(f"- Data shape: {new_data.shape}")
