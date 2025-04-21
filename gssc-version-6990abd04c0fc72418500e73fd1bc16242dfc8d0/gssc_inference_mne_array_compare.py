@@ -14,7 +14,7 @@ import h5py
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report
 # import realtime inference from gssc_array_infer.py in this directory
-from gssc_array_with_fif import realtime_inference
+from gssc_array_inference_with_fif import realtime_inference
 
 
 # Path to your .set file
@@ -35,11 +35,9 @@ end = 6000
 # Slice the data 
 raw_sliced = raw.copy().crop(tmin=start, tmax=end) 
 
-eeg_channels = ['F3','C3', 'O1']  #  Adjust based on your data
-eog_channels = ['L-HEOG']  # Adjust based on your data
-# eeg_channels = ['C3']  # Adjust based on your data
-# eog_channels = ['L-HEOG', 'R-HEOG']  # Adjust based on your data
-
+# eeg_channels = ['F3','C3', 'O1']  # Adjust based on your data
+eeg_channels = ['C3']  # Adjust based on your data
+eog_channels = ['L-HEOG', 'R-HEOG']  # Adjust based on your data
 
 # Path to save the .fif file
 fif_file_path = '/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/sleep_data/dash_data_104_session_6/alphah104ses06scoring_raw.fif'
@@ -50,14 +48,6 @@ raw_sliced.save(fif_file_path, overwrite=True)
 # Load the .fif file
 raw = mne.io.read_raw_fif(fif_file_path, preload=True)
 
-# Then read it to get the correct channel names
-raw = mne.io.read_raw_fif(fif_file_path, preload=True)
-channel_names = raw.ch_names
-
-# Create indices from the newly saved file
-eeg_indices = [i for i, ch in enumerate(channel_names) if ch in eeg_channels]
-eog_indices = [i for i, ch in enumerate(channel_names) if ch in eog_channels]
-
 # Initialize the EEGInfer class
 eeg_infer = EEGInfer()
 
@@ -67,7 +57,7 @@ eeg_infer = EEGInfer()
 # eog_channels = []  # Adjust based on your data
 
 # Perform inference
-out_infs, times, probs = eeg_infer.mne_infer(
+out_infs, times = eeg_infer.mne_infer(
     inst=raw,
     eeg=eeg_channels,
     eog=eog_channels,

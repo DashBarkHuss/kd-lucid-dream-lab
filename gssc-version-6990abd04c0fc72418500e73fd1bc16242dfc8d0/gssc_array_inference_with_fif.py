@@ -4,6 +4,68 @@ It loads EEG data, applies bandpass filtering, and uses a pre-trained GSSC model
 to predict sleep stages for each epoch. The script processes both EEG and EOG channels,
 handles signal permutations, and outputs predicted sleep stage classes with their
 corresponding probabilities for each epoch.
+
+The script logs the predicted classes and class probabilities for each epoch.
+
+Example output for epoch 299:
+Predicted classes for epoch 299: [[2]
+ [1]
+ [2]
+ [2]
+ [2]
+ [0]
+ [1]]
+  Predicted class: 2
+  Class probabilities:
+    Class 0: 20.06%
+    Class 1: 24.22%
+    Class 2: 54.38%
+    Class 3: 0.92%
+    Class 4: 0.42%
+  Predicted class: 1
+  Class probabilities:
+    Class 0: 2.32%
+    Class 1: 61.03%
+    Class 2: 36.27%
+    Class 3: 0.02%
+    Class 4: 0.35%
+  Predicted class: 2
+  Class probabilities:
+    Class 0: 0.80%
+    Class 1: 13.76%
+    Class 2: 85.23%
+    Class 3: 0.08%
+    Class 4: 0.13%
+  Predicted class: 2
+  Class probabilities:
+    Class 0: 2.44%
+    Class 1: 23.62%
+    Class 2: 72.93%
+    Class 3: 0.45%
+    Class 4: 0.56%
+  Predicted class: 2
+  Class probabilities:
+    Class 0: 0.65%
+    Class 1: 31.00%
+    Class 2: 67.79%
+    Class 3: 0.54%
+    Class 4: 0.01%
+  Predicted class: 0
+  Class probabilities:
+    Class 0: 44.16%
+    Class 1: 36.65%
+    Class 2: 18.15%
+    Class 3: 0.44%
+    Class 4: 0.60%
+  Predicted class: 1
+  Class probabilities:
+    Class 0: 27.10%
+    Class 1: 50.51%
+    Class 2: 21.87%
+    Class 3: 0.06%
+    Class 4: 0.47%
+
+It doesn't log a summary of the predicted classes and class probabilities for all epochs. It doesn't log an accuracy comparison with the ground truth.
 """
 
 from gssc.infer import ArrayInfer
@@ -215,14 +277,16 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
 
     # Initialize ArrayInfer with pre-trained models 
     infer = ArrayInfer(net=None, con_net=None, sig_combs=sig_combs, perm_matrix=perm_matrix, all_chans=all_chans, sig_len=sig_len)
+   
 
+  
 
     # Perform inference with dummy data
     # hi = infer.infer(eeg_data_tensor, hiddens)
     # Adjust the input for the infer method
     def prepare_input(epoch_data):
         # Add a batch dimension and ensure it's the right shape for infer
-        return epoch_data.unsqueeze(0)  # Shape becomes (1, 8, 30001)
+        return epoch_data.unsqueeze(0)  # Shape becomes (1, 8, 30001)... not true shape is (1, 8, 2560)
 
     # Initialize hiddens
     hiddens = torch.zeros((n_signals, num_layers * num_directions, batch_size, hidden_size))
@@ -257,14 +321,16 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
 
     # Perform inference on each epoch
 
-   
+    #  for each epoch, get the logits, predicted classes, and class probabilities
     for i in range(len(filtered_eeg_tensor_epoched)):  
         logits, res_logits, hiddens = infer.infer(prepare_input(eeg_tensor_epoched[i]), hiddens)
+        # prepare_input(eeg_tensor_epoched[i]) is shape [1, 8, 2560]
         all_logits.append(logits)
         # get the predicted classes
         predicted_classes = get_predicted_classes(logits)
         print(f"Predicted classes for epoch {i+1}: {predicted_classes}")
         predicted_classes, class_probs = get_predicted_classes_and_probabilities(logits)
+        # for each possible class of the individual epoch, print the class probabilities
         for i in range(len(predicted_classes)):
             print(f"  Predicted class: {predicted_classes[i][0]}")
             print("  Class probabilities:")
@@ -288,5 +354,5 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
     print("Done")
     return all_predicted_classes
 
-if __name__ == "__main__":
-    realtime_inference("data/sleep_data/dash_data_104_session_6/alphah104ses06scoring_raw.fif", ['F3','C3', 'O1'], ['L-HEOG'])
+if __name__ == "__main__": 
+    realtime_inference("/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/sleep_data/dash_data_104_session_6/alphah104ses06scoring_raw.fif", ['F3','C3', 'O1'], ['L-HEOG'])

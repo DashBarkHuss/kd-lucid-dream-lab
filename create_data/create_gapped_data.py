@@ -1,0 +1,97 @@
+import numpy as np
+import pandas as pd
+import time
+from pathlib import Path
+from brainflow.board_shim import BoardShim, BoardIds
+
+def create_gapped_data(output_file, duration=38, gap_position=10, gap_size=3):
+    """
+    Create a BrainFlow-compatible CSV file with a gap at specified position
+    
+    Args:
+        output_file: Path to save the output CSV file
+        duration: Total duration of data in seconds
+        gap_position: Time in seconds where the gap should occur
+        gap_size: Size of the gap in seconds
+    """
+    # Get board configuration
+    master_board_id = BoardIds.CYTON_DAISY_BOARD
+    sampling_rate = BoardShim.get_sampling_rate(master_board_id)  # 125 Hz
+    timestamp_channel = BoardShim.get_timestamp_channel(master_board_id)
+    
+    # Calculate number of samples
+    n_samples = int(duration * sampling_rate)
+    
+    # Initialize data array with 32 columns (BrainFlow format)
+    data = np.zeros((n_samples, 32))
+    
+    # Column 1: Package number (increments by 1)
+    data[:, 0] = np.arange(n_samples) + 2  # Start at 2 like the example
+    
+    # Column 2: Sample index (increments by 1)
+    data[:, 1] = np.arange(1, n_samples + 1)
+    
+    # Columns 3-17: Fixed values that increment with sample index
+    base_value = 2916  # Starting value from example file
+    for i in range(2, 17):
+        data[:, i] = base_value
+    
+    # Columns 18-20: EEG/signal data (synthetic)
+    t = np.arange(n_samples) / sampling_rate
+    for i in range(17, 20):
+        data[:, i] = np.sin(2 * np.pi * 10 * t) + np.random.normal(0, 0.1, n_samples)
+    
+    # Column 21: Fixed value
+    data[:, 20] = 192.0
+    
+    # Columns 22-29: Zeros (already initialized as zeros)
+    
+    # Set timestamps
+    start_time = time.time()
+    expected_interval = 1.0 / sampling_rate
+    
+    # Create timestamps with gap
+    timestamps = np.zeros(n_samples)
+    current_time = start_time
+    
+    # First part before gap
+    gap_sample = int(gap_position * sampling_rate)
+    timestamps[:gap_sample] = current_time + np.arange(gap_sample) * expected_interval
+    
+    # Add gap
+    current_time = timestamps[gap_sample-1] + gap_size
+    
+    # Second part after gap
+    timestamps[gap_sample:] = current_time + np.arange(n_samples - gap_sample) * expected_interval
+    
+    # Set timestamps in the correct channel
+    data[:, timestamp_channel] = timestamps
+    
+    # Ensure the directory exists
+    output_file = Path(output_file)
+    output_file.parent.mkdir(exist_ok=True, parents=True)
+    
+    # Create format string for each column (32 columns total)
+    fmt = '%.6f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f'
+    
+    # Save to CSV in BrainFlow format
+    np.savetxt(
+        str(output_file),
+        data,
+        delimiter='\t',
+        fmt=fmt
+    )
+    
+    print(f"Created data file at: {output_file}")
+    print(f"Total duration: {duration} seconds")
+    print(f"Gap position: {gap_position} seconds")
+    print(f"Gap size: {gap_size} seconds")
+    print(f"Sampling rate: {sampling_rate} Hz")
+    print(f"Total samples: {n_samples}")
+    
+    return output_file
+
+if __name__ == "__main__":
+    # Create test data with 38 seconds of data and a 3-second gap at 10 seconds
+    output_file = "data/test_data/gapped_data.csv"
+    create_gapped_data(output_file, duration=120, gap_position=10, gap_size=3) 

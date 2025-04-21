@@ -27,6 +27,8 @@
 # 3. Run the script, and you should see the data you previosly recorded show up in the plot.
 
 import logging
+import time
+import os
 
 import pyqtgraph as pg
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
@@ -58,7 +60,12 @@ class Graph:
         timer = QtCore.QTimer()
         timer.timeout.connect(self.update)
         timer.start(self.update_speed_ms)
-        QtWidgets.QApplication.instance().exec_()
+        
+        app = QtWidgets.QApplication.instance()
+        if hasattr(app, 'exec'):
+            app.exec()
+        else:
+            app.exec_()
 
     def _init_timeseries(self):
         self.plots = list()
@@ -114,15 +121,36 @@ def main():
     params.board_id = BoardIds.PLAYBACK_FILE_BOARD
     params.master_board = BoardIds.GANGLION_BOARD
     # I needed to use the full path or the path from the root because I run the script from the root directory using .vscode/launch.json   
-    params.file = "data/BrainFlow-RAW.csv"
+    params.file = "data/BrainFlow-RAW_L_R_L_RL.csv"
+
+    # params.file = "data/BrainFlow-fake-consecutive-numbers.csv"
     # params.file = "/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/playback/BrainFlow-RAW.csv"
 
 
     board_shim = BoardShim(BoardIds.PLAYBACK_FILE_BOARD, params)
 
+    def place_holder_sleep_stage_classification(epoch_data):
+        # This is a placeholder for the sleep stage classification function
+        # It should return the sleep stage for the given epoch data
+        # For now, it just returns 0
+        return 0
+
     try:
+        # Add file check
+        file_path = params.file
+        if not os.path.exists(file_path):
+            print(f"Error: File not found: {file_path}")
+            return
+            
+        print(f"Found file: {file_path}")
+        file_size = os.path.getsize(file_path)
+        print(f"File size: {file_size} bytes")
+
         board_shim.prepare_session()
+       
         board_shim.start_stream()
+       
+        # Then show visualization if needed
         Graph(board_shim)
     except BaseException:
         logging.warning('Exception', exc_info=True)

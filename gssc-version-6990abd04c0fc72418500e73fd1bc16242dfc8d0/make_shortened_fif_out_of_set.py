@@ -61,9 +61,13 @@ with h5py.File(mat_file_path, 'r') as file:
         else:
             raise ValueError("Dataset 'stageTime' not found in 'stageData'.")
 
-# Determine the stages for an interval
-# Assuming each stage corresponds to a 30-second epoch
-stages_for_segment = sleep_stages[(stage_time_data_seconds >= start) & (stage_time_data_seconds <= end)]
+# Convert time window to epoch indices
+epoch_duration = 30  # Each epoch is 30 seconds
+start_epoch = int(start // epoch_duration)
+end_epoch = int(end // epoch_duration)
+
+# Select stages for the specified time segment
+stages_for_segment = sleep_stages[start_epoch:end_epoch]
 
 # Log the sleep stages
 print("Sleep stages for segment:")
