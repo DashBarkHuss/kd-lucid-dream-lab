@@ -186,12 +186,12 @@ class Visualizer:
             plt.ion()  # Turn on interactive mode
             n_channels = len(self.channel_labels)
             
-            # Create figure with more compact size
-            self.fig = plt.figure(figsize=(12, 8))
+            # Create figure with balanced size
+            self.fig = plt.figure(figsize=(12, 10))  # Reduced height from 16 to 10
             
             # Create a gridspec that leaves room for the title and adds spacing between channels
-            gs = self.fig.add_gridspec(n_channels + 1, 1, height_ratios=[0.5] + [1]*n_channels)
-            gs.update(left=0.1, right=0.95, bottom=0.05, top=0.95, hspace=0.1)  # Increased hspace from 0.0 to 0.1
+            gs = self.fig.add_gridspec(n_channels + 1, 1, height_ratios=[0.5] + [1.2]*n_channels)  # Adjusted channel height ratio from 1.5 to 1.2
+            gs.update(left=0.1, right=0.95, bottom=0.05, top=0.95, hspace=0.5)
             
             # Create title axes
             self.title_ax = self.fig.add_subplot(gs[0])
@@ -282,9 +282,9 @@ class Visualizer:
             ax.plot(time_axis, data, 'b-', linewidth=0.5)
             
             # Set y-axis label with units
-            ax.set_ylabel(f'{label}\n({unit})', fontsize=8, rotation=0, ha='right', va='center')
+            ax.set_ylabel(f'{label}\n({unit})', fontsize=7, rotation=0, ha='right', va='center')
             ax.grid(True, alpha=0.3)  # Lighter grid
-            ax.tick_params(axis='y', labelsize=8)
+            ax.tick_params(axis='y', labelsize=6)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
             
@@ -296,12 +296,21 @@ class Visualizer:
             y_limits = (y_min - margin, y_max + margin)
             ax.set_ylim(y_limits)
             
+            # Create clean tick marks that include the range
+            tick_range = y_max - y_min
+            if tick_range > 0:
+                # Choose a reasonable number of ticks (3-5)
+                n_ticks = 5 if tick_range > 3 else 3
+                ax.yaxis.set_major_locator(plt.LinearLocator(n_ticks))
+            
+            # log the label and the y max and y min
+            print(f"Channel {label} has y_min: {y_min} and y_max: {y_max}")
             # Add horizontal lines at the top and bottom of each channel's plot area
             ax.axhline(y=y_limits[1], color='black', linewidth=1)  # Black line at top
             ax.axhline(y=y_limits[0], color='black', linewidth=1)  # Black line at bottom
             
-            # Format y-axis ticks to show whole numbers
-            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x):d}'))
+            # Format y-axis ticks to show one decimal place
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.1f}'))
             
             # Only show x-axis for bottom subplot
             if ax != self.axes[-1]:
