@@ -50,10 +50,10 @@ class Montage:
         
         # EOG Channels (Daisy Board)
         eog_channels = [
-            ("N1P", "T-EOG"),
-            ("N2P", "B-EOG"),
-            ("N3P", "R-LEOG"),
-            ("N4P", "L-LEOG")
+            ("T-EOG", "Top EOG"),
+            ("B-EOG", "Bottom EOG"),
+            ("R-LEOG", "Right Lateral EOG"),
+            ("L-LEOG", "Left Lateral EOG")
         ]
         
         for i, (label, description) in enumerate(eog_channels, 9):
@@ -68,10 +68,10 @@ class Montage:
         
         # EMG and Other Channels (Daisy Board)
         other_channels = [
-            ("N5P", "EMG1", "EMG", (10, 100)),
-            ("N6P", "EMG2", "EMG", (10, 100)),
-            ("N7P", "Airflow", "OTHER", (0.1, 50)),
-            ("N8P", "Snoring", "OTHER", (10, 100))
+            ("EMG1", "Chin EMG", "EMG", (10, 100)),
+            ("EMG2", "Leg EMG", "EMG", (10, 100)),
+            ("Airflow", "Nasal Airflow", "OTHER", (0.1, 50)),
+            ("Snoring", "Snoring", "OTHER", (10, 100))
         ]
         
         for i, (label, description, ch_type, filter_range) in enumerate(other_channels, 13):
