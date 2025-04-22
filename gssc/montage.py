@@ -93,6 +93,7 @@ class Montage:
         This montage includes:
         - EEG: F3, F4, C3, C4, O1, O2
         - EOG: R-LEOG, L-LEOG
+        - EMG: EMG1, EMG2
         
         Returns:
             Montage: A montage with the specified channels
@@ -131,6 +132,22 @@ class Montage:
                 location=location,
                 filter_range=(0.1, 100),
                 channel_type="EOG",
+                board="DAISY",
+                channel_number=channel_number
+            ))
+            
+        # Add EMG channels with fixed indices
+        emg_channels = [
+            (13, "EMG1", "Chin EMG 1"),
+            (14, "EMG2", "Chin EMG 2")
+        ]
+        
+        for channel_number, label, location in emg_channels:
+            montage.add_channel(channel_number, ChannelConfig(
+                label=label,
+                location=location,
+                filter_range=(10, 100),  # Higher low cutoff for EMG
+                channel_type="EMG",
                 board="DAISY",
                 channel_number=channel_number
             ))

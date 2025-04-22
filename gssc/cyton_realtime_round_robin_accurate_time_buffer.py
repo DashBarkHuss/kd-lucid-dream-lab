@@ -304,11 +304,11 @@ class Visualizer:
                 n_ticks = 5 if tick_range > 3 else 3
                 ax.yaxis.set_major_locator(plt.LinearLocator(n_ticks))
             
-            if y_min == 0 and y_max == 0:
+            if y_min == y_max:
                 # For zero-value channels, set y limits explicitly to match other channels
                 ax.set_ylim(-0.1, 0.1)
                 # Add red text indicating all zeros
-                ax.text(0.02, 0.7, "All values are zero", 
+                ax.text(0.02, 0.7, f"All values are {y_min}", 
                        transform=ax.transAxes,
                        color='red',
                        fontsize=8,
@@ -316,13 +316,7 @@ class Visualizer:
                 # Draw the zero line in light grey
                 ax.axhline(y=0, color='grey', linewidth=0.5, alpha=0.3)
 
-            if y_min == y_max:
-                ax.set_ylim(-0.1, 0.1)
-                ax.text(0.02, 0.7, f"All values are {y_min}", 
-                       transform=ax.transAxes,
-                       color='red',
-                       fontsize=8,
-                       fontweight='bold')
+    
             
             # Add horizontal lines at the top and bottom of each channel's plot area
             ax.axhline(y=ax.get_ylim()[1], color='black', linewidth=1)  # Black line at top
