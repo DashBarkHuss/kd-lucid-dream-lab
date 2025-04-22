@@ -4,9 +4,7 @@
 # seems to work now
 
 #todo: make sure it works for cyton and daisy
-#todo: make sure it works for non consecutive numbers. we used consecutive data for testing
 #todo: scale graph better
-#todo: save the data stream to a csv file
 import logging
 import time
 import os
@@ -31,6 +29,8 @@ import torch
 import torch.nn.functional as F
 
 import pandas as pd
+
+from montage import Montage
 
 # Add at the top of the file, after imports
 import logging
@@ -160,28 +160,69 @@ class SignalProcessor:
 
 class Visualizer:
     """Handles visualization of polysomnograph data and sleep stages"""
-    def __init__(self, seconds_per_epoch=30):
+    def __init__(self, seconds_per_epoch=30, board_shim=None, montage: Montage = None):
         self.fig = None
         self.axes = None
         self.recording_start_time = None
-        self.channel_labels = ['EEG Ch1', 'EEG Ch2', 'EEG Ch3', 'EOG']
         self.seconds_per_epoch = seconds_per_epoch
+        self.board_shim = board_shim
+        
+        # Use provided montage or create default
+        self.montage = montage if montage is not None else Montage.default_sleep_montage()
+        self.channel_labels = self.montage.get_channel_labels()
+        self.channel_types = self.montage.get_channel_types()
+        self.filter_ranges = self.montage.get_filter_ranges()
+        
+        # Get channel information from board if available
+        if board_shim is not None:
+            self.electrode_channels = board_shim.get_exg_channels(board_shim.get_board_id())
+        else:
+            # Default to 16 channels for Cyton+Daisy
+            self.electrode_channels = list(range(16))
         
     def init_polysomnograph(self):
         """Initialize the polysomnograph figure and axes"""
         if self.fig is None:
             plt.ion()  # Turn on interactive mode
-            self.fig, self.axes = plt.subplots(4, 1, figsize=(15, 10), sharex=True)
+            n_channels = len(self.channel_labels)
             
-            # Setup axes
-            for ax, label in zip(self.axes, self.channel_labels):
-                ax.set_ylabel(label)
-                ax.grid(True)
+            # Create figure with more compact size
+            self.fig = plt.figure(figsize=(12, 8))
             
-            self.axes[-1].set_xlabel('Time (seconds)')
+            # Create a gridspec that leaves room for the title
+            gs = self.fig.add_gridspec(n_channels + 1, 1, height_ratios=[0.5] + [1]*n_channels)
+            gs.update(left=0.1, right=0.95, bottom=0.05, top=0.95, hspace=0.0)
             
-            # Add extra space at the top for the title
-            plt.subplots_adjust(top=0.85)
+            # Create title axes
+            self.title_ax = self.fig.add_subplot(gs[0])
+            self.title_ax.set_xticks([])
+            self.title_ax.set_yticks([])
+            self.title_ax.spines['top'].set_visible(False)
+            self.title_ax.spines['right'].set_visible(False)
+            self.title_ax.spines['bottom'].set_visible(False)
+            self.title_ax.spines['left'].set_visible(False)
+            
+            # Create axes for channels
+            self.axes = []
+            for i in range(n_channels):
+                ax = self.fig.add_subplot(gs[i+1])
+                self.axes.append(ax)
+                
+                # Setup axis
+                ax.set_ylabel(self.channel_labels[i], fontsize=8, rotation=0, ha='right', va='center')
+                ax.grid(True, alpha=0.3)  # Lighter grid
+                ax.tick_params(axis='y', labelsize=8)
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                
+                # Only show x-axis for bottom subplot
+                if i < n_channels - 1:
+                    ax.set_xticks([])
+                    ax.spines['bottom'].set_visible(False)
+            
+            # Add x-label to bottom subplot
+            self.axes[-1].set_xlabel('Time (seconds)', fontsize=8)
+            self.axes[-1].tick_params(axis='x', labelsize=8)
         
         return self.fig, self.axes
     
@@ -216,31 +257,58 @@ class Visualizer:
         relative_time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         
         # Update title
-        title_text = (f'Sleep Stage: {self.get_sleep_stage_text(sleep_stage)}\n'
-                     f'Time from Start: {relative_time_str}\n')
+        title_text = f'Sleep Stage: {self.get_sleep_stage_text(sleep_stage)} | Time from Start: {relative_time_str}'
+        self.title_ax.clear()
+        self.title_ax.text(0.5, 0.5, title_text,
+                          horizontalalignment='center',
+                          verticalalignment='center',
+                          fontsize=10)
+        self.title_ax.set_xticks([])
+        self.title_ax.set_yticks([])
         
         # Plot each channel
-        for ax, data, label in zip(self.axes, epoch_data, self.channel_labels):
+        for ax, data, label, ch_type in zip(self.axes, epoch_data, self.channel_labels, self.channel_types):
             ax.clear()  # Clear previous data
+            
+            # Add units based on channel type
+            if ch_type in ['EEG', 'EOG', 'EMG']:
+                unit = 'µV'
+            else:
+                unit = 'a.u.'  # arbitrary units
+            
+            # Plot the data
             ax.plot(time_axis, data, 'b-', linewidth=0.5)
-            ax.set_ylabel(label)
-            ax.grid(True)
+            
+            # Set y-axis label with units
+            ax.set_ylabel(f'{label}\n({unit})', fontsize=8, rotation=0, ha='right', va='center')
+            ax.grid(True, alpha=0.3)
+            ax.tick_params(axis='y', labelsize=8)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            
+            # Calculate y-axis limits based on the actual data range
+            y_min = np.min(data)
+            y_max = np.max(data)
+            y_range = y_max - y_min
+            margin = y_range * 0.05  # 5% margin
             
             # Set y-axis limits
-            y_range = np.percentile(data, [5, 95])
-            margin = (y_range[1] - y_range[0]) * 0.2
-            ax.set_ylim(y_range[0] - margin, y_range[1] + margin)
-        
-        # Add title text after clearing and plotting
-        self.axes[0].text(0.5, 1.25, title_text,
-                         horizontalalignment='center',
-                         verticalalignment='center',
-                         transform=self.axes[0].transAxes,
-                         fontsize=10,
-                         bbox=dict(facecolor='white', alpha=0.8, pad=0.5))
-        
-        # Update x-axis label
-        self.axes[-1].set_xlabel('Time from Start (seconds)')
+            ax.set_ylim(y_min - margin, y_max + margin)
+            
+            # Format y-axis ticks to show whole numbers
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x):d}'))
+            
+            # Only show x-axis for bottom subplot
+            if ax != self.axes[-1]:
+                ax.set_xticks([])
+                ax.spines['bottom'].set_visible(False)
+            else:
+                ax.set_xlabel('Time (seconds)', fontsize=8)
+                ax.tick_params(axis='x', labelsize=8)
+                ax.spines['bottom'].set_visible(True)
+            
+            # Set x-axis limits
+            ax.set_xlim(time_offset, time_offset + self.seconds_per_epoch)
         
         # Update the plot
         self.fig.canvas.draw()
@@ -423,7 +491,7 @@ class DataAcquisition:
 
 class BufferManager:
     """Manages data buffers and their processing"""
-    def __init__(self, board_shim, sampling_rate):
+    def __init__(self, board_shim, sampling_rate, montage: Montage = None):
         self.board_shim = board_shim
         self.sampling_rate = sampling_rate
         self.seconds_per_epoch = 30
@@ -464,7 +532,7 @@ class BufferManager:
             for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
         ]
         self.signal_processor = SignalProcessor()
-        self.visualizer = Visualizer(self.seconds_per_epoch)
+        self.visualizer = Visualizer(self.seconds_per_epoch, self.board_shim, montage)
         self.expected_interval = 1.0 / sampling_rate
         self.timestamp_tolerance = self.expected_interval * 0.01  # 1% tolerance
         self.gap_threshold = 2.0  # Large gap threshold (seconds)
@@ -949,6 +1017,9 @@ def main():
     input_file = "data/test_data/consecutive_data.csv"
     data_acquisition = DataAcquisition(input_file)
     
+    # Create default montage
+    montage = Montage.default_sleep_montage()
+    
     # Set up output file path
     output_dir = "data/processed"
     os.makedirs(output_dir, exist_ok=True)
@@ -963,8 +1034,8 @@ def main():
         initial_count = data_acquisition.start_stream()
         print("\nStream started successfully")
         
-        # Create buffer manager and set recording start time
-        buffer_manager = BufferManager(board_shim, data_acquisition.sampling_rate)
+        # Create buffer manager with montage
+        buffer_manager = BufferManager(board_shim, data_acquisition.sampling_rate, montage)
         data_acquisition.set_buffer_manager(buffer_manager)
         buffer_manager.visualizer.recording_start_time = data_acquisition.recording_start_time
         
