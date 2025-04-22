@@ -49,7 +49,7 @@ def test_visualizer_with_real_data():
     )
     
     # Show the plot
-    plt.show()
+    plt.show(block=True)
     
     # Verify the data was plotted correctly
     assert len(visualizer.axes) == len(montage.get_channel_labels()), \

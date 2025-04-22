@@ -303,8 +303,7 @@ class Visualizer:
                 n_ticks = 5 if tick_range > 3 else 3
                 ax.yaxis.set_major_locator(plt.LinearLocator(n_ticks))
             
-            # log the label and the y max and y min
-            print(f"Channel {label} has y_min: {y_min} and y_max: {y_max}")
+
             # Add horizontal lines at the top and bottom of each channel's plot area
             ax.axhline(y=y_limits[1], color='black', linewidth=1)  # Black line at top
             ax.axhline(y=y_limits[0], color='black', linewidth=1)  # Black line at bottom
@@ -1022,11 +1021,11 @@ def main():
     # input_file = "gssc/sandbox/test_data"
     # input_file = "data/tiny_gap.csv"
     # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
-    # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
+    input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
     # input_file = "data/test_data/segmend_of_real_data.csv"   
     # input_file = "data/test_data/gapped_data.csv"
     
-    input_file = "data/test_data/consecutive_data.csv"
+    # input_file = "data/test_data/consecutive_data.csv"
     data_acquisition = DataAcquisition(input_file)
     
     # Create default montage
