@@ -69,15 +69,7 @@ def test_visualizer_with_real_data():
     for ax in visualizer.axes:
         assert len(ax.lines) > 0, "Each axis should have at least one line"
         
-    # Print min/max values for each channel
-    for i, (ax, label, ch_type) in enumerate(zip(visualizer.axes, montage.get_channel_labels(), montage.get_channel_types())):
-        data = epoch_data[i]
-        y_min = np.min(data)
-        y_max = np.max(data)
-        print(f"\nChannel {label} ({ch_type}):")
-        print(f"  Min value: {y_min:.2f} µV")
-        print(f"  Max value: {y_max:.2f} µV")
-        print(f"  Data range: {y_max - y_min:.2f} µV")
+
 
 if __name__ == '__main__':
     test_visualizer_with_real_data() 
