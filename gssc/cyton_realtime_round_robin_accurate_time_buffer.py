@@ -189,9 +189,9 @@ class Visualizer:
             # Create figure with more compact size
             self.fig = plt.figure(figsize=(12, 8))
             
-            # Create a gridspec that leaves room for the title
+            # Create a gridspec that leaves room for the title and adds spacing between channels
             gs = self.fig.add_gridspec(n_channels + 1, 1, height_ratios=[0.5] + [1]*n_channels)
-            gs.update(left=0.1, right=0.95, bottom=0.05, top=0.95, hspace=0.0)
+            gs.update(left=0.1, right=0.95, bottom=0.05, top=0.95, hspace=0.1)  # Increased hspace from 0.0 to 0.1
             
             # Create title axes
             self.title_ax = self.fig.add_subplot(gs[0])
@@ -212,17 +212,19 @@ class Visualizer:
                 ax.set_ylabel(self.channel_labels[i], fontsize=8, rotation=0, ha='right', va='center')
                 ax.grid(True, alpha=0.3)  # Lighter grid
                 ax.tick_params(axis='y', labelsize=8)
+                
+                # Hide unnecessary spines and set colors for visible ones
                 ax.spines['top'].set_visible(False)
                 ax.spines['right'].set_visible(False)
+                ax.spines['bottom'].set_visible(True)
+                ax.spines['bottom'].set_color('black')
                 
                 # Only show x-axis for bottom subplot
                 if i < n_channels - 1:
                     ax.set_xticks([])
-                    ax.spines['bottom'].set_visible(False)
-            
-            # Add x-label to bottom subplot
-            self.axes[-1].set_xlabel('Time (seconds)', fontsize=8)
-            self.axes[-1].tick_params(axis='x', labelsize=8)
+                else:
+                    ax.set_xlabel('Time (seconds)', fontsize=8)
+                    ax.tick_params(axis='x', labelsize=8)
         
         return self.fig, self.axes
     
@@ -281,7 +283,7 @@ class Visualizer:
             
             # Set y-axis label with units
             ax.set_ylabel(f'{label}\n({unit})', fontsize=8, rotation=0, ha='right', va='center')
-            ax.grid(True, alpha=0.3)
+            ax.grid(True, alpha=0.3)  # Lighter grid
             ax.tick_params(axis='y', labelsize=8)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
@@ -290,10 +292,13 @@ class Visualizer:
             y_min = np.min(data)
             y_max = np.max(data)
             y_range = y_max - y_min
-            margin = y_range * 0.05  # 5% margin
+            margin = y_range * 0.1  # 10% margin
+            y_limits = (y_min - margin, y_max + margin)
+            ax.set_ylim(y_limits)
             
-            # Set y-axis limits
-            ax.set_ylim(y_min - margin, y_max + margin)
+            # Add horizontal lines at the top and bottom of each channel's plot area
+            ax.axhline(y=y_limits[1], color='black', linewidth=1)  # Black line at top
+            ax.axhline(y=y_limits[0], color='black', linewidth=1)  # Black line at bottom
             
             # Format y-axis ticks to show whole numbers
             ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x):d}'))
@@ -301,11 +306,9 @@ class Visualizer:
             # Only show x-axis for bottom subplot
             if ax != self.axes[-1]:
                 ax.set_xticks([])
-                ax.spines['bottom'].set_visible(False)
             else:
                 ax.set_xlabel('Time (seconds)', fontsize=8)
                 ax.tick_params(axis='x', labelsize=8)
-                ax.spines['bottom'].set_visible(True)
             
             # Set x-axis limits
             ax.set_xlim(time_offset, time_offset + self.seconds_per_epoch)
