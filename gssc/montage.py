@@ -86,6 +86,57 @@ class Montage:
         
         return montage
     
+    @staticmethod
+    def minimal_sleep_montage() -> 'Montage':
+        """Create a minimal sleep montage without temporal channels and only lateral EOG.
+        
+        This montage includes:
+        - EEG: F3, F4, C3, C4, O1, O2
+        - EOG: R-LEOG, L-LEOG
+        
+        Returns:
+            Montage: A montage with the specified channels
+        """
+        montage = Montage()
+        
+        # Add EEG channels with fixed indices
+        eeg_channels = [
+            (1, "F3", "Frontal Left"),
+            (2, "F4", "Frontal Right"),
+            (3, "C3", "Central Left"),
+            (4, "C4", "Central Right"),
+            (5, "O1", "Occipital Left"),
+            (6, "O2", "Occipital Right")
+        ]
+        
+        for channel_number, label, location in eeg_channels:
+            montage.add_channel(channel_number, ChannelConfig(
+                label=label,
+                location=location,
+                filter_range=(0.1, 100),
+                channel_type="EEG",
+                board="CYTON_DAISY",
+                channel_number=channel_number
+            ))
+        
+        # Add EOG channels with fixed indices
+        eog_channels = [
+            (11, "R-LEOG", "Right Lateral EOG"),
+            (12, "L-LEOG", "Left Lateral EOG")
+        ]
+        
+        for channel_number, label, location in eog_channels:
+            montage.add_channel(channel_number, ChannelConfig(
+                label=label,
+                location=location,
+                filter_range=(0.1, 100),
+                channel_type="EOG",
+                board="DAISY",
+                channel_number=channel_number
+            ))
+        
+        return montage
+    
     def get_channel_labels(self) -> List[str]:
         """Get list of channel labels in order"""
         return [self.channels[i].label for i in sorted(self.channels.keys())]

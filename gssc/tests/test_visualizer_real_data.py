@@ -23,11 +23,21 @@ def test_visualizer_with_real_data():
     # Calculate number of points for 30 seconds
     points_per_epoch = 30 * sampling_rate
     
-    # Take second 30 seconds of data
-    epoch_data = df.iloc[points_per_epoch:2*points_per_epoch, 1:].values.T  # Skip timestamp column
+    # Create montage - using minimal montage without temporal and top/bottom EOG
+    montage = Montage.minimal_sleep_montage()
     
-    # Create montage
-    montage = Montage.default_sleep_montage()
+    # Get the montage channel indices in order
+    montage_channels = sorted(montage.channels.keys())
+    
+    # Map montage channels to data file columns
+    selected_columns = [ch for ch in montage_channels]
+    
+    # Select the data for the epoch
+    start_idx = points_per_epoch  # Start at 3750 (30 seconds in)
+    end_idx = 2 * points_per_epoch  # End at 7500 (60 seconds in)
+    
+    # Get the epoch data
+    epoch_data = df.iloc[start_idx:end_idx, selected_columns].values.T
     
     # Create visualizer
     visualizer = Visualizer(
