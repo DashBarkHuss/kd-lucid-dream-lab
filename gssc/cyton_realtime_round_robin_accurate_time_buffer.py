@@ -10,6 +10,9 @@ import time
 import os
 import matplotlib.pyplot as plt
 import datetime
+import threading
+import matplotlib
+import queue
 
 import pyqtgraph as pg
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds, BrainFlowPresets
@@ -158,6 +161,52 @@ class SignalProcessor:
         
         return final_predicted_class, new_hidden_states
 
+class VisualizationQueue:
+    """Handles communication between background threads and main thread for visualization"""
+    def __init__(self):
+        self.queue = queue.Queue()
+        self._processing = False
+        self._processing_thread = None
+        self.visualizer = None
+        
+    def start_processing(self, visualizer):
+        """Start processing visualization updates in the main thread"""
+        self.visualizer = visualizer
+        self._processing = True
+        self._processing_thread = threading.Thread(target=self._process_queue)
+        self._processing_thread.daemon = True
+        self._processing_thread.start()
+        
+    def stop_processing(self):
+        """Stop processing visualization updates"""
+        self._processing = False
+        if self._processing_thread and self._processing_thread.is_alive():
+            self._processing_thread.join(timeout=1.0)
+            
+    def _process_queue(self):
+        """Process visualization updates from the queue"""
+        while self._processing:
+            try:
+                # Get update from queue with timeout to allow checking _processing flag
+                update = self.queue.get(timeout=0.1)
+                if update is None:
+                    continue
+                    
+                # Process the update
+                epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time = update
+                self.visualizer._plot_polysomnograph(
+                    epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time
+                )
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logging.error(f"Error processing visualization update: {str(e)}")
+                
+    def add_update(self, epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time):
+        """Add a visualization update to the queue"""
+        self.queue.put((epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time))
+
 class Visualizer:
     """Handles visualization of polysomnograph data and sleep stages"""
     def __init__(self, seconds_per_epoch=30, board_shim=None, montage: Montage = None):
@@ -166,6 +215,7 @@ class Visualizer:
         self.recording_start_time = None
         self.seconds_per_epoch = seconds_per_epoch
         self.board_shim = board_shim
+        self.viz_queue = VisualizationQueue()
         
         # Use provided montage or create default
         self.montage = montage if montage is not None else Montage.default_sleep_montage()
@@ -179,6 +229,11 @@ class Visualizer:
         else:
             # Default to 16 channels for Cyton+Daisy
             self.electrode_channels = list(range(16))
+            
+        # Initialize figure in the main thread
+        self.init_polysomnograph()
+        # Start processing visualization updates
+        self.viz_queue.start_processing(self)
         
     def init_polysomnograph(self):
         """Initialize the polysomnograph figure and axes"""
@@ -241,9 +296,11 @@ class Visualizer:
         return stages.get(sleep_stage, 'Unknown')
     
     def plot_polysomnograph(self, epoch_data, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
-        """Update polysomnograph plot with new data"""
-        self.init_polysomnograph()  # Ensure figure exists
+        """Add visualization update to queue instead of plotting directly"""
+        self.viz_queue.add_update(epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time)
         
+    def _plot_polysomnograph(self, epoch_data, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
+        """Internal method to actually perform the plotting (called from main thread)"""
         # Create time axis with offset
         time_axis = np.arange(epoch_data.shape[1]) / sampling_rate + time_offset
         
@@ -280,7 +337,6 @@ class Visualizer:
             
             # Plot the data
             ax.plot(time_axis, data, 'b-', linewidth=0.5)
-
             
             # Set y-axis label with units
             ax.set_ylabel(f'{label}\n({unit})', fontsize=7, rotation=0, ha='right', va='center')
@@ -315,8 +371,6 @@ class Visualizer:
                        fontweight='bold')
                 # Draw the zero line in light grey
                 ax.axhline(y=0, color='grey', linewidth=0.5, alpha=0.3)
-
-    
             
             # Add horizontal lines at the top and bottom of each channel's plot area
             ax.axhline(y=ax.get_ylim()[1], color='black', linewidth=1)  # Black line at top
@@ -338,8 +392,12 @@ class Visualizer:
         # Update the plot
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-
-
+        
+    def release(self):
+        """Clean up visualization resources"""
+        self.viz_queue.stop_processing()
+        if self.fig is not None:
+            plt.close(self.fig)
 
 class DataAcquisition:
     """Handles board setup and data collection"""
@@ -357,6 +415,7 @@ class DataAcquisition:
         self.master_board_id = BoardIds.CYTON_DAISY_BOARD  # Add master board ID
         self.timestamp_channel = None  # Will be set in setup_board
         self.gap_threshold = 2.0  # Add gap threshold in seconds
+        self._streaming = False  # Add streaming state flag
     
     def set_buffer_manager(self, buffer_manager):
         self.buffer_manager = buffer_manager
@@ -404,6 +463,10 @@ class DataAcquisition:
         if not self.board_shim:
             raise RuntimeError("Board not initialized. Call setup_board first.")
         
+        if self._streaming:
+            logging.warning("Stream is already running")
+            return
+            
         try:
             print("\nStarting data stream:")
             print(f"- Buffer size: {self.buffer_size}")
@@ -411,6 +474,7 @@ class DataAcquisition:
             print(f"- Timestamp channel: {self.timestamp_channel}")
             
             self.board_shim.start_stream(self.buffer_size)
+            self._streaming = True
             
             # Initialize recording_start_time as None - we'll set it when we get the first data packet
             self.recording_start_time = None
@@ -419,12 +483,31 @@ class DataAcquisition:
             time.sleep(0.1)
             
             initial_count = self.board_shim.get_board_data_count()
-
-            
             return initial_count
+            
         except Exception as e:
+            self._streaming = False
             logging.error(f"Failed to start stream: {str(e)}")
             raise
+
+    def stop_stream(self):
+        """Stop the data stream"""
+        if not self._streaming:
+            logging.warning("Stream is not running")
+            return
+            
+        try:
+            if self.board_shim and self.board_shim.is_prepared():
+                self.board_shim.stop_stream()
+                self._streaming = False
+                logging.info("Stream stopped successfully")
+        except Exception as e:
+            logging.error(f"Failed to stop stream: {str(e)}")
+            raise
+
+    def is_streaming(self):
+        """Check if the stream is currently running"""
+        return self._streaming
 
     def get_initial_data(self):
         """Get initial data from the board"""
@@ -476,6 +559,9 @@ class DataAcquisition:
 
     def get_new_data(self):
         """Get new data from the board"""
+        if not self._streaming:
+            raise RuntimeError("Cannot get data: stream is not running")
+            
         try:
             # Log data count before getting data
             data_count = self.board_shim.get_board_data_count()
@@ -485,11 +571,8 @@ class DataAcquisition:
                 new_data = self.board_shim.get_board_data(data_count)
 
                 if new_data.size > 0:
-                    
                     if self.timestamp_channel is not None:
                         last_timestamp = new_data[self.timestamp_channel][-1]
-                        
-
                         self.last_chunk_last_timestamp = last_timestamp
                     
                     return new_data
@@ -508,7 +591,10 @@ class DataAcquisition:
         """Release the board session"""
         if self.board_shim and self.board_shim.is_prepared():
             try:
+                if self._streaming:
+                    self.stop_stream()
                 self.board_shim.release_session()
+                self._streaming = False
                 logging.info('Session released successfully')
             except Exception as e:
                 logging.error(f"Failed to release session: {str(e)}")
@@ -1024,6 +1110,134 @@ class BufferManager:
         """Calculate the ID of the next buffer to process"""
         return (self.last_processed_buffer + 1) % 6
 
+class StreamProcessor:
+    """Handles the main processing loop and stream control"""
+    def __init__(self, data_acquisition: DataAcquisition, buffer_manager: BufferManager):
+        self.data_acquisition = data_acquisition
+        self.buffer_manager = buffer_manager
+        self._processing = False
+        self._processing_thread = None
+        self.consecutive_empty_count = 0
+        self.sleep_time = 0.1
+        self.iteration_count = 0
+        
+    def start_processing(self):
+        """Start the processing loop"""
+        if self._processing:
+            logging.warning("Processing is already running")
+            return
+            
+        self._processing = True
+        # Start processing in a separate thread
+        self._processing_thread = threading.Thread(target=self._process_loop)
+        self._processing_thread.daemon = True  # Make thread daemon so it exits when main thread exits
+        self._processing_thread.start()
+        
+    def stop_processing(self):
+        """Stop the processing loop"""
+        if not self._processing:
+            logging.warning("Processing is not running")
+            return
+            
+        self._processing = False
+        if self._processing_thread and self._processing_thread.is_alive():
+            self._processing_thread.join(timeout=1.0)  # Wait up to 1 second for thread to finish
+            self._processing_thread = None
+            
+    def is_processing(self):
+        """Check if processing is currently running"""
+        return self._processing
+        
+    def wait_for_completion(self):
+        """Wait for the processing thread to complete"""
+        if self._processing_thread and self._processing_thread.is_alive():
+            self._processing_thread.join()
+            
+    def _process_loop(self):
+        """Main processing loop"""
+        while self._processing:
+            self.iteration_count += 1
+            if DEBUG_VERBOSE:
+                print(f"\nIteration {self.iteration_count}:")
+            
+            try:
+                # Get new data
+                new_data = self.data_acquisition.get_new_data()
+                
+                # Log timestamps if we have data
+                if new_data.size > 0 and self.data_acquisition.timestamp_channel is not None:
+                    start_timestamp = new_data[self.data_acquisition.timestamp_channel][0]
+                    end_timestamp = new_data[self.data_acquisition.timestamp_channel][-1]
+                    
+                    # Set recording start time if not set
+                    if self.data_acquisition.recording_start_time is None:
+                        self.data_acquisition.recording_start_time = start_timestamp
+                    
+                    # Calculate total duration from start
+                    total_duration = end_timestamp - self.data_acquisition.recording_start_time
+                    hours = int(total_duration // 3600)
+                    minutes = int((total_duration % 3600) // 60)
+                    seconds = total_duration % 60
+                    
+                    # Calculate chunk duration
+                    chunk_duration = end_timestamp - start_timestamp
+                    
+                    # Use \r to return to start of line and \033[2K to clear the line
+                    print(f"\r\033[2KTimestamps: Start={start_timestamp:.3f}s, End={end_timestamp:.3f}s, Chunk={chunk_duration:.3f}s, Total={hours}h {minutes}m {seconds:.3f}s", end="", flush=True)
+                
+                # Handle empty or invalid data
+                if new_data.size == 0:
+                    self.consecutive_empty_count += 1
+                    self.sleep_time = min(1.0, self.sleep_time * 1.5)
+                    last_timestamp = self.data_acquisition.last_chunk_last_timestamp
+                    timestamp_str = f"Last timestamp: {last_timestamp:.3f}s" if last_timestamp is not None else "No previous timestamp"
+                    print(f"\r\033[2KNo data received. Sleeping for {self.sleep_time:.2f}s. {timestamp_str} Empty count: {self.consecutive_empty_count}", end="", flush=True)
+                    time.sleep(self.sleep_time)
+                    continue
+                
+                # Successfully got data
+                if self.buffer_manager.add_data(new_data):
+                    # Save data first, before any processing
+                    self.buffer_manager.save_new_data(new_data)
+                    
+                    # Then try to process
+                    self.consecutive_empty_count = 0
+                    self.sleep_time = 0.1
+                    next_buffer_id = self.buffer_manager._calculate_next_buffer_id_to_process()
+
+                    # Process next epoch on next buffer
+                    can_process, reason, epoch_start_idx, epoch_end_idx = self.buffer_manager.next_available_epoch_on_buffer(next_buffer_id)
+
+                    if can_process:
+                        # Process the buffer
+                        print("\r\033[2K", end="", flush=True)  # Clear the entire line
+                        self.buffer_manager.manage_epoch(buffer_id=next_buffer_id, epoch_start_idx=epoch_start_idx, epoch_end_idx=epoch_end_idx)
+                else:
+                    print("\r\033[2K", end="", flush=True)  # Clear the entire line
+                    print("\nFailed to add new data to buffer:")
+                    print(f"- Data shape: {new_data.shape}")
+                    # Still try to save the data even if processing failed
+                    self.buffer_manager.save_new_data(new_data)
+                    continue
+                
+                # Check for end of file
+                if (self.data_acquisition.file_data is not None and 
+                    self.data_acquisition.last_chunk_last_timestamp is not None and 
+                    self.data_acquisition.last_chunk_last_timestamp >= self.data_acquisition.file_data.iloc[-1, self.data_acquisition.timestamp_channel]):
+                    print()  # Add newline to clean up the last timestamp log
+                    print(f"\nReached end of file:")
+                    print(f"- Final timestamp: {self.data_acquisition.last_chunk_last_timestamp}")
+                    print(f"- Total iterations: {self.iteration_count}")
+                    self.stop_processing()
+                    break
+                    
+                time.sleep(0.1)
+                
+            except Exception as e:
+                logging.error(f"Error in processing loop: {str(e)}")
+                self.stop_processing()
+                raise
+
 def update_status_line(message):
     """Update a single line of output, overwriting the previous line"""
     print(f"\r{message}", end="", flush=True)
@@ -1035,11 +1249,12 @@ def main():
     # input_file = "gssc/sandbox/test_data"
     # input_file = "data/tiny_gap.csv"
     # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
-    input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
+    # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0 copy.csv"   
+    # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
     # input_file = "data/test_data/segmend_of_real_data.csv"   
     # input_file = "data/test_data/gapped_data.csv"
     
-    # input_file = "data/test_data/consecutive_data.csv"
+    input_file = "data/test_data/consecutive_data.csv"
     data_acquisition = DataAcquisition(input_file)
     
     # Create minimal montage (without temporal channels and top/bottom EOG)
@@ -1080,100 +1295,25 @@ def main():
         else:
             print("\nWarning: No initial data available")
         
-        consecutive_empty_count = 0
-        sleep_time = 0.1
-        iteration_count = 0
+        # Create stream processor
+        stream_processor = StreamProcessor(data_acquisition, buffer_manager)
+        stream_processor.start_processing()
         
-        print("\nEntering main processing loop...")
+        # Wait for processing to complete
+        stream_processor.wait_for_completion()
         
-        while True:
-            iteration_count += 1
-            if DEBUG_VERBOSE:
-                print(f"\nIteration {iteration_count}:")
+        # Save processed data to CSV
+        print("\nSaving processed data to CSV...")
+        if buffer_manager.save_to_csv(output_file):
+            print(f"Data saved to {output_file}")
             
-            # Get new data
-            new_data = data_acquisition.get_new_data()
-            
-            # Log timestamps if we have data
-            if new_data.size > 0 and data_acquisition.timestamp_channel is not None:
-                start_timestamp = new_data[data_acquisition.timestamp_channel][0]
-                end_timestamp = new_data[data_acquisition.timestamp_channel][-1]
-                
-                # Set recording start time if not set
-                if data_acquisition.recording_start_time is None:
-                    data_acquisition.recording_start_time = start_timestamp
-                
-                # Calculate total duration from start
-                total_duration = end_timestamp - data_acquisition.recording_start_time
-                hours = int(total_duration // 3600)
-                minutes = int((total_duration % 3600) // 60)
-                seconds = total_duration % 60
-                
-                # Calculate chunk duration
-                chunk_duration = end_timestamp - start_timestamp
-                
-                # Use \r to return to start of line and \033[2K to clear the line
-                print(f"\r\033[2KTimestamps: Start={start_timestamp:.3f}s, End={end_timestamp:.3f}s, Chunk={chunk_duration:.3f}s, Total={hours}h {minutes}m {seconds:.3f}s", end="", flush=True)
-            
-            # Handle empty or invalid data
-            if new_data.size == 0:
-                consecutive_empty_count += 1
-                sleep_time = min(1.0, sleep_time * 1.5)
-                last_timestamp = data_acquisition.last_chunk_last_timestamp
-                timestamp_str = f"Last timestamp: {last_timestamp:.3f}s" if last_timestamp is not None else "No previous timestamp"
-                print(f"\r\033[2KNo data received. Sleeping for {sleep_time:.2f}s. {timestamp_str} Empty count: {consecutive_empty_count}", end="", flush=True)
-                time.sleep(sleep_time)
-                continue
-            
-            # Successfully got data
-            if buffer_manager.add_data(new_data):
-                # Save data first, before any processing
-                buffer_manager.save_new_data(new_data)
-                
-                # Then try to process
-                consecutive_empty_count = 0
-                sleep_time = 0.1
-                next_buffer_id = buffer_manager._calculate_next_buffer_id_to_process()
-
-                # Process next epoch on next buffer
-                can_process, reason, epoch_start_idx, epoch_end_idx = buffer_manager.next_available_epoch_on_buffer(next_buffer_id)
-
-                if can_process:
-                    # Process the buffer
-                    print("\r\033[2K", end="", flush=True)  # Clear the entire line
-                    buffer_manager.manage_epoch(buffer_id=next_buffer_id, epoch_start_idx=epoch_start_idx, epoch_end_idx=epoch_end_idx)
+            # Validate saved CSV
+            print("\nValidating saved CSV...")
+            if buffer_manager.validate_saved_csv(input_file):
+                print("✅ CSV validation passed!")
             else:
-                print("\r\033[2K", end="", flush=True)  # Clear the entire line
-                print("\nFailed to add new data to buffer:")
-                print(f"- Data shape: {new_data.shape}")
-                # Still try to save the data even if processing failed
-                buffer_manager.save_new_data(new_data)
-                continue
-            
-            # Check for end of file
-            if (data_acquisition.file_data is not None and 
-                data_acquisition.last_chunk_last_timestamp is not None and 
-                data_acquisition.last_chunk_last_timestamp >= data_acquisition.file_data.iloc[-1, data_acquisition.timestamp_channel]):
-                print()  # Add newline to clean up the last timestamp log
-                print(f"\nReached end of file:")
-                print(f"- Final timestamp: {data_acquisition.last_chunk_last_timestamp}")
-                print(f"- Total iterations: {iteration_count}")
-                
-                # Save processed data to CSV
-                print("\nSaving processed data to CSV...")
-                if buffer_manager.save_to_csv(output_file):
-                    print(f"Data saved to {output_file}")
-                    
-                    # Validate saved CSV
-                    print("\nValidating saved CSV...")
-                    if buffer_manager.validate_saved_csv(input_file):
-                        print("✅ CSV validation passed!")
-                    else:
-                        print("❌ CSV validation failed!")
-                break
-                
-            time.sleep(0.1)
-            
+                print("❌ CSV validation failed!")
+        
     except BaseException as e:
         print()  # Add newline to clean up the last timestamp log
         logging.warning('Exception occurred:', exc_info=True)
@@ -1181,6 +1321,9 @@ def main():
     finally:
         print()  # Add newline to clean up the last timestamp log
         print("\nCleaning up...")
+        # Clean up visualization resources
+        if 'buffer_manager' in locals() and buffer_manager.visualizer is not None:
+            buffer_manager.visualizer.release()
         data_acquisition.release()
         print("Session ended")
 
