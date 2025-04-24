@@ -151,9 +151,14 @@ what we did already:
   - Added proper cleanup and error handling
   - Improved CSV validation and saving
 - Added Threading Support:
+
   - Added threading imports
   - Made the processing loop run in a separate thread
   - Added proper thread cleanup
+
+- In pyqt_visualizer.py, tried rotating channel labels (EMG2 etc) to be horizontal using `p.getAxis('left').label.setRotation(0)` and but this messed up the label position.
+
+- Tried to add 5 labeled ticks to the y-axis but it didn't work. Its only labeling 3
 
 see if filtering is necessary, compares the detection with the scored file, and handle the visualizatoin of the main buffer vs the other buffers: we updated the scoring every 5 seconds but really the main buffer is every 30 seconds.
 Need to Refactor.
