@@ -88,15 +88,19 @@ class PyQtVisualizer:
             p.setContentsMargins(0, 0, 0, 0)
             p.getViewBox().setDefaultPadding(0)  # Remove padding around the plot
             
-            # Set up plot styling
-            p.showGrid(x=True, y=True, alpha=0.3)
-            p.getAxis('left').setWidth(60)
+            # p.hideAxis('left')
+            # p.showAxis('top')
+            # p.hideAxis('right')
+            # p.hideAxis('bottom')
+            # # Set up plot styling
+            # p.showGrid(x=True, y=True, alpha=0.3)
+            # p.getAxis('left').setWidth(60)
             
-            # Show axis lines with proper styling
-            p.getAxis('left').setStyle(showValues=True, tickLength=5)
-            p.getAxis('bottom').setStyle(showValues=True, tickLength=5)
-            p.showAxis('top', show=False)
-            p.showAxis('right', show=False)
+            # # Show axis lines with proper styling
+            # p.getAxis('left').setStyle(showValues=True, tickLength=5)
+            # p.getAxis('bottom').setStyle(showValues=True, tickLength=5)
+            # p.showAxis('top', show=False)
+            # p.showAxis('right', show=False)
             
             # Set up axis labels with proper units
             unit = 'µV' if self.channel_types[i] in ['EEG', 'EOG', 'EMG'] else 'a.u.'
@@ -112,8 +116,11 @@ class PyQtVisualizer:
                     'font-size': '8pt',
                     'color': '#000000'
                 })
-            
-            # Set up axis styling
+
+            p.showAxis('top')
+            p.getAxis('top').setStyle(showValues=False)
+
+            # # Set up axis styling
             for axis in ['left', 'bottom']:
                 ax = p.getAxis(axis)
                 ax.setTextPen('k')
@@ -204,17 +211,17 @@ class PyQtVisualizer:
             plot.setYRange(y_min_with_margin, y_max_with_margin, padding=0)  # Added padding=0
             plot.setXRange(time_offset, time_offset + self.seconds_per_epoch, padding=0)  # Added padding=0
             
-            # Add black lines at top and bottom of plot
-            if not hasattr(plot, 'border_lines'):
-                plot.border_lines = [
-                    pg.InfiniteLine(pos=y_min_with_margin, angle=0, pen=pg.mkPen('r', width=1)),
-                    pg.InfiniteLine(pos=y_max_with_margin, angle=0, pen=pg.mkPen('r', width=1))
-                ]
-                for line in plot.border_lines:
-                    plot.addItem(line)
-            else:
-                plot.border_lines[0].setPos(y_min_with_margin)
-                plot.border_lines[1].setPos(y_max_with_margin)
+            # # Add black lines at top and bottom of plot
+            # if not hasattr(plot, 'border_lines'):
+            #     plot.border_lines = [
+            #         pg.InfiniteLine(pos=y_min_with_margin, angle=0, pen=pg.mkPen('r', width=1)),
+            #         pg.InfiniteLine(pos=y_max_with_margin, angle=0, pen=pg.mkPen('r', width=1))
+            #     ]
+            #     for line in plot.border_lines:
+            #         plot.addItem(line)
+            # else:
+            #     plot.border_lines[0].setPos(y_min_with_margin)
+            #     plot.border_lines[1].setPos(y_max_with_margin)
             
             # Get scene coordinates
             view_box = plot.getViewBox()
