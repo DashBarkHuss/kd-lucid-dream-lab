@@ -258,9 +258,16 @@ class PyQtVisualizer:
             
             # Show "All values are 0.0" text if needed
             if np.allclose(data, 0):
-                plot.setTitle("All values are 0.0", color='r', size='8pt')
+                # Create text item for "All values are 0.0" message
+                text = pg.TextItem("All values are 0.0", color='r', anchor=(0, 0))  # Changed anchor to (0, 0) for left alignment
+                plot.addItem(text)
+                # Position the text at the left side of the plot
+                text.setPos(time_offset, y_max_with_margin - margin/2)  # Changed x position to time_offset
             else:
-                plot.setTitle("")
+                # Remove any existing text items
+                for item in plot.items:
+                    if isinstance(item, pg.TextItem):
+                        plot.removeItem(item)
     
     def update(self):
         """Update the visualization (called by timer)"""
