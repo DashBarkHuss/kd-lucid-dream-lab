@@ -5,6 +5,38 @@ from montage import Montage
 
 class PyQtVisualizer:
     """Handles visualization of polysomnograph data and sleep stages using PyQtGraph"""
+    
+    # Window and Layout Constants
+    WINDOW_WIDTH = 1200
+    WINDOW_HEIGHT = 1000
+    LAYOUT_MARGINS = 5
+    LAYOUT_SPACING = 0
+    TITLE_LABEL_HEIGHT = 70 # does this do anything?
+    PLOT_WIDGET_MARGINS = 90 # does this do anything?
+    PLOT_VERTICAL_SPACING = 100 # does this do anything?
+    TIMER_UPDATE_INTERVAL_MS = 50
+    
+    # Plot Configuration Constants
+    PLOT_FIXED_HEIGHT = 44
+    PLOT_SPACING = 10
+    DATA_PEN_WIDTH = 0.75
+    Y_AXIS_MARGIN_FACTOR = 0.15
+    FLAT_LINE_DEFAULT_RANGE = 0.2
+    FLAT_LINE_MARGIN = 0.1
+    Y_AXIS_TICK_COUNT = 5
+    
+    # Font Size Constants
+    TITLE_FONT_SIZE = 24
+    AXIS_LABEL_FONT_SIZE = 8
+    TICK_FONT_SIZE = 7
+    
+    # Sleep Stage Constants
+    SLEEP_STAGE_WAKE = 0
+    SLEEP_STAGE_N1 = 1
+    SLEEP_STAGE_N2 = 2
+    SLEEP_STAGE_N3 = 3
+    SLEEP_STAGE_REM = 4
+    
     def __init__(self, seconds_per_epoch=30, board_shim=None, montage: Montage = None):
         self.recording_start_time = None
         self.seconds_per_epoch = seconds_per_epoch
@@ -35,29 +67,29 @@ class PyQtVisualizer:
         self.win.setWindowTitle('Polysomnograph')
         # Increase height to ensure all channels have enough space
         # 16 channels * 100px per channel + some margin for title and spacing
-        self.win.resize(1500,2000)
+        self.win.resize(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
         
         # Create central widget and layout
         self.central_widget = QtWidgets.QWidget()
         self.win.setCentralWidget(self.central_widget)
         self.layout = QtWidgets.QVBoxLayout()
-        self.layout.setContentsMargins(5, 5, 5, 5)  # Reduce margins
-        self.layout.setSpacing(0)  # Minimize spacing between widgets
+        self.layout.setContentsMargins(self.LAYOUT_MARGINS, self.LAYOUT_MARGINS, self.LAYOUT_MARGINS, self.LAYOUT_MARGINS)  # Reduce margins
+        self.layout.setSpacing(self.LAYOUT_SPACING)  # Minimize spacing between widgets
         self.central_widget.setLayout(self.layout)
         
         # Create title label
         title_font = QtGui.QFont()
-        title_font.setPointSize(16)
+        title_font.setPointSize(self.TITLE_FONT_SIZE)
         self.title_label = QtWidgets.QLabel("")
         self.title_label.setFont(title_font)
         self.title_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.title_label.setMaximumHeight(30)  # Limit title height
+        self.title_label.setMaximumHeight(self.TITLE_LABEL_HEIGHT)  # Limit title height
         self.layout.addWidget(self.title_label)
         
         # Create GraphicsLayoutWidget for plots
         self.plot_widget = pg.GraphicsLayoutWidget()
-        self.plot_widget.setContentsMargins(0, 0, 0, 0)  # Remove internal margins
-        self.plot_widget.ci.layout.setVerticalSpacing(-30)  # Set a small vertical gap between plots
+        self.plot_widget.setContentsMargins(self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS)  # Remove internal margins
+        self.plot_widget.ci.layout.setVerticalSpacing(self.PLOT_VERTICAL_SPACING)  # Set a small vertical gap between plots
         self.layout.addWidget(self.plot_widget)
         
         # Initialize plots and curves
@@ -73,7 +105,7 @@ class PyQtVisualizer:
         # Set up update timer
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update)
-        self.timer.start(50)  # Update every 50ms
+        self.timer.start(self.TIMER_UPDATE_INTERVAL_MS)  # Update every 50ms
         
     def _init_polysomnograph(self):
         """Initialize the polysomnograph figure and plots"""
@@ -87,25 +119,12 @@ class PyQtVisualizer:
             # Set up plot margins
             p.setContentsMargins(0, 0, 0, 0)
             p.getViewBox().setDefaultPadding(0)  # Remove padding around the plot
-            
-            # p.hideAxis('left')
-            # p.showAxis('top')
-            # p.hideAxis('right')
-            # p.hideAxis('bottom')
-            # # Set up plot styling
-            # p.showGrid(x=True, y=True, alpha=0.3)
-            # p.getAxis('left').setWidth(60)
-            
-            # # Show axis lines with proper styling
-            # p.getAxis('left').setStyle(showValues=True, tickLength=5)
-            # p.getAxis('bottom').setStyle(showValues=True, tickLength=5)
-            # p.showAxis('top', show=False)
-            # p.showAxis('right', show=False)
+         
             
             # Set up axis labels with proper units
-            unit = 'µV' if self.channel_types[i] in ['EEG', 'EOG', 'EMG'] else 'a.u.'
+            unit = 'µV'  # All OpenBCI channels output in microvolts
             p.setLabel('left', f'{self.channel_labels[i]}\n({unit})', **{
-                'font-size': '8pt',
+                'font-size': f'{self.AXIS_LABEL_FONT_SIZE}pt',
                 'color': '#000000'
             })
             
@@ -113,7 +132,7 @@ class PyQtVisualizer:
             p.showAxis('bottom')
             if i == n_channels - 1:
                 p.setLabel('bottom', 'Time (seconds)', **{
-                    'font-size': '8pt',
+                    'font-size': f'{self.AXIS_LABEL_FONT_SIZE}pt',
                     'color': '#000000'
                 })
 
@@ -125,7 +144,7 @@ class PyQtVisualizer:
                 ax = p.getAxis(axis)
                 ax.setTextPen('k')
                 ax.setPen('k')
-                ax.setTickFont(QtGui.QFont('Arial', 7))
+                ax.setTickFont(QtGui.QFont('Arial', self.TICK_FONT_SIZE))
             
             # Configure grid and axes
             p.showGrid(x=True, y=True)
@@ -134,28 +153,28 @@ class PyQtVisualizer:
             
             # Add plot to list with blue pen for data
             self.plots.append(p)
-            self.curves.append(p.plot(pen=pg.mkPen('b', width=0.75)))
+            self.curves.append(p.plot(pen=pg.mkPen('b', width=self.DATA_PEN_WIDTH)))
             
             # Set fixed height and ensure ViewBox uses full height
-            p.setFixedHeight(70)
+            p.setFixedHeight(self.PLOT_FIXED_HEIGHT)
             view_box = p.getViewBox()
-            view_box.setMinimumHeight(70)
-            view_box.setMaximumHeight(70)
+            view_box.setMinimumHeight(self.PLOT_FIXED_HEIGHT)
+            view_box.setMaximumHeight(self.PLOT_FIXED_HEIGHT)
             
             # Add small spacing between plots (10 pixels)
             if i < n_channels - 1:
-                self.plot_widget.ci.layout.setSpacing(10)
+                self.plot_widget.ci.layout.setSpacing(self.PLOT_SPACING)
                 self.plot_widget.nextRow()
         
     @staticmethod
     def get_sleep_stage_text(sleep_stage):
         """Convert sleep stage number to text representation"""
         stages = {
-            0: 'Wake',
-            1: 'N1',
-            2: 'N2',
-            3: 'N3',
-            4: 'REM'
+            PyQtVisualizer.SLEEP_STAGE_WAKE: 'Wake',
+            PyQtVisualizer.SLEEP_STAGE_N1: 'N1',
+            PyQtVisualizer.SLEEP_STAGE_N2: 'N2',
+            PyQtVisualizer.SLEEP_STAGE_N3: 'N3',
+            PyQtVisualizer.SLEEP_STAGE_REM: 'REM'
         }
         return stages.get(sleep_stage, 'Unknown')
     
@@ -198,12 +217,12 @@ class PyQtVisualizer:
             y_max = np.max(data)
             y_range = y_max - y_min
             if y_range == 0:  # Handle flat line case
-                y_range = 0.2  # Small range to show flat line
-                y_min -= 0.1
-                y_max += 0.1
+                y_range = self.FLAT_LINE_DEFAULT_RANGE  # Small range to show flat line
+                y_min -= self.FLAT_LINE_MARGIN
+                y_max += self.FLAT_LINE_MARGIN
             
             # Add larger margin for border lines
-            margin = y_range * 0.15  # Increased from 0.1 to 0.15
+            margin = y_range * self.Y_AXIS_MARGIN_FACTOR  # Increased from 0.1 to 0.15
             y_min_with_margin = y_min - margin
             y_max_with_margin = y_max + margin
             
@@ -234,7 +253,7 @@ class PyQtVisualizer:
             print(f"Scene height: {scene_rect.height():.1f}")
             
             # Update axis ticks
-            y_ticks = np.linspace(y_min_with_margin, y_max_with_margin, 5)
+            y_ticks = np.linspace(y_min_with_margin, y_max_with_margin, self.Y_AXIS_TICK_COUNT)
             plot.getAxis('left').setTicks([[(v, f'{v:.1f}') for v in y_ticks]])
             
             # Show "All values are 0.0" text if needed
