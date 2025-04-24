@@ -260,6 +260,10 @@ class PyQtVisualizer:
             y_ticks = np.linspace(y_min_with_margin, y_max_with_margin, self.Y_AXIS_TICK_COUNT)
             plot.getAxis('left').setTicks([[(v, f'{v:.1f}') for v in y_ticks]])
             
+            # Force the y-axis to show exactly 5 ticks
+            plot.getAxis('left').setStyle(tickTextOffset=5)  # Adjust text offset for better visibility
+            plot.getAxis('left').setTickSpacing(major=(y_max_with_margin - y_min_with_margin) / (self.Y_AXIS_TICK_COUNT - 1))
+            
             # Show "All values are 0.0" text if needed
             if np.allclose(data, 0):
                 # Create text item for "All values are 0.0" message
