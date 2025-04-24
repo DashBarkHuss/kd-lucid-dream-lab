@@ -24,6 +24,7 @@ class PyQtVisualizer:
     FLAT_LINE_DEFAULT_RANGE = 0.2
     FLAT_LINE_MARGIN = 0.1
     Y_AXIS_TICK_COUNT = 5
+    LEFT_AXIS_WIDTH = 60  # Fixed width for left axis in pixels
     
     # Font Size Constants
     TITLE_FONT_SIZE = 24
@@ -139,12 +140,15 @@ class PyQtVisualizer:
             p.showAxis('top')
             p.getAxis('top').setStyle(showValues=False)
 
-            # # Set up axis styling
+            # Set up axis styling
             for axis in ['left', 'bottom']:
                 ax = p.getAxis(axis)
                 ax.setTextPen('k')
                 ax.setPen('k')
                 ax.setTickFont(QtGui.QFont('Arial', self.TICK_FONT_SIZE))
+                if axis == 'left':
+                    # Set fixed width for left axis
+                    ax.setWidth(self.LEFT_AXIS_WIDTH)
             
             # Configure grid and axes
             p.showGrid(x=True, y=True)
