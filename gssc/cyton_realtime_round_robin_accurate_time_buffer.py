@@ -1260,7 +1260,7 @@ def main():
     # input_file = "data/test_data/segmend_of_real_data.csv"   
     # input_file = "data/test_data/gapped_data.csv"
     
-    input_file = "../data/test_data/consecutive_data.csv"
+    input_file = "data/test_data/consecutive_data.csv"
     data_acquisition = DataAcquisition(input_file)
     
     # Create minimal montage (without temporal channels and top/bottom EOG)
