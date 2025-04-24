@@ -5,6 +5,11 @@
 
 #todo: make sure it works for cyton and daisy
 #todo: scale graph better
+import os
+import sys
+# Add the parent directory to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import logging
 import time
 import os
@@ -26,6 +31,7 @@ import mne
 import warnings
 
 from gssc.utils import permute_sigs, prepare_inst, epo_arr_zscore, loudest_vote
+from pyqt_visualizer import PyQtVisualizer
 
 import torch
 
@@ -643,7 +649,7 @@ class BufferManager:
             for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
         ]
         self.signal_processor = SignalProcessor()
-        self.visualizer = Visualizer(self.seconds_per_epoch, self.board_shim, montage)
+        self.visualizer = PyQtVisualizer(self.seconds_per_epoch, self.board_shim, montage)
         self.expected_interval = 1.0 / sampling_rate
         self.timestamp_tolerance = self.expected_interval * 0.01  # 1% tolerance
         self.gap_threshold = 2.0  # Large gap threshold (seconds)
@@ -1254,17 +1260,23 @@ def main():
     # input_file = "data/test_data/segmend_of_real_data.csv"   
     # input_file = "data/test_data/gapped_data.csv"
     
-    input_file = "data/test_data/consecutive_data.csv"
+    input_file = "../data/test_data/consecutive_data.csv"
     data_acquisition = DataAcquisition(input_file)
     
     # Create minimal montage (without temporal channels and top/bottom EOG)
     montage = Montage.minimal_sleep_montage()
     
     # Set up output file path
-    output_dir = "data/processed"
+    output_dir = "../data/processed"
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = os.path.join(output_dir, f"processed_{timestamp}.csv")
+    
+    # Create PyQt application if it doesn't exist
+    if QtWidgets.QApplication.instance() is None:
+        pyqt_app = QtWidgets.QApplication([])
+    else:
+        pyqt_app = QtWidgets.QApplication.instance()
     
     try:
         # Setup and start board
@@ -1299,7 +1311,8 @@ def main():
         stream_processor = StreamProcessor(data_acquisition, buffer_manager)
         stream_processor.start_processing()
         
-        # Wait for processing to complete
+        # Start PyQt event loop and wait for processing to complete
+        pyqt_app.exec()
         stream_processor.wait_for_completion()
         
         # Save processed data to CSV
@@ -1323,7 +1336,7 @@ def main():
         print("\nCleaning up...")
         # Clean up visualization resources
         if 'buffer_manager' in locals() and buffer_manager.visualizer is not None:
-            buffer_manager.visualizer.release()
+            buffer_manager.visualizer.close()
         data_acquisition.release()
         print("Session ended")
 
