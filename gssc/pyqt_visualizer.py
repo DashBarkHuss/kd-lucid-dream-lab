@@ -202,15 +202,6 @@ class PyQtVisualizer:
         # Create time axis
         time_axis = np.arange(epoch_data.shape[1]) / sampling_rate + time_offset
 
-        # Log min/max values and height for each channel
-        print("\nChannel ranges and heights:")
-        for i, (data, label) in enumerate(zip(epoch_data, self.channel_labels)):
-            y_min = np.min(data)
-            y_max = np.max(data)
-            y_range = y_max - y_min
-            plot_height = self.plots[i].height()
-            print(f"{label}: min={y_min:.2f}, max={y_max:.2f}, range={y_range:.2f}, plot_height={plot_height}px")
-        
         # Update each channel's plot
         for i, (data, plot, curve) in enumerate(zip(epoch_data, self.plots, self.curves)):
             # Update curve data
@@ -233,28 +224,6 @@ class PyQtVisualizer:
             # Set axis ranges with proper tick marks
             plot.setYRange(y_min_with_margin, y_max_with_margin, padding=0)  # Added padding=0
             plot.setXRange(time_offset, time_offset + self.seconds_per_epoch, padding=0)  # Added padding=0
-            
-            # # Add black lines at top and bottom of plot
-            # if not hasattr(plot, 'border_lines'):
-            #     plot.border_lines = [
-            #         pg.InfiniteLine(pos=y_min_with_margin, angle=0, pen=pg.mkPen('r', width=1)),
-            #         pg.InfiniteLine(pos=y_max_with_margin, angle=0, pen=pg.mkPen('r', width=1))
-            #     ]
-            #     for line in plot.border_lines:
-            #         plot.addItem(line)
-            # else:
-            #     plot.border_lines[0].setPos(y_min_with_margin)
-            #     plot.border_lines[1].setPos(y_max_with_margin)
-            
-            # Get scene coordinates
-            view_box = plot.getViewBox()
-            scene_rect = view_box.sceneBoundingRect()
-            
-            # Log positions in scene coordinates
-            print(f"\nChannel {self.channel_labels[i]} positions:")
-            print(f"Scene Y start: {scene_rect.top():.1f}")
-            print(f"Scene Y end: {scene_rect.bottom():.1f}")
-            print(f"Scene height: {scene_rect.height():.1f}")
             
             # Update axis ticks
             y_ticks = np.linspace(y_min_with_margin, y_max_with_margin, self.Y_AXIS_TICK_COUNT)
