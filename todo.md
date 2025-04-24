@@ -83,7 +83,79 @@ we're now detecting gaps in all buffers. lets save the main buffer to a csv and 
 Tested the sythesized gapped data file. It works.
 Tested with real data. It works.
 
-Next we should alter the visualizer to show all 8 channels, see if filtering is necessary, compares the detection with the scored file, and handle the visualizatoin of the main buffer vs the other buffers: we updated the scoring every 5 seconds but really the main buffer is every 30 seconds.
+Next we should alter the visualizer to show all 8 channels,
+We did this.
+
+We need to refactor the main loop to be a separate class/method.
+
+State Management
+Currently, the code runs in a single continuous loop with no clear way to pause/resume
+We need to track the stream state (running/stopped)
+Need to handle buffer state preservation when stopping/starting
+
+Main Loop Refactoring
+The main processing loop should be moved into a separate class/method
+Need to add control flags for starting/stopping
+Should implement proper cleanup when stopping
+
+Data Acquisition Layer
+The DataAcquisition class needs methods for:
+start_stream()
+stop_stream()
+is_streaming()
+Need to handle proper resource cleanup
+
+Buffer Management
+The BufferManager needs to:
+Preserve buffer state when stopping
+Handle partial epochs when stopping
+Support resuming from last processed point
+
+Visualization Layer
+The Visualizer needs to:
+Handle plot updates when stopping/starting
+Preserve visualization state
+Support clearing/resetting when needed
+
+Error Handling
+Need to add proper error handling for:
+Stream interruption
+Buffer state corruption
+Resource cleanup failures
+
+Threading Considerations
+May need to implement threading for:
+Stream control
+UI updates
+Processing pipeline
+
+Interface Design
+Need to design a clean interface for:
+Starting/stopping the stream
+Checking stream status
+Getting current processing state
+
+what we did already:
+
+- Added Stream State Management:
+  - Added \_streaming flag to DataAcquisition class
+  - Added stop_stream() and is_streaming() methods
+  - Added proper stream state checks in data acquisition methods
+- Created StreamProcessor Class:
+  - Moved the main processing loop into a dedicated StreamProcessor class
+  - Added proper thread management with start/stop methods
+  - Improved error handling and logging
+  - Added iteration counting and debug output
+- Improved Main Function:
+  - Simplified the main function by using the new StreamProcessor
+  - Added proper cleanup and error handling
+  - Improved CSV validation and saving
+- Added Threading Support:
+  - Added threading imports
+  - Made the processing loop run in a separate thread
+  - Added proper thread cleanup
+
+see if filtering is necessary, compares the detection with the scored file, and handle the visualizatoin of the main buffer vs the other buffers: we updated the scoring every 5 seconds but really the main buffer is every 30 seconds.
 Need to Refactor.
 Need to set up tests better.
 
