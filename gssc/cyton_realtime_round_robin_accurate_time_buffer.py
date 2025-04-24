@@ -18,6 +18,56 @@ import datetime
 import threading
 import matplotlib
 import queue
+from typing import Optional
+import io
+import sys
+
+class ThreadSafeStreamHandler(logging.StreamHandler):
+    """A thread-safe stream handler that ensures atomic writes to the output stream."""
+    def __init__(self, stream=None):
+        super().__init__(stream)
+        self.lock = threading.Lock()
+
+    def emit(self, record):
+        """Emit a record in a thread-safe way."""
+        with self.lock:
+            try:
+                msg = self.format(record)
+                stream = self.stream or sys.stdout
+                # Ensure the message ends with exactly one newline
+                msg = msg.rstrip('\n') + '\n'
+                stream.write(msg)
+                stream.flush()
+            except Exception:
+                self.handleError(record)
+
+# Configure logging with thread-safe handler
+handler = ThreadSafeStreamHandler()
+handler.setFormatter(logging.Formatter(
+    fmt='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+))
+
+# Get the root logger and remove any existing handlers
+# we removed logger becuase it was causing hanging. we replaced it with print statements
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+for h in root_logger.handlers[:]:
+    root_logger.removeHandler(h)
+root_logger.addHandler(handler)
+
+# Create our module's logger
+logger = logging.getLogger(__name__)
+
+# Only suppress matplotlib font manager debug messages
+logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+
+# Keep brainflow board logger at INFO level for important messages
+board_logger = logging.getLogger('board_logger')
+board_logger.setLevel(logging.INFO)
+
+# Add a debug flag for verbose output
+DEBUG_MODE = True
 
 import pyqtgraph as pg
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds, BrainFlowPresets
@@ -42,22 +92,13 @@ import pandas as pd
 from montage import Montage
 
 # Add at the top of the file, after imports
-import logging
-logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
-
-# Add this as a global variable at the top of the file, after the imports
-global_fig = None
-global_axes = None
-
-# Add at the top of the file, after imports
-DEBUG_VERBOSE = False  # Set to True only when you need detailed debugging
-
-# Add after imports
-import logging
-logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)  # Suppress font manager debug messages
+import select
 
 # Add at the top with other globals
 global_recording_start_time = None
+
+# Add at the top with other imports
+DEBUG_VERBOSE = False  # Set to True only when you need detailed debugging
 
 class SignalProcessor:
     """Handles signal processing and sleep stage prediction"""
@@ -207,7 +248,7 @@ class VisualizationQueue:
             except queue.Empty:
                 continue
             except Exception as e:
-                logging.error(f"Error processing visualization update: {str(e)}")
+                logging.error(f"\rError processing visualization update: {str(e)}")
                 
     def add_update(self, epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time):
         """Add a visualization update to the queue"""
@@ -428,87 +469,114 @@ class DataAcquisition:
     
     def setup_board(self):
         """Initialize and setup the board for data collection"""
-        BoardShim.enable_dev_board_logger()
-        logging.basicConfig(level=logging.DEBUG)
-
-        params = BrainFlowInputParams()
-        params.board_id = BoardIds.PLAYBACK_FILE_BOARD
-        params.master_board = self.master_board_id  # Use class variable
-        params.file = self.file_path
-        params.playback_file_max_count = 1
-        params.playback_speed = 1
-        params.playback_file_offset = 0
-
-        self.board_shim = BoardShim(BoardIds.PLAYBACK_FILE_BOARD, params)
-        
         try:
+            print("\rStarting board setup...")
+            BoardShim.enable_dev_board_logger()
+            
+            print("\rInitializing board parameters...")
+            params = BrainFlowInputParams()
+            params.board_id = BoardIds.PLAYBACK_FILE_BOARD
+            params.master_board = self.master_board_id
+            params.file = self.file_path
+            params.playback_file_max_count = 1
+            params.playback_speed = 1
+            params.playback_file_offset = 0
+
+            print("\rBoard Parameters Configuration:")
+            print(f"\r- Board ID: {params.board_id} (PLAYBACK_FILE_BOARD)")
+            print(f"\r- Master Board: {params.master_board} (CYTON_DAISY_BOARD)")
+            print(f"\r- File Path: {params.file}")
+            print(f"\r- Playback File Max Count: {params.playback_file_max_count}")
+            print(f"\r- Playback Speed: {params.playback_speed}")
+            print(f"\r- Playback File Offset: {params.playback_file_offset}")
+            
+            print(f"\rCreating board with parameters...")
+            self.board_shim = BoardShim(BoardIds.PLAYBACK_FILE_BOARD, params)
+            print("\rBoard created successfully")
+            
+            print("\rPreparing board session...")
             self.board_shim.prepare_session()
+            print("\rBoard session prepared successfully")
+            
             # Get sampling rate and timestamp channel from master board, not playback board
+            print("\rGetting board configuration...")
             self.sampling_rate = BoardShim.get_sampling_rate(self.master_board_id)
             self.timestamp_channel = BoardShim.get_timestamp_channel(self.master_board_id)
             
-            print(f"\nBoard Configuration:")
-            print(f"Master board: {self.master_board_id}")
-            print(f"Timestamp channel: {self.timestamp_channel}")
-            print(f"Sampling rate: {self.sampling_rate}")
+            print("\rBoard Configuration:")
+            print(f"\r- Master board ID: {self.master_board_id}")
+            print(f"\r- Timestamp channel: {self.timestamp_channel}")
+            print(f"\r- Sampling rate: {self.sampling_rate}")
             
+            print("\rConfiguring board for old timestamps...")
             self.board_shim.config_board("old_timestamps")
+            print("\rBoard configured for old timestamps")
 
             # Load the entire file data at initialization
+            print(f"\rLoading data from file: {self.file_path}")
             self.file_data = pd.read_csv(self.file_path, sep='\t', dtype=float)
-            print(f"Loaded file with {len(self.file_data)} samples")
+            print(f"\rLoaded file with {len(self.file_data)} samples")
             
+            print("\rBoard setup completed successfully")
             return self.board_shim
             
         except Exception as e:
-            logging.error(f"Failed to setup board: {str(e)}")
+            print(f"\rFailed to setup board: {str(e)}")
+            if DEBUG_MODE:
+                print(f"\rDetailed error information: {str(e)}")
             raise
 
     def start_stream(self):
         """Start the data stream"""
         if not self.board_shim:
-            raise RuntimeError("Board not initialized. Call setup_board first.")
+            raise RuntimeError("\rBoard not initialized. Call setup_board first.")
         
         if self._streaming:
-            logging.warning("Stream is already running")
+            print("\rStream is already running")
             return
             
         try:
-            print("\nStarting data stream:")
-            print(f"- Buffer size: {self.buffer_size}")
-            print(f"- Sampling rate: {self.sampling_rate}")
-            print(f"- Timestamp channel: {self.timestamp_channel}")
+            print("\rStarting data stream...")
+            print(f"\rBuffer size: {self.buffer_size}")
+            print(f"\rSampling rate: {self.sampling_rate}")
+            print(f"\rTimestamp channel: {self.timestamp_channel}")
             
+            print("\rCalling board_shim.start_stream()...")
             self.board_shim.start_stream(self.buffer_size)
             self._streaming = True
+            print("\rStream started successfully")
             
             # Initialize recording_start_time as None - we'll set it when we get the first data packet
             self.recording_start_time = None
             
             # Wait briefly for stream to start
+            print("\rWaiting for stream to initialize...")
             time.sleep(0.1)
             
             initial_count = self.board_shim.get_board_data_count()
+            print(f"\rInitial data count after stream start: {initial_count}")
             return initial_count
             
         except Exception as e:
             self._streaming = False
-            logging.error(f"Failed to start stream: {str(e)}")
+            print(f"\rFailed to start stream: {str(e)}")
+            if DEBUG_MODE:
+                print("\rDetailed error information:")
             raise
 
     def stop_stream(self):
         """Stop the data stream"""
         if not self._streaming:
-            logging.warning("Stream is not running")
+            print("\rStream is not running")
             return
             
         try:
             if self.board_shim and self.board_shim.is_prepared():
                 self.board_shim.stop_stream()
                 self._streaming = False
-                logging.info("Stream stopped successfully")
+                print("\rStream stopped successfully")
         except Exception as e:
-            logging.error(f"Failed to stop stream: {str(e)}")
+            print(f"\rFailed to stop stream: {str(e)}")
             raise
 
     def is_streaming(self):
@@ -523,30 +591,32 @@ class DataAcquisition:
         try:
             # Log data count before getting data
             data_count = self.board_shim.get_board_data_count()
-            print(f"\nAttempting to get initial data:")
-            print(f"- Available data count: {data_count}")
+            print(f"\rAttempting to get initial data. Available data count: {data_count}")
             
             if data_count > 0:
+                print(f"\rGetting {data_count} samples of initial data...")
                 # Get all available data
                 initial_data = self.board_shim.get_board_data(data_count)
 
                 # Log details about the retrieved data
                 if initial_data.size <= 0:
-                    print("- get_board_data returned empty array despite positive count!")
+                    print("\rget_board_data returned empty array despite positive count!")
                 else:
+                    print(f"\rRetrieved initial data shape: {initial_data.shape}")
                     # For streaming, set recording_start_time to the first timestamp if not already set
                     if self.recording_start_time is None and self.timestamp_channel is not None:
                         self.recording_start_time = initial_data[self.timestamp_channel][0]
-                        print(f"- Set recording start time to: {self.recording_start_time}")
+                        print(f"\rSet recording start time to: {self.recording_start_time}")
                     
                 return initial_data
             else:
+                print("\rNo initial data available (data count is 0)")
                 return np.array([])
             
         except Exception as e:
-            logging.error(f"Failed to get initial data: {str(e)}")
-            print(f"- Exception details: {str(e)}")
-            print(f"- Exception type: {type(e)}")
+            print(f"\rFailed to get initial data: {str(e)}")
+            if DEBUG_MODE:
+                print("\rDetailed error information:")
             raise
 
     def get_channel_info(self):
@@ -583,14 +653,13 @@ class DataAcquisition:
                     
                     return new_data
                 else:
-                    print("- get_board_data returned empty array despite positive count!")
+                    print("\rget_board_data returned empty array despite positive count!")
                     return np.array([])
             else:
                 return np.array([])
             
         except Exception as e:
-            logging.error(f"Failed to get new data: {str(e)}")
-            print(f"- Exception details: {str(e)}")
+            print(f"\rFailed to get new data: {str(e)}")
             raise
 
     def release(self):
@@ -601,9 +670,9 @@ class DataAcquisition:
                     self.stop_stream()
                 self.board_shim.release_session()
                 self._streaming = False
-                logging.info('Session released successfully')
+                print("\rSession released successfully")
             except Exception as e:
-                logging.error(f"Failed to release session: {str(e)}")
+                print(f"\rFailed to release session: {str(e)}")
                 raise
 
 class BufferManager:
@@ -702,7 +771,7 @@ class BufferManager:
         adjusted_channel_idx = channel_idx + 1
             
         if adjusted_channel_idx >= len(data):
-            return False, f"Channel index {adjusted_channel_idx} out of range"
+            return False, f"\rChannel index {adjusted_channel_idx} out of range"
             
         channel_data = data[adjusted_channel_idx]
         
@@ -714,12 +783,12 @@ class BufferManager:
         # Check if the new data starts where the last data ended
         expected_next_value = self.last_validated_value + 1
         if channel_data[0] != expected_next_value:
-            return False, f"Non-consecutive data detected. Expected {expected_next_value}, got {channel_data[0]}"
+            return False, f"\rNon-consecutive data detected. Expected {expected_next_value}, got {channel_data[0]}"
             
         # Check if all values in the chunk are consecutive
         for i in range(1, len(channel_data)):
             if channel_data[i] != channel_data[i-1] + 1:
-                return False, f"Non-consecutive data within chunk at index {i}. Expected {channel_data[i-1] + 1}, got {channel_data[i]}"
+                return False, f"\rNon-consecutive data within chunk at index {i}. Expected {channel_data[i-1] + 1}, got {channel_data[i]}"
                 
         # Update last validated value
         self.last_validated_value = channel_data[-1]
@@ -729,7 +798,7 @@ class BufferManager:
         """Add new data to the buffer"""
         # Validate data values
         if np.any(np.isnan(new_data)) or np.any(np.isinf(new_data)):
-            logging.warning("Data contains NaN or infinite values!")
+            logging.warning("\rData contains NaN or infinite values!")
             return False
             
         # Validate consecutive values if enabled
@@ -737,7 +806,7 @@ class BufferManager:
             is_valid, message = self.validate_consecutive_data(new_data)
             if not is_valid:
                 #  throw an exception
-                raise Exception(f"Consecutive value validation failed: {message}")
+                raise Exception(f"\rConsecutive value validation failed: {message}")
             
         # Update points collected
         self.points_collected += len(new_data[0])
@@ -899,9 +968,9 @@ class BufferManager:
     def _process_epoch(self, start_idx, end_idx, buffer_id):
         """Handle the data for a specified epoch on a specified buffer which has valid data."""        
         
-        print(f"\nProcessing buffer {buffer_id}")
-        print(f"Epoch range: {start_idx} to {end_idx}")
-        print(f"Buffer {buffer_id}: Epoch range: {start_idx * self.expected_interval} to {end_idx * self.expected_interval} seconds")
+        print(f"\rProcessing buffer {buffer_id}")
+        print(f"\rEpoch range: {start_idx} to {end_idx}")
+        print(f"\rBuffer {buffer_id}: Epoch range: {start_idx * self.expected_interval} to {end_idx * self.expected_interval} seconds")
         
         # Extract EXACTLY points_per_epoch data points from the correct slice
         epoch_data = np.array([
@@ -922,7 +991,7 @@ class BufferManager:
             self.buffer_hidden_states[buffer_id]
         )
         
-        print(f"Sleep stage: {self.visualizer.get_sleep_stage_text(sleep_stage[0])}")
+        print(f"\rSleep stage: {self.visualizer.get_sleep_stage_text(sleep_stage[0])}")
         
         # Update visualization using Visualizer
         time_offset = start_idx / self.sampling_rate
@@ -940,7 +1009,7 @@ class BufferManager:
         """Save raw data to CSV file"""
         self.output_csv_path = output_path
         if not self.saved_data:
-            print("No data to save")
+            print("\rNo data to save")
             return False
             
         try:
@@ -953,10 +1022,10 @@ class BufferManager:
             
             # Save with exact format matching
             np.savetxt(output_path, data_array, delimiter='\t', fmt=fmt)
-            print(f"Data saved to {output_path}")
+            print(f"\rData saved to {output_path}")
             return True
         except Exception as e:
-            print(f"Error saving to CSV: {str(e)}")
+            print(f"\rError saving to CSV: {str(e)}")
             return False
 
     def validate_saved_csv(self, original_csv_path):
@@ -972,22 +1041,22 @@ class BufferManager:
             
             # Check number of lines
             if len(saved_lines) != len(original_lines):
-                print(f"❌ Line count mismatch: Original={len(original_lines)}, Saved={len(saved_lines)}")
+                print(f"\r❌ Line count mismatch: Original={len(original_lines)}, Saved={len(saved_lines)}")
                 return False
-            print(f"✅ Line count matches: {len(original_lines)} lines")
+            print(f"\r✅ Line count matches: {len(original_lines)} lines")
             
             # Compare each line exactly
             for i, (saved_line, original_line) in enumerate(zip(saved_lines, original_lines)):
                 if saved_line != original_line:
-                    print(f"❌ Line {i+1} does not match exactly:")
-                    print(f"Original: {original_line.strip()}")
-                    print(f"Saved:    {saved_line.strip()}")
+                    print(f"\r❌ Line {i+1} does not match exactly:")
+                    print(f"\rOriginal: {original_line.strip()}")
+                    print(f"\rSaved:    {saved_line.strip()}")
                     return False
             
-            print("✅ All lines match exactly")
+            print("\r✅ All lines match exactly")
             return True
         except Exception as e:
-            print(f"Error validating CSV: {str(e)}")
+            print(f"\rError validating CSV: {str(e)}")
             return False
 
     def _get_affected_buffer(self, timestamp):
@@ -1080,7 +1149,7 @@ class BufferManager:
                 torch.zeros(10, 1, 256) for _ in range(7)
             ]
             
-            print(f"Buffer {buffer_id} reset complete - hidden states cleared")
+            print(f"\rBuffer {buffer_id} reset complete - hidden states cleared")
 
     def _get_next_epoch_indices(self, buffer_id):
         """Get the start and end indices for a buffers next epoch based on the last processed epoch plus the points per epoch.
@@ -1126,78 +1195,44 @@ class StreamProcessor:
         self.consecutive_empty_count = 0
         self.sleep_time = 0.1
         self.iteration_count = 0
+        self._timestamp_thread = None
+        self._timestamp_running = False
+        self.output_lock = threading.Lock()
+        self._new_data_received = False  # Flag to track new data
         
-    def start_processing(self):
-        """Start the processing loop"""
-        if self._processing:
-            logging.warning("Processing is already running")
-            return
-            
-        self._processing = True
-        # Start processing in a separate thread
-        self._processing_thread = threading.Thread(target=self._process_loop)
-        self._processing_thread.daemon = True  # Make thread daemon so it exits when main thread exits
-        self._processing_thread.start()
-        
-    def stop_processing(self):
-        """Stop the processing loop"""
-        if not self._processing:
-            logging.warning("Processing is not running")
-            return
-            
-        self._processing = False
-        if self._processing_thread and self._processing_thread.is_alive():
-            self._processing_thread.join(timeout=1.0)  # Wait up to 1 second for thread to finish
-            self._processing_thread = None
-            
-    def is_processing(self):
-        """Check if processing is currently running"""
-        return self._processing
-        
-    def wait_for_completion(self):
-        """Wait for the processing thread to complete"""
-        if self._processing_thread and self._processing_thread.is_alive():
-            self._processing_thread.join()
-            
+    def _timestamp_loop(self):
+        """Thread for handling timestamp output"""
+        while self._timestamp_running:
+            try:
+                if self.data_acquisition.last_chunk_last_timestamp is not None and self._new_data_received:
+                    total_duration = self.data_acquisition.last_chunk_last_timestamp - self.data_acquisition.recording_start_time
+                    hours = int(total_duration // 3600)
+                    minutes = int((total_duration % 3600) // 60)
+                    seconds = total_duration % 60
+                    with self.output_lock:
+                        print(f"\rTimestamps: Total={hours}h {minutes}m {seconds:.3f}s")
+                    self._new_data_received = False  # Reset the flag after showing timestamp
+                time.sleep(0.1)
+            except Exception as e:
+                print(f"\rTimestamp thread error: {str(e)}")
+                
     def _process_loop(self):
         """Main processing loop"""
         while self._processing:
             self.iteration_count += 1
             if DEBUG_VERBOSE:
-                print(f"\nIteration {self.iteration_count}:")
+                print(f"\rIteration {self.iteration_count}")
             
             try:
                 # Get new data
                 new_data = self.data_acquisition.get_new_data()
                 
-                # Log timestamps if we have data
-                if new_data.size > 0 and self.data_acquisition.timestamp_channel is not None:
-                    start_timestamp = new_data[self.data_acquisition.timestamp_channel][0]
-                    end_timestamp = new_data[self.data_acquisition.timestamp_channel][-1]
-                    
-                    # Set recording start time if not set
-                    if self.data_acquisition.recording_start_time is None:
-                        self.data_acquisition.recording_start_time = start_timestamp
-                    
-                    # Calculate total duration from start
-                    total_duration = end_timestamp - self.data_acquisition.recording_start_time
-                    hours = int(total_duration // 3600)
-                    minutes = int((total_duration % 3600) // 60)
-                    seconds = total_duration % 60
-                    
-                    # Calculate chunk duration
-                    chunk_duration = end_timestamp - start_timestamp
-                    
-                    # Use \r to return to start of line and \033[2K to clear the line
-                    print(f"\r\033[2KTimestamps: Start={start_timestamp:.3f}s, End={end_timestamp:.3f}s, Chunk={chunk_duration:.3f}s, Total={hours}h {minutes}m {seconds:.3f}s", end="", flush=True)
-                
                 # Handle empty or invalid data
                 if new_data.size == 0:
                     self.consecutive_empty_count += 1
                     self.sleep_time = min(1.0, self.sleep_time * 1.5)
-                    last_timestamp = self.data_acquisition.last_chunk_last_timestamp
-                    timestamp_str = f"Last timestamp: {last_timestamp:.3f}s" if last_timestamp is not None else "No previous timestamp"
-                    print(f"\r\033[2KNo data received. Sleeping for {self.sleep_time:.2f}s. {timestamp_str} Empty count: {self.consecutive_empty_count}", end="", flush=True)
+                    with self.output_lock:
+                        print(f"\rNo data received. Sleeping for {self.sleep_time:.2f}s. Empty count: {self.consecutive_empty_count}")
                     time.sleep(self.sleep_time)
                     continue
                 
@@ -1205,6 +1240,7 @@ class StreamProcessor:
                 if self.buffer_manager.add_data(new_data):
                     # Save data first, before any processing
                     self.buffer_manager.save_new_data(new_data)
+                    self._new_data_received = True  # Set flag when new data is received
                     
                     # Then try to process
                     self.consecutive_empty_count = 0
@@ -1215,13 +1251,9 @@ class StreamProcessor:
                     can_process, reason, epoch_start_idx, epoch_end_idx = self.buffer_manager.next_available_epoch_on_buffer(next_buffer_id)
 
                     if can_process:
-                        # Process the buffer
-                        print("\r\033[2K", end="", flush=True)  # Clear the entire line
                         self.buffer_manager.manage_epoch(buffer_id=next_buffer_id, epoch_start_idx=epoch_start_idx, epoch_end_idx=epoch_end_idx)
                 else:
-                    print("\r\033[2K", end="", flush=True)  # Clear the entire line
-                    print("\nFailed to add new data to buffer:")
-                    print(f"- Data shape: {new_data.shape}")
+                    print(f"\rFailed to add new data to buffer. Data shape: {new_data.shape}")
                     # Still try to save the data even if processing failed
                     self.buffer_manager.save_new_data(new_data)
                     continue
@@ -1230,116 +1262,267 @@ class StreamProcessor:
                 if (self.data_acquisition.file_data is not None and 
                     self.data_acquisition.last_chunk_last_timestamp is not None and 
                     self.data_acquisition.last_chunk_last_timestamp >= self.data_acquisition.file_data.iloc[-1, self.data_acquisition.timestamp_channel]):
-                    print()  # Add newline to clean up the last timestamp log
-                    print(f"\nReached end of file:")
-                    print(f"- Final timestamp: {self.data_acquisition.last_chunk_last_timestamp}")
-                    print(f"- Total iterations: {self.iteration_count}")
-                    self.stop_processing()
+                    print(f"\rReached end of file. Final timestamp: {self.data_acquisition.last_chunk_last_timestamp}. Total iterations: {self.iteration_count}")
+                    self._processing = False
                     break
                     
                 time.sleep(0.1)
                 
             except Exception as e:
-                logging.error(f"Error in processing loop: {str(e)}")
-                self.stop_processing()
+                print(f"\rError in processing loop: {str(e)}")
+                self._processing = False
                 raise
+                
+    def start_processing(self):
+        """Start the processing loop"""
+        if self._processing:
+            print("\rProcessing is already running")
+            return
+            
+        self._processing = True
+        self._timestamp_running = True
+        # Start processing in a separate thread
+        self._processing_thread = threading.Thread(target=self._process_loop)
+        self._processing_thread.daemon = True
+        self._processing_thread.start()
+        
+        # Start timestamp thread
+        self._timestamp_thread = threading.Thread(target=self._timestamp_loop)
+        self._timestamp_thread.daemon = True
+        self._timestamp_thread.start()
+        
+    def stop_processing(self):
+        """Stop the processing loop"""
+        if not self._processing:
+            print("\rProcessing is not running")
+            return
+            
+        # Signal the threads to stop
+        self._processing = False
+        self._timestamp_running = False
+        
+        # Only try to join if we're not in the processing thread
+        if (self._processing_thread and 
+            self._processing_thread.is_alive() and 
+            threading.current_thread() != self._processing_thread):
+            self._processing_thread.join(timeout=1.0)
+            
+        if (self._timestamp_thread and 
+            self._timestamp_thread.is_alive() and 
+            threading.current_thread() != self._timestamp_thread):
+            self._timestamp_thread.join(timeout=1.0)
+        
+        self._processing_thread = None
+        self._timestamp_thread = None
 
-def update_status_line(message):
-    """Update a single line of output, overwriting the previous line"""
-    print(f"\r{message}", end="", flush=True)
+class ApplicationState:
+    """Manages the application state and lifecycle"""
+    def __init__(self):
+        self.running = False
+        self.streaming = False
+        self.processing = False
+        self.error = None
+        self.should_restart = False
+        self.should_quit = False
+
+class ApplicationManager:
+    """Manages the application lifecycle and resources"""
+    def __init__(self, input_file: str):
+        self.state = ApplicationState()
+        self.input_file = input_file
+        self.data_acquisition = None
+        self.buffer_manager = None
+        self.stream_processor = None
+        self.pyqt_app = None
+        self.montage = Montage.minimal_sleep_montage()
+        
+        # Setup output directory
+        self.output_dir = "../data/processed"
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.output_file = os.path.join(self.output_dir, f"processed_{self.timestamp}.csv")
+        
+    def initialize(self):
+        """Initialize the application"""
+        try:
+            # Initialize PyQt application
+            self.pyqt_app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+            
+            # Initialize data acquisition
+            self.data_acquisition = DataAcquisition(self.input_file)
+            board_shim = self.data_acquisition.setup_board()
+            
+            # Initialize buffer manager
+            self.buffer_manager = BufferManager(
+                board_shim, 
+                self.data_acquisition.sampling_rate, 
+                self.montage
+            )
+            self.data_acquisition.set_buffer_manager(self.buffer_manager)
+            
+            # Initialize stream processor
+            self.stream_processor = StreamProcessor(
+                self.data_acquisition, 
+                self.buffer_manager
+            )
+            
+            self.state.running = True
+            return True
+            
+        except Exception as e:
+            self.state.error = str(e)
+            print(f"\rInitialization failed: {str(e)}")
+            return False
+            
+    def start_stream(self):
+        """Start the data stream and processing"""
+        try:
+            # Start data stream
+            initial_count = self.data_acquisition.start_stream()
+            self.state.streaming = True
+            
+            # Wait for initial data
+            time.sleep(0.5)
+            initial_data = self.data_acquisition.get_initial_data()
+            
+            if initial_data.size > 0:
+                success = self.buffer_manager.add_data(initial_data, is_initial=True)
+                if success:
+                    self.buffer_manager.save_new_data(initial_data, is_initial=True)
+                print(f"\rInitial data processing: {'Success' if success else 'Failed'}")
+            
+            # Start processing
+            self.stream_processor.start_processing()
+            self.state.processing = True
+            return True
+            
+        except Exception as e:
+            self.state.error = str(e)
+            print(f"\rFailed to start stream: {str(e)}")
+            return False
+            
+    def stop_stream(self):
+        """Stop the data stream and processing"""
+        try:
+            if self.state.processing:
+                self.stream_processor.stop_processing()
+                self.state.processing = False
+                
+            if self.state.streaming:
+                self.data_acquisition.stop_stream()
+                self.state.streaming = False
+                
+            return True
+            
+        except Exception as e:
+            self.state.error = str(e)
+            print(f"\rFailed to stop stream: {str(e)}")
+            return False
+            
+    def cleanup(self):
+        """Clean up all resources"""
+        try:
+            if self.state.processing:
+                self.stop_stream()
+            
+            if self.buffer_manager and self.buffer_manager.visualizer:
+                # Stop timers in the main thread
+                if self.buffer_manager.visualizer.timer:
+                    self.buffer_manager.visualizer.timer.stop()
+                if self.buffer_manager.visualizer.countdown_timer:
+                    self.buffer_manager.visualizer.countdown_timer.stop()
+                self.buffer_manager.visualizer.close()
+                
+            if self.data_acquisition:
+                self.data_acquisition.release()
+                
+            # Save processed data
+            if self.buffer_manager:
+                if self.buffer_manager.save_to_csv(self.output_file):
+                    print(f"\rData saved to {self.output_file}")
+                    if self.buffer_manager.validate_saved_csv(self.input_file):
+                        print("\rCSV validation passed")
+                    else:
+                        print("\rCSV validation failed")
+                        
+        except Exception as e:
+            print(f"\rCleanup failed: {str(e)}")
+            
+    def run(self):
+        """Main application loop"""
+        try:
+            if not self.initialize():
+                print("\rInitialization failed. Exiting...")
+                return
+                
+            # Set terminal to raw mode for immediate key input
+            import termios
+            import tty
+            old_settings = termios.tcgetattr(sys.stdin)
+            tty.setraw(sys.stdin.fileno())
+            
+            while self.state.running:
+                if not self.start_stream():
+                    break
+                    
+                print("\rPress 'k' to restart the stream, 'q' to quit")
+                
+                while self.state.processing:
+                    self.pyqt_app.processEvents()
+                    
+                    # Check for keyboard input
+                    if select.select([sys.stdin], [], [], 0.1)[0]:
+                        key = sys.stdin.read(1).lower()
+                        if key == 'k':
+                            print("\rRestarting stream...")
+                            # Properly cleanup before reinitializing
+                            self.cleanup()
+                            # Reset state
+                            self.state = ApplicationState()
+                            # Reinitialize everything
+                            if not self.initialize():
+                                print("\rFailed to reinitialize. Exiting...")
+                                self.state.running = False
+                                break
+                            # Break out of the inner loop to restart the stream
+                            break
+                        elif key == 'q':
+                            print("\rQuitting...")
+                            self.state.running = False
+                            break
+                    
+                    # Add a small delay to prevent CPU overuse
+                    time.sleep(0.1)
+                            
+                if not self.state.running:
+                    break
+                    
+        except Exception as e:
+            print(f"\rApplication error: {str(e)}")
+        finally:
+            # Restore terminal settings
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+            self.cleanup()
 
 def main():
-
-    # Create data acquisition instance
-    # input_file = "data/cyton_BrainFlow-gap_short.csv"
-    # input_file = "gssc/sandbox/test_data"
-    # input_file = "data/tiny_gap.csv"
-    # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
-    # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0 copy.csv"   
-    # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
-    # input_file = "data/test_data/segmend_of_real_data.csv"   
-    # input_file = "data/test_data/gapped_data.csv"
-    
-    input_file = "data/test_data/consecutive_data.csv"
-    data_acquisition = DataAcquisition(input_file)
-    
-    # Create minimal montage (without temporal channels and top/bottom EOG)
-    montage = Montage.minimal_sleep_montage()
-    
-    # Set up output file path
-    output_dir = "../data/processed"
-    os.makedirs(output_dir, exist_ok=True)
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = os.path.join(output_dir, f"processed_{timestamp}.csv")
-    
-    # Create PyQt application if it doesn't exist
-    if QtWidgets.QApplication.instance() is None:
-        pyqt_app = QtWidgets.QApplication([])
-    else:
-        pyqt_app = QtWidgets.QApplication.instance()
-    
+    """Main entry point"""
     try:
-        # Setup and start board
-        board_shim = data_acquisition.setup_board()
-        print("\nBoard setup complete")
+        # Test data files - uncomment the one you want to use
+        # input_file = "data/cyton_BrainFlow-gap_short.csv"
+        # input_file = "gssc/sandbox/test_data"
+        # input_file = "data/tiny_gap.csv"
+        # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
+        input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0 copy.csv"    
+        # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
+        # input_file = "data/test_data/segmend_of_real_data.csv"   
+        # input_file = "data/test_data/gapped_data.csv" 
+        # input_file = "data/test_data/consecutive_data.csv"
         
-        initial_count = data_acquisition.start_stream()
-        print("\nStream started successfully")
-        
-        # Create buffer manager with montage
-        buffer_manager = BufferManager(board_shim, data_acquisition.sampling_rate, montage)
-        data_acquisition.set_buffer_manager(buffer_manager)
-        buffer_manager.visualizer.recording_start_time = data_acquisition.recording_start_time
-        
-        # Wait a short time for initial data
-        print("\nWaiting for initial data...")
-        time.sleep(0.5)
-        
-        # Get initial data
-        initial_data = data_acquisition.get_initial_data()
-        if initial_data.size > 0:
-            success = buffer_manager.add_data(initial_data, is_initial=True)
-            if success:
-                buffer_manager.save_new_data(initial_data, is_initial=True)
-            print(f"\nInitial data processing:")
-            print(f"- Added to buffer: {'Success' if success else 'Failed'}")
-            print(f"- Samples: {len(initial_data[0])}")
-        else:
-            print("\nWarning: No initial data available")
-        
-        # Create stream processor
-        stream_processor = StreamProcessor(data_acquisition, buffer_manager)
-        stream_processor.start_processing()
-        
-        # Start PyQt event loop and wait for processing to complete
-        pyqt_app.exec()
-        stream_processor.wait_for_completion()
-        
-        # Save processed data to CSV
-        print("\nSaving processed data to CSV...")
-        if buffer_manager.save_to_csv(output_file):
-            print(f"Data saved to {output_file}")
-            
-            # Validate saved CSV
-            print("\nValidating saved CSV...")
-            if buffer_manager.validate_saved_csv(input_file):
-                print("✅ CSV validation passed!")
-            else:
-                print("❌ CSV validation failed!")
-        
-    except BaseException as e:
-        print()  # Add newline to clean up the last timestamp log
-        logging.warning('Exception occurred:', exc_info=True)
-        print(f"\nError: {str(e)}")
-    finally:
-        print()  # Add newline to clean up the last timestamp log
-        print("\nCleaning up...")
-        # Clean up visualization resources
-        if 'buffer_manager' in locals() and buffer_manager.visualizer is not None:
-            buffer_manager.visualizer.close()
-        data_acquisition.release()
-        print("Session ended")
-
+        app_manager = ApplicationManager(input_file)
+        app_manager.run()
+    except Exception as e:
+        print(f"\rFatal error: {str(e)}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
