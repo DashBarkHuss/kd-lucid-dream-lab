@@ -471,7 +471,19 @@ class DataAcquisition:
         """Initialize and setup the board for data collection"""
         try:
             print("\rStarting board setup...")
-            BoardShim.enable_dev_board_logger()
+            
+            # Set environment variable to unblock threads if operations hang
+            os.environ['PYDEVD_UNBLOCK_THREADS_TIMEOUT'] = '2'
+            
+            print("\rInitializing board logger...")
+            # Run enable_dev_board_logger in a separate thread with timeout
+            logger_thread = threading.Thread(target=BoardShim.enable_dev_board_logger)
+            logger_thread.daemon = True
+            logger_thread.start()
+            logger_thread.join(timeout=2.0)  # Wait up to 2 seconds
+            
+            if logger_thread.is_alive():
+                print("\rWarning: BoardShim.enable_dev_board_logger() is taking too long, continuing setup...")
             
             print("\rInitializing board parameters...")
             params = BrainFlowInputParams()
@@ -495,7 +507,18 @@ class DataAcquisition:
             print("\rBoard created successfully")
             
             print("\rPreparing board session...")
-            self.board_shim.prepare_session()
+            # Run prepare_session in a separate thread with timeout
+            prepare_thread = threading.Thread(target=self.board_shim.prepare_session)
+            prepare_thread.daemon = True
+            prepare_thread.start()
+            prepare_thread.join(timeout=2.0)  # Wait up to 2 seconds
+            
+            if prepare_thread.is_alive():
+                print("\rWarning: prepare_session() is taking too long, forcing cleanup...")
+                # If we get here, prepare_session is stuck
+                self.board_shim = None
+                raise RuntimeError("prepare_session() timed out")
+            
             print("\rBoard session prepared successfully")
             
             # Get sampling rate and timestamp channel from master board, not playback board
@@ -572,11 +595,49 @@ class DataAcquisition:
             
         try:
             if self.board_shim and self.board_shim.is_prepared():
-                self.board_shim.stop_stream()
-                self._streaming = False
-                print("\rStream stopped successfully")
+                # Check if we're in a gap by looking at stream processor's consecutive empty count
+                # We can access it through buffer_manager since it has a reference to stream_processor
+                in_gap = (hasattr(self.buffer_manager, 'stream_processor') and 
+                         self.buffer_manager.stream_processor and 
+                         self.buffer_manager.stream_processor.consecutive_empty_count > 0)
+                
+                if in_gap:
+                    print("\rDetected gap, forcing session release...")
+                    try:
+                        # Set environment variable to unblock threads if release hangs
+                        os.environ['PYDEVD_UNBLOCK_THREADS_TIMEOUT'] = '1'
+                        # Try release with a timeout using threading
+                        release_thread = threading.Thread(target=self.board_shim.release_session)
+                        release_thread.daemon = True
+                        release_thread.start()
+                        release_thread.join(timeout=2.0)  # Wait up to 2 seconds
+                        
+                        if release_thread.is_alive():
+                            print("\rRelease session taking too long, forcing cleanup...")
+                            # If we get here, release_session is stuck
+                            # Force cleanup by nullifying the board
+                            self.board_shim = None
+                            self._streaming = False
+                        else:
+                            # Release completed successfully
+                            print("\rSession released successfully")
+                            # Prepare new session
+                            self.setup_board()
+                    except Exception as e:
+                        print(f"\rError during forced release: {str(e)}")
+                        self.board_shim = None
+                        self._streaming = False
+                else:
+                    # Normal clean stop if we're not in a gap
+                    self.board_shim.stop_stream()
+                    self._streaming = False
+                    print("\rStream stopped successfully")
+                
         except Exception as e:
             print(f"\rFailed to stop stream: {str(e)}")
+            # Force cleanup on any error
+            self.board_shim = None
+            self._streaming = False
             raise
 
     def is_streaming(self):
@@ -733,6 +794,10 @@ class BufferManager:
         self.saved_data = []
         self.output_csv_path = None
         self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
+        self.shutdown_event = threading.Event()  # For signaling threads to stop
+        self.threads_stopped = threading.Event()  # For threads to signal they've stopped
+        self.active_threads = 0  # Counter for active threads
+        self.thread_lock = threading.Lock()  # For thread counter synchronization
 
     def _init_channels(self):
         """Initialize channel information"""
@@ -1366,6 +1431,9 @@ class ApplicationManager:
                 self.buffer_manager
             )
             
+            # Add this line after creating stream_processor
+            self.buffer_manager.stream_processor = self.stream_processor
+            
             self.state.running = True
             return True
             
@@ -1405,8 +1473,9 @@ class ApplicationManager:
         """Stop the data stream and processing"""
         try:
             if self.state.processing:
-                self.stream_processor.stop_processing()
-                self.state.processing = False
+                if self.stream_processor:
+                    self.stream_processor.stop_processing()
+                    self.state.processing = False
                 
             if self.state.streaming:
                 self.data_acquisition.stop_stream()
@@ -1512,7 +1581,7 @@ def main():
         # input_file = "gssc/sandbox/test_data"
         # input_file = "data/tiny_gap.csv"
         # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
-        input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0 copy.csv"    
+        input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv"    
         # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
         # input_file = "data/test_data/segmend_of_real_data.csv"   
         # input_file = "data/test_data/gapped_data.csv" 
