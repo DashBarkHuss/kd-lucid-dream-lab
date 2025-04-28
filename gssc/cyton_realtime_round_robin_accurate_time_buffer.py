@@ -21,6 +21,9 @@ import queue
 from typing import Optional
 import io
 import sys
+import select
+import multiprocessing
+import pytz
 
 class ThreadSafeStreamHandler(logging.StreamHandler):
     """A thread-safe stream handler that ensures atomic writes to the output stream."""
@@ -81,7 +84,7 @@ import mne
 import warnings
 
 from gssc.utils import permute_sigs, prepare_inst, epo_arr_zscore, loudest_vote
-from pyqt_visualizer import PyQtVisualizer
+from cyton_realtime.visualization.pyqt_visualizer import PyQtVisualizer
 
 import torch
 
@@ -99,6 +102,20 @@ global_recording_start_time = None
 
 # Add at the top with other imports
 DEBUG_VERBOSE = False  # Set to True only when you need detailed debugging
+
+def format_timestamp_to_hawaii(timestamp):
+    """Convert a Unix timestamp to Hawaii time string"""
+    hawaii_tz = pytz.timezone('Pacific/Honolulu')
+    utc_dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+    hawaii_dt = utc_dt.astimezone(hawaii_tz)
+    return hawaii_dt.strftime('%Y-%m-%d %I:%M:%S.%f %p HST')
+
+def format_elapsed_time(seconds):
+    """Format elapsed time as HH:MM:SS.mmm"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
 
 class SignalProcessor:
     """Handles signal processing and sleep stage prediction"""
@@ -1250,7 +1267,7 @@ class BufferManager:
         """Calculate the ID of the next buffer to process"""
         return (self.last_processed_buffer + 1) % 6
 
-class StreamProcessor:
+class DataStreamProcessor:
     """Handles the main processing loop and stream control"""
     def __init__(self, data_acquisition: DataAcquisition, buffer_manager: BufferManager):
         self.data_acquisition = data_acquisition
@@ -1426,7 +1443,7 @@ class ApplicationManager:
             self.data_acquisition.set_buffer_manager(self.buffer_manager)
             
             # Initialize stream processor
-            self.stream_processor = StreamProcessor(
+            self.stream_processor = DataStreamProcessor(
                 self.data_acquisition, 
                 self.buffer_manager
             )
