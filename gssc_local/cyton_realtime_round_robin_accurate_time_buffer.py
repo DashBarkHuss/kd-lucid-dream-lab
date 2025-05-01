@@ -1,0 +1,1615 @@
+# the cyton_realtime_round_robin.py + we are added accurate time handling
+# realtime inference with round robin buffer with continuous data (eog data: [1, 2, 3, 4, 5 ...] ) for testing purposes
+# displays data and sleep stage predictions updated every 5 seconds
+# seems to work now
+
+#todo: make sure it works for cyton and daisy
+#todo: scale graph better
+import os
+import sys
+# Add the parent directory to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import logging
+import time
+import os
+import matplotlib.pyplot as plt
+import datetime
+import threading
+import matplotlib
+import queue
+from typing import Optional
+import io
+import sys
+import select
+import multiprocessing
+import pytz
+
+class ThreadSafeStreamHandler(logging.StreamHandler):
+    """A thread-safe stream handler that ensures atomic writes to the output stream."""
+    def __init__(self, stream=None):
+        super().__init__(stream)
+        self.lock = threading.Lock()
+
+    def emit(self, record):
+        """Emit a record in a thread-safe way."""
+        with self.lock:
+            try:
+                msg = self.format(record)
+                stream = self.stream or sys.stdout
+                # Ensure the message ends with exactly one newline
+                msg = msg.rstrip('\n') + '\n'
+                stream.write(msg)
+                stream.flush()
+            except Exception:
+                self.handleError(record)
+
+# Configure logging with thread-safe handler
+handler = ThreadSafeStreamHandler()
+handler.setFormatter(logging.Formatter(
+    fmt='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+))
+
+# Get the root logger and remove any existing handlers
+# we removed logger becuase it was causing hanging. we replaced it with print statements
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+for h in root_logger.handlers[:]:
+    root_logger.removeHandler(h)
+root_logger.addHandler(handler)
+
+# Create our module's logger
+logger = logging.getLogger(__name__)
+
+# Only suppress matplotlib font manager debug messages
+logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+
+# Keep brainflow board logger at INFO level for important messages
+board_logger = logging.getLogger('board_logger')
+board_logger.setLevel(logging.INFO)
+
+# Add a debug flag for verbose output
+DEBUG_MODE = True
+
+import pyqtgraph as pg
+from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds, BrainFlowPresets
+from brainflow.data_filter import DataFilter, FilterTypes, DetrendOperations
+from pyqtgraph.Qt import QtWidgets, QtCore
+import brainflow
+import numpy as np
+from gssc.infer import ArrayInfer
+import mne
+
+import warnings
+
+from gssc.utils import permute_sigs, prepare_inst, epo_arr_zscore, loudest_vote
+from gssc_local.pyqt_visualizer import PyQtVisualizer
+
+import torch
+
+import torch.nn.functional as F
+
+import pandas as pd
+
+from montage import Montage
+
+# Add at the top of the file, after imports
+import select
+
+# Add at the top with other globals
+global_recording_start_time = None
+
+# Add at the top with other imports
+DEBUG_VERBOSE = False  # Set to True only when you need detailed debugging
+
+def format_timestamp_to_hawaii(timestamp):
+    """Convert a Unix timestamp to Hawaii time string"""
+    hawaii_tz = pytz.timezone('Pacific/Honolulu')
+    utc_dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+    hawaii_dt = utc_dt.astimezone(hawaii_tz)
+    return hawaii_dt.strftime('%Y-%m-%d %I:%M:%S.%f %p HST')
+
+def format_elapsed_time(seconds):
+    """Format elapsed time as HH:MM:SS.mmm"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
+
+class SignalProcessor:
+    """Handles signal processing and sleep stage prediction"""
+    def __init__(self, use_cuda=False, gpu_idx=None):
+        self.infer = ArrayInfer(
+            net=None,  # Use default network
+            con_net=None,  # Use default context network
+            use_cuda=use_cuda,
+            gpu_idx=gpu_idx
+        )
+        
+    def resample_tensor(self, data, target_length):
+        """Resample a tensor to a target length using interpolation"""
+        if len(data.shape) == 2:
+            data = data.unsqueeze(0)
+        
+        resampled = F.interpolate(
+            data, 
+            size=target_length,
+            mode='linear',
+            align_corners=False
+        )
+        
+        if len(data.shape) == 2:
+            resampled = resampled.squeeze(0)
+            
+        return resampled
+    
+    def make_combo_dictionary(self, epoch_data, eeg_index, eog_index):
+        """Create input dictionary for EEG and EOG data"""
+        input_dict = {}
+        epoch_tensor = (torch.tensor(epoch_data, dtype=torch.float32) 
+                       if not isinstance(epoch_data, torch.Tensor) 
+                       else epoch_data.float())
+        
+        if eeg_index is not None:
+            eeg_data = epoch_tensor[eeg_index].unsqueeze(0).unsqueeze(0)
+            input_dict['eeg'] = eeg_data
+        
+        if eog_index is not None:
+            eog_data = epoch_tensor[eog_index].unsqueeze(0).unsqueeze(0)
+            input_dict['eog'] = eog_data
+        
+        return input_dict
+    
+    def get_index_combinations(self, eeg_indices, eog_indices):
+        """Generate all possible combinations of EEG and EOG indices"""
+        combinations = []
+        
+        # Add EEG-EOG pairs
+        for eeg_idx in eeg_indices:
+            for eog_idx in eog_indices:
+                combinations.append([eeg_idx, eog_idx])
+        
+        # Add EEG only combinations
+        for eeg_idx in eeg_indices:
+            combinations.append([eeg_idx, None])
+        
+        # Add EOG only combinations
+        for eog_idx in eog_indices:
+            combinations.append([None, eog_idx])
+            
+        return combinations
+    
+    def prepare_input_data(self, epoch_data):
+        """Prepare input data for prediction"""
+        # Hardcoded indices for now - could be made configurable
+        index_combinations = self.get_index_combinations([0, 1, 2], [3])
+        
+        # Create input dictionaries
+        input_dict_list = []
+        for eeg_idx, eog_idx in index_combinations:
+            input_dict = self.make_combo_dictionary(epoch_data, eeg_idx, eog_idx)
+            input_dict_list.append(input_dict)
+        
+        # Resample all inputs to 2560
+        resampled_dict_list = []
+        for input_dict in input_dict_list:
+            new_dict = {}
+            if 'eeg' in input_dict:
+                new_dict['eeg'] = self.resample_tensor(input_dict['eeg'], 2560)
+            if 'eog' in input_dict:
+                new_dict['eog'] = self.resample_tensor(input_dict['eog'], 2560)
+            resampled_dict_list.append(new_dict)
+            
+        return resampled_dict_list
+    
+    def predict_sleep_stage(self, epoch_data, hidden_states):
+        """Predict sleep stage from epoch data"""
+        # Prepare input data
+        input_dict_list = self.prepare_input_data(epoch_data)
+        
+        # Get predictions for each combination
+        results = []
+        for i, input_dict in enumerate(input_dict_list):
+            logits, res_logits, hidden_state = self.infer.infer(input_dict, hidden_states[i])
+            results.append([logits, res_logits, hidden_state])
+        
+        # Combine logits
+        all_combo_logits = np.stack([
+            results[i][0].numpy() for i in range(len(results))
+        ])
+        
+        # Get final prediction
+        final_predicted_class = loudest_vote(all_combo_logits)
+        new_hidden_states = [result[2] for result in results]
+        
+        return final_predicted_class, new_hidden_states
+
+class VisualizationQueue:
+    """Handles communication between background threads and main thread for visualization"""
+    def __init__(self):
+        self.queue = queue.Queue()
+        self._processing = False
+        self._processing_thread = None
+        self.visualizer = None
+        
+    def start_processing(self, visualizer):
+        """Start processing visualization updates in the main thread"""
+        self.visualizer = visualizer
+        self._processing = True
+        self._processing_thread = threading.Thread(target=self._process_queue)
+        self._processing_thread.daemon = True
+        self._processing_thread.start()
+        
+    def stop_processing(self):
+        """Stop processing visualization updates"""
+        self._processing = False
+        if self._processing_thread and self._processing_thread.is_alive():
+            self._processing_thread.join(timeout=1.0)
+            
+    def _process_queue(self):
+        """Process visualization updates from the queue"""
+        while self._processing:
+            try:
+                # Get update from queue with timeout to allow checking _processing flag
+                update = self.queue.get(timeout=0.1)
+                if update is None:
+                    continue
+                    
+                # Process the update
+                epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time = update
+                self.visualizer._plot_polysomnograph(
+                    epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time
+                )
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logging.error(f"\rError processing visualization update: {str(e)}")
+                
+    def add_update(self, epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time):
+        """Add a visualization update to the queue"""
+        self.queue.put((epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time))
+
+class Visualizer:
+    """Handles visualization of polysomnograph data and sleep stages"""
+    def __init__(self, seconds_per_epoch=30, board_shim=None, montage: Montage = None):
+        self.fig = None
+        self.axes = None
+        self.recording_start_time = None
+        self.seconds_per_epoch = seconds_per_epoch
+        self.board_shim = board_shim
+        self.viz_queue = VisualizationQueue()
+        
+        # Use provided montage or create default
+        self.montage = montage if montage is not None else Montage.default_sleep_montage()
+        self.channel_labels = self.montage.get_channel_labels()
+        self.channel_types = self.montage.get_channel_types()
+        self.filter_ranges = self.montage.get_filter_ranges()
+        
+        # Get channel information from board if available
+        if board_shim is not None:
+            self.electrode_channels = board_shim.get_exg_channels(board_shim.get_board_id())
+        else:
+            # Default to 16 channels for Cyton+Daisy
+            self.electrode_channels = list(range(16))
+            
+        # Initialize figure in the main thread
+        self.init_polysomnograph()
+        # Start processing visualization updates
+        self.viz_queue.start_processing(self)
+        
+    def init_polysomnograph(self):
+        """Initialize the polysomnograph figure and axes"""
+        if self.fig is None:
+            plt.ion()  # Turn on interactive mode
+            n_channels = len(self.channel_labels)
+            
+            # Create figure with balanced size
+            self.fig = plt.figure(figsize=(12, 10))  # Reduced height from 16 to 10
+            
+            # Create a gridspec that leaves room for the title and adds spacing between channels
+            gs = self.fig.add_gridspec(n_channels + 1, 1, height_ratios=[0.5] + [1.2]*n_channels)  # Adjusted channel height ratio from 1.5 to 1.2
+            gs.update(left=0.1, right=0.95, bottom=0.05, top=0.95, hspace=0.5)
+            
+            # Create title axes
+            self.title_ax = self.fig.add_subplot(gs[0])
+            self.title_ax.set_xticks([])
+            self.title_ax.set_yticks([])
+            self.title_ax.spines['top'].set_visible(False)
+            self.title_ax.spines['right'].set_visible(False)
+            self.title_ax.spines['bottom'].set_visible(False)
+            self.title_ax.spines['left'].set_visible(False)
+            
+            # Create axes for channels
+            self.axes = []
+            for i in range(n_channels):
+                ax = self.fig.add_subplot(gs[i+1])
+                self.axes.append(ax)
+                
+                # Setup axis
+                ax.set_ylabel(self.channel_labels[i], fontsize=8, rotation=0, ha='right', va='center')
+                ax.grid(True, alpha=0.3)  # Lighter grid
+                ax.tick_params(axis='y', labelsize=8)
+                
+                # Hide unnecessary spines and set colors for visible ones
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['bottom'].set_visible(True)
+                ax.spines['bottom'].set_color('black')
+                
+                # Only show x-axis for bottom subplot
+                if i < n_channels - 1:
+                    ax.set_xticks([])
+                else:
+                    ax.set_xlabel('Time (seconds)', fontsize=8)
+                    ax.tick_params(axis='x', labelsize=8)
+        
+        return self.fig, self.axes
+    
+    @staticmethod
+    def get_sleep_stage_text(sleep_stage):
+        """Convert sleep stage number to text representation"""
+        stages = {
+            0: 'Wake',
+            1: 'N1',
+            2: 'N2',
+            3: 'N3',
+            4: 'REM'
+        }
+        return stages.get(sleep_stage, 'Unknown')
+    
+    def plot_polysomnograph(self, epoch_data, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
+        """Add visualization update to queue instead of plotting directly"""
+        self.viz_queue.add_update(epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time)
+        
+    def _plot_polysomnograph(self, epoch_data, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
+        """Internal method to actually perform the plotting (called from main thread)"""
+        # Create time axis with offset
+        time_axis = np.arange(epoch_data.shape[1]) / sampling_rate + time_offset
+        
+        # Calculate elapsed time
+        elapsed_seconds = (epoch_start_time - self.recording_start_time 
+                         if self.recording_start_time is not None and epoch_start_time is not None 
+                         else time_offset)
+        
+        # Format time string
+        hours = int(elapsed_seconds // 3600)
+        minutes = int((elapsed_seconds % 3600) // 60)
+        seconds = int(elapsed_seconds % 60)
+        relative_time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        
+        # Update title
+        title_text = f'Sleep Stage: {self.get_sleep_stage_text(sleep_stage)} | Time from Start: {relative_time_str}'
+        self.title_ax.clear()
+        self.title_ax.text(0.5, 0.5, title_text,
+                          horizontalalignment='center',
+                          verticalalignment='center',
+                          fontsize=10)
+        self.title_ax.set_xticks([])
+        self.title_ax.set_yticks([])
+        
+        # Plot each channel
+        for ax, data, label, ch_type in zip(self.axes, epoch_data, self.channel_labels, self.channel_types):
+            ax.clear()  # Clear previous data
+            
+            # Add units based on channel type
+            if ch_type in ['EEG', 'EOG', 'EMG']:
+                unit = 'µV'
+            else:
+                unit = 'a.u.'  # arbitrary units
+            
+            # Plot the data
+            ax.plot(time_axis, data, 'b-', linewidth=0.5)
+            
+            # Set y-axis label with units
+            ax.set_ylabel(f'{label}\n({unit})', fontsize=7, rotation=0, ha='right', va='center')
+            ax.grid(True, alpha=0.3)  # Lighter grid
+            ax.tick_params(axis='y', labelsize=6)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            
+            # Calculate y-axis limits based on the actual data range
+            y_min = np.min(data)
+            y_max = np.max(data)
+            y_range = y_max - y_min
+            margin = y_range * 0.1  # 10% margin
+            y_limits = (y_min - margin, y_max + margin)
+            ax.set_ylim(y_limits)
+            
+            # Create clean tick marks that include the range
+            tick_range = y_max - y_min
+            if tick_range > 0:
+                # Choose a reasonable number of ticks (3-5)
+                n_ticks = 5 if tick_range > 3 else 3
+                ax.yaxis.set_major_locator(plt.LinearLocator(n_ticks))
+            
+            if y_min == y_max:
+                # For zero-value channels, set y limits explicitly to match other channels
+                ax.set_ylim(-0.1, 0.1)
+                # Add red text indicating all zeros
+                ax.text(0.02, 0.7, f"All values are {y_min}", 
+                       transform=ax.transAxes,
+                       color='red',
+                       fontsize=8,
+                       fontweight='bold')
+                # Draw the zero line in light grey
+                ax.axhline(y=0, color='grey', linewidth=0.5, alpha=0.3)
+            
+            # Add horizontal lines at the top and bottom of each channel's plot area
+            ax.axhline(y=ax.get_ylim()[1], color='black', linewidth=1)  # Black line at top
+            ax.axhline(y=ax.get_ylim()[0], color='black', linewidth=1)  # Black line at bottom
+            
+            # Format y-axis ticks to show one decimal place
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.1f}'))
+            
+            # Only show x-axis for bottom subplot
+            if ax != self.axes[-1]:
+                ax.set_xticks([])
+            else:
+                ax.set_xlabel('Time (seconds)', fontsize=8)
+                ax.tick_params(axis='x', labelsize=8)
+            
+            # Set x-axis limits
+            ax.set_xlim(time_offset, time_offset + self.seconds_per_epoch)
+        
+        # Update the plot
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+        
+    def release(self):
+        """Clean up visualization resources"""
+        self.viz_queue.stop_processing()
+        if self.fig is not None:
+            plt.close(self.fig)
+
+class DataAcquisition:
+    """Handles board setup and data collection"""
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self.board_shim = None
+        self.sampling_rate = None
+        self.buffer_size = 450000
+        self.points_collected = 0
+        self.recording_start_time = None  # Add this to track start time
+        self.last_chunk_last_timestamp = None
+        self.file_data = None
+        self.current_position = 0
+        self.buffer_manager = None
+        self.master_board_id = BoardIds.CYTON_DAISY_BOARD  # Add master board ID
+        self.timestamp_channel = None  # Will be set in setup_board
+        self.gap_threshold = 2.0  # Add gap threshold in seconds
+        self._streaming = False  # Add streaming state flag
+    
+    def set_buffer_manager(self, buffer_manager):
+        self.buffer_manager = buffer_manager
+    
+    def setup_board(self):
+        """Initialize and setup the board for data collection"""
+        try:
+            print("\rStarting board setup...")
+            
+            # Set environment variable to unblock threads if operations hang
+            os.environ['PYDEVD_UNBLOCK_THREADS_TIMEOUT'] = '2'
+            
+            print("\rInitializing board logger...")
+            # Run enable_dev_board_logger in a separate thread with timeout
+            logger_thread = threading.Thread(target=BoardShim.enable_dev_board_logger)
+            logger_thread.daemon = True
+            logger_thread.start()
+            logger_thread.join(timeout=2.0)  # Wait up to 2 seconds
+            
+            if logger_thread.is_alive():
+                print("\rWarning: BoardShim.enable_dev_board_logger() is taking too long, continuing setup...")
+            
+            print("\rInitializing board parameters...")
+            params = BrainFlowInputParams()
+            params.board_id = BoardIds.PLAYBACK_FILE_BOARD
+            params.master_board = self.master_board_id
+            params.file = self.file_path
+            params.playback_file_max_count = 1
+            params.playback_speed = 1
+            params.playback_file_offset = 0
+
+            print("\rBoard Parameters Configuration:")
+            print(f"\r- Board ID: {params.board_id} (PLAYBACK_FILE_BOARD)")
+            print(f"\r- Master Board: {params.master_board} (CYTON_DAISY_BOARD)")
+            print(f"\r- File Path: {params.file}")
+            print(f"\r- Playback File Max Count: {params.playback_file_max_count}")
+            print(f"\r- Playback Speed: {params.playback_speed}")
+            print(f"\r- Playback File Offset: {params.playback_file_offset}")
+            
+            print(f"\rCreating board with parameters...")
+            self.board_shim = BoardShim(BoardIds.PLAYBACK_FILE_BOARD, params)
+            print("\rBoard created successfully")
+            
+            print("\rPreparing board session...")
+            # Run prepare_session in a separate thread with timeout
+            prepare_thread = threading.Thread(target=self.board_shim.prepare_session)
+            prepare_thread.daemon = True
+            prepare_thread.start()
+            prepare_thread.join(timeout=2.0)  # Wait up to 2 seconds
+            
+            if prepare_thread.is_alive():
+                print("\rWarning: prepare_session() is taking too long, forcing cleanup...")
+                # If we get here, prepare_session is stuck
+                self.board_shim = None
+                raise RuntimeError("prepare_session() timed out")
+            
+            print("\rBoard session prepared successfully")
+            
+            # Get sampling rate and timestamp channel from master board, not playback board
+            print("\rGetting board configuration...")
+            self.sampling_rate = BoardShim.get_sampling_rate(self.master_board_id)
+            self.timestamp_channel = BoardShim.get_timestamp_channel(self.master_board_id)
+            
+            print("\rBoard Configuration:")
+            print(f"\r- Master board ID: {self.master_board_id}")
+            print(f"\r- Timestamp channel: {self.timestamp_channel}")
+            print(f"\r- Sampling rate: {self.sampling_rate}")
+            
+            print("\rConfiguring board for old timestamps...")
+            self.board_shim.config_board("old_timestamps")
+            print("\rBoard configured for old timestamps")
+
+            # Load the entire file data at initialization
+            print(f"\rLoading data from file: {self.file_path}")
+            self.file_data = pd.read_csv(self.file_path, sep='\t', dtype=float)
+            print(f"\rLoaded file with {len(self.file_data)} samples")
+            
+            print("\rBoard setup completed successfully")
+            return self.board_shim
+            
+        except Exception as e:
+            print(f"\rFailed to setup board: {str(e)}")
+            if DEBUG_MODE:
+                print(f"\rDetailed error information: {str(e)}")
+            raise
+
+    def start_stream(self):
+        """Start the data stream"""
+        if not self.board_shim:
+            raise RuntimeError("\rBoard not initialized. Call setup_board first.")
+        
+        if self._streaming:
+            print("\rStream is already running")
+            return
+            
+        try:
+            print("\rStarting data stream...")
+            print(f"\rBuffer size: {self.buffer_size}")
+            print(f"\rSampling rate: {self.sampling_rate}")
+            print(f"\rTimestamp channel: {self.timestamp_channel}")
+            
+            print("\rCalling board_shim.start_stream()...")
+            self.board_shim.start_stream(self.buffer_size)
+            self._streaming = True
+            print("\rStream started successfully")
+            
+            # Initialize recording_start_time as None - we'll set it when we get the first data packet
+            self.recording_start_time = None
+            
+            # Wait briefly for stream to start
+            print("\rWaiting for stream to initialize...")
+            time.sleep(0.1)
+            
+            initial_count = self.board_shim.get_board_data_count()
+            print(f"\rInitial data count after stream start: {initial_count}")
+            return initial_count
+            
+        except Exception as e:
+            self._streaming = False
+            print(f"\rFailed to start stream: {str(e)}")
+            if DEBUG_MODE:
+                print("\rDetailed error information:")
+            raise
+
+    def stop_stream(self):
+        """Stop the data stream"""
+        if not self._streaming:
+            print("\rStream is not running")
+            return
+            
+        try:
+            if self.board_shim and self.board_shim.is_prepared():
+                # Check if we're in a gap by looking at stream processor's consecutive empty count
+                # We can access it through buffer_manager since it has a reference to stream_processor
+                in_gap = (hasattr(self.buffer_manager, 'stream_processor') and 
+                         self.buffer_manager.stream_processor and 
+                         self.buffer_manager.stream_processor.consecutive_empty_count > 0)
+                
+                if in_gap:
+                    print("\rDetected gap, forcing session release...")
+                    try:
+                        # Set environment variable to unblock threads if release hangs
+                        os.environ['PYDEVD_UNBLOCK_THREADS_TIMEOUT'] = '1'
+                        # Try release with a timeout using threading
+                        release_thread = threading.Thread(target=self.board_shim.release_session)
+                        release_thread.daemon = True
+                        release_thread.start()
+                        release_thread.join(timeout=2.0)  # Wait up to 2 seconds
+                        
+                        if release_thread.is_alive():
+                            print("\rRelease session taking too long, forcing cleanup...")
+                            # If we get here, release_session is stuck
+                            # Force cleanup by nullifying the board
+                            self.board_shim = None
+                            self._streaming = False
+                        else:
+                            # Release completed successfully
+                            print("\rSession released successfully")
+                            # Prepare new session
+                            self.setup_board()
+                    except Exception as e:
+                        print(f"\rError during forced release: {str(e)}")
+                        self.board_shim = None
+                        self._streaming = False
+                else:
+                    # Normal clean stop if we're not in a gap
+                    self.board_shim.stop_stream()
+                    self._streaming = False
+                    print("\rStream stopped successfully")
+                
+        except Exception as e:
+            print(f"\rFailed to stop stream: {str(e)}")
+            # Force cleanup on any error
+            self.board_shim = None
+            self._streaming = False
+            raise
+
+    def is_streaming(self):
+        """Check if the stream is currently running"""
+        return self._streaming
+
+    def get_initial_data(self):
+        """Get initial data from the board"""
+        if not self.board_shim:
+            raise RuntimeError("Board not initialized. Call setup_board first.")
+        
+        try:
+            # Log data count before getting data
+            data_count = self.board_shim.get_board_data_count()
+            print(f"\rAttempting to get initial data. Available data count: {data_count}")
+            
+            if data_count > 0:
+                print(f"\rGetting {data_count} samples of initial data...")
+                # Get all available data
+                initial_data = self.board_shim.get_board_data(data_count)
+
+                # Log details about the retrieved data
+                if initial_data.size <= 0:
+                    print("\rget_board_data returned empty array despite positive count!")
+                else:
+                    print(f"\rRetrieved initial data shape: {initial_data.shape}")
+                    # For streaming, set recording_start_time to the first timestamp if not already set
+                    if self.recording_start_time is None and self.timestamp_channel is not None:
+                        self.recording_start_time = initial_data[self.timestamp_channel][0]
+                        print(f"\rSet recording start time to: {self.recording_start_time}")
+                    
+                return initial_data
+            else:
+                print("\rNo initial data available (data count is 0)")
+                return np.array([])
+            
+        except Exception as e:
+            print(f"\rFailed to get initial data: {str(e)}")
+            if DEBUG_MODE:
+                print("\rDetailed error information:")
+            raise
+
+    def get_channel_info(self):
+        """Get information about board channels"""
+        if not self.board_shim:
+            raise RuntimeError("Board not initialized. Call setup_board first.")
+            
+        all_channels = self.board_shim.get_exg_channels(self.board_shim.get_board_id())
+        timestamp_channel = self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
+        all_channels_with_timestamp = list(all_channels)
+        
+        if timestamp_channel is not None and timestamp_channel not in all_channels:
+            all_channels_with_timestamp.append(timestamp_channel)
+
+        return all_channels, timestamp_channel, all_channels_with_timestamp
+
+    def get_new_data(self):
+        """Get new data from the board"""
+        if not self._streaming:
+            raise RuntimeError("Cannot get data: stream is not running")
+            
+        try:
+            # Log data count before getting data
+            data_count = self.board_shim.get_board_data_count()
+
+            if data_count > 0:
+                # Get all available data
+                new_data = self.board_shim.get_board_data(data_count)
+
+                if new_data.size > 0:
+                    if self.timestamp_channel is not None:
+                        last_timestamp = new_data[self.timestamp_channel][-1]
+                        self.last_chunk_last_timestamp = last_timestamp
+                    
+                    return new_data
+                else:
+                    print("\rget_board_data returned empty array despite positive count!")
+                    return np.array([])
+            else:
+                return np.array([])
+            
+        except Exception as e:
+            print(f"\rFailed to get new data: {str(e)}")
+            raise
+
+    def release(self):
+        """Release the board session"""
+        if self.board_shim and self.board_shim.is_prepared():
+            try:
+                if self._streaming:
+                    self.stop_stream()
+                self.board_shim.release_session()
+                self._streaming = False
+                print("\rSession released successfully")
+            except Exception as e:
+                print(f"\rFailed to release session: {str(e)}")
+                raise
+
+class BufferManager:
+    """Manages data buffers and their processing"""
+    def __init__(self, board_shim, sampling_rate, montage: Montage = None):
+        self.board_shim = board_shim
+        self.sampling_rate = sampling_rate
+        self.seconds_per_epoch = 30
+        self.seconds_per_step = 5
+        # Buffer configuration
+        self.points_per_epoch = self.seconds_per_epoch * sampling_rate  # 30 second epochs
+        self.points_per_step = self.seconds_per_step * sampling_rate    # 5 second steps
+        self.buffer_start = 0
+        self.buffer_end = self.seconds_per_epoch
+        self.buffer_step = self.seconds_per_step
+        
+        # Initialize channels and buffers
+        self.electrode_channels, self.timestamp_channel, self.all_channels_with_timestamp = self._init_channels()
+        self.all_previous_buffers_data = [[] for _ in range(len(self.all_channels_with_timestamp))]
+        
+        # Buffer tracking
+        self.points_collected = 0
+        self.last_processed_buffer = -1
+        
+        # Add timing control
+        self.epoch_interval = self.buffer_step  # Process every buffer_step seconds
+        
+        # List of lists tracking where each buffer has started processing epochs
+        # Example structure after processing some epochs:
+        # [
+        #     [0, 6000, 12000],      # Buffer 0 processed epochs starting at indices 0, 6000, 12000
+        #     [1000, 7000, 13000],   # Buffer 1 processed epochs starting at indices 1000, 7000, 13000
+        #     [2000, 8000, 14000],   # Buffer 2 processed epochs starting at indices 2000, 8000, 14000
+        #     [],                    # Buffer 3 hasn't processed any epochs yet
+        #     [],                    # Buffer 4 hasn't processed any epochs yet
+        #     []                     # Buffer 5 hasn't processed any epochs yet
+        # ]
+        self.processed_epoch_start_indices = [[] for _ in range(6)]
+        
+        # Initialize hidden states for each buffer
+        self.buffer_hidden_states = [
+            [torch.zeros(10, 1, 256) for _ in range(7)]  # 7 hidden states for 7 combinations
+            for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
+        ]
+        self.signal_processor = SignalProcessor()
+        self.visualizer = PyQtVisualizer(self.seconds_per_epoch, self.board_shim, montage)
+        self.expected_interval = 1.0 / sampling_rate
+        self.timestamp_tolerance = self.expected_interval * 0.01  # 1% tolerance
+        self.gap_threshold = 2.0  # Large gap threshold (seconds)
+        self.interpolation_threshold = 0.1  # Maximum gap to interpolate (seconds)
+        self.current_epoch_start_time = None
+        self.buffer_timestamp_index = self.all_channels_with_timestamp.index(self.timestamp_channel)
+        
+        # Add validation settings
+        self.validate_consecutive_values = False  # Set to True to enable consecutive value validation
+        self.validation_channel = 0  # Channel to validate (default to first channel)
+        self.last_validated_value = None  # Track last validated value
+        self.saved_data = []
+        self.output_csv_path = None
+        self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
+        self.shutdown_event = threading.Event()  # For signaling threads to stop
+        self.threads_stopped = threading.Event()  # For threads to signal they've stopped
+        self.active_threads = 0  # Counter for active threads
+        self.thread_lock = threading.Lock()  # For thread counter synchronization
+
+    def _init_channels(self):
+        """Initialize channel information"""
+        electrode_channels = self.board_shim.get_exg_channels(self.board_shim.get_board_id())
+        board_timestamp_channel = self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
+        all_channels_with_timestamp = list(electrode_channels)
+        
+        if board_timestamp_channel is not None and board_timestamp_channel not in electrode_channels:
+            all_channels_with_timestamp.append(board_timestamp_channel)
+            self.buffer_timestamp_index = len(all_channels_with_timestamp) - 1
+        
+        return electrode_channels, board_timestamp_channel, all_channels_with_timestamp
+
+    def validate_consecutive_data(self, data, channel_idx=None):
+        """
+        Validate that data values on a specific channel are consecutive.
+        This is useful for testing with synthetic data where we expect consecutive values.
+        
+        Args:
+            data: New data chunk
+            channel_idx: Channel index to validate (defaults to self.validation_channel)
+            
+        Returns:
+            tuple: (is_valid, message)
+            - is_valid: True if data is consecutive, False otherwise
+            - message: Description of any validation failure
+        """
+        if not self.validate_consecutive_values:
+            return True, "Validation disabled"
+            
+        if channel_idx is None:
+            channel_idx = self.validation_channel
+            
+        # Adjust for CSV structure where first column is not EEG data
+        # The first EEG channel is actually at index 1 in the CSV
+        adjusted_channel_idx = channel_idx + 1
+            
+        if adjusted_channel_idx >= len(data):
+            return False, f"\rChannel index {adjusted_channel_idx} out of range"
+            
+        channel_data = data[adjusted_channel_idx]
+        
+        # For the first validation, just store the last value
+        if self.last_validated_value is None:
+            self.last_validated_value = channel_data[-1]
+            return True, "First validation - stored last value"
+            
+        # Check if the new data starts where the last data ended
+        expected_next_value = self.last_validated_value + 1
+        if channel_data[0] != expected_next_value:
+            return False, f"\rNon-consecutive data detected. Expected {expected_next_value}, got {channel_data[0]}"
+            
+        # Check if all values in the chunk are consecutive
+        for i in range(1, len(channel_data)):
+            if channel_data[i] != channel_data[i-1] + 1:
+                return False, f"\rNon-consecutive data within chunk at index {i}. Expected {channel_data[i-1] + 1}, got {channel_data[i]}"
+                
+        # Update last validated value
+        self.last_validated_value = channel_data[-1]
+        return True, "Data validated successfully"
+
+    def add_data(self, new_data, is_initial=False):
+        """Add new data to the buffer"""
+        # Validate data values
+        if np.any(np.isnan(new_data)) or np.any(np.isinf(new_data)):
+            logging.warning("\rData contains NaN or infinite values!")
+            return False
+            
+        # Validate consecutive values if enabled
+        if self.validate_consecutive_values:
+            is_valid, message = self.validate_consecutive_data(new_data)
+            if not is_valid:
+                #  throw an exception
+                raise Exception(f"\rConsecutive value validation failed: {message}")
+            
+        # Update points collected
+        self.points_collected += len(new_data[0])
+        
+        # Update all_previous_data
+        if not is_initial:
+            for i, channel in enumerate(self.all_channels_with_timestamp):
+                self.all_previous_buffers_data[i].extend(new_data[channel].tolist())
+        else:
+            for i, channel in enumerate(self.all_channels_with_timestamp):
+                self.all_previous_buffers_data[i] = new_data[channel].tolist()
+                
+        return True
+
+    def save_new_data(self, new_data, is_initial=False):
+        """Save new data to the saved_data buffer for later CSV export"""
+        if not hasattr(self, 'saved_data'):
+            self.saved_data = []
+            
+        new_rows = new_data.T.tolist()
+        
+        # For initial data, save everything
+        if is_initial:
+            self.saved_data.extend(new_rows)
+            if new_rows:
+                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+            return
+            
+        # For subsequent data, only filter out exact duplicates
+        if self.last_saved_timestamp is not None:
+            # Find the first row with a timestamp greater than the last saved timestamp
+            start_idx = 0
+            for i, row in enumerate(new_rows):
+                if row[self.buffer_timestamp_index] > self.last_saved_timestamp:
+                    start_idx = i
+                    break
+            
+            # Save all rows from that point forward
+            if start_idx < len(new_rows):
+                self.saved_data.extend(new_rows[start_idx:])
+                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+        else:
+            # If no last saved timestamp, save all rows
+            self.saved_data.extend(new_rows)
+            if new_rows:
+                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+
+    def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
+        """Validate the epoch has no gaps
+        
+        Args:
+            buffer_id: ID of the buffer being validated
+            epoch_start_idx: Start index of the epoch
+            epoch_end_idx: End index of the epoch
+            
+        Returns:
+            tuple: ( has_gap, gap_size)
+            - has_gap: True if a gap was detected
+            - gap_size: Size of the gap if one was detected, otherwise 0
+        """
+            
+        # Check for gaps in the timestamp data
+        timestamp_data = self.all_previous_buffers_data[self.buffer_timestamp_index]
+        has_gap, gap_size, gap_start_idx, gap_end_idx = self.detect_gap(
+            timestamp_data[epoch_start_idx:epoch_end_idx],
+            timestamp_data[epoch_start_idx-1] if epoch_start_idx > 0 else None
+        )
+        
+        return has_gap, gap_size
+
+    def _enough_data_to_process_epoch(self, buffer_id, epoch_end_idx):
+        """Check if we have enough data to process the given buffer"""
+        buffer_delay = buffer_id * self.points_per_step
+
+        
+        return (epoch_end_idx <= len(self.all_previous_buffers_data[0]) and 
+                len(self.all_previous_buffers_data[0]) >= buffer_delay)
+    
+    def _has_enough_data_for_buffer(self, buffer_id):
+        """Check if we have enough data points and time has passed for the specified buffer
+        
+        Args:
+            buffer_id: The ID of the buffer to check
+            
+        Returns:
+            tuple: (bool, str)
+                - bool: True if we can process this buffer, False otherwise
+                - str: Reason why we can't process if False, empty string if we can
+        """
+        # Check if we have enough data points
+        if buffer_id == 0:
+            required_points = self.points_per_epoch
+        else:
+            buffer_delay = buffer_id * self.points_per_step
+            required_points = buffer_delay + self.points_per_epoch
+            
+        if len(self.all_previous_buffers_data[0]) < required_points:
+            return False, "Not enough data points"
+            
+        # Get the current timestamp from the data
+        current_timestamp = self.all_previous_buffers_data[self.buffer_timestamp_index][-1]
+        
+        # For the first epoch, we can process it
+        if self.last_processed_buffer == -1:
+            return True, ""
+            
+        # For subsequent epochs, check if we've moved forward by buffer_step seconds
+        last_epoch_timestamp = self.all_previous_buffers_data[self.buffer_timestamp_index][
+            self.processed_epoch_start_indices[self.last_processed_buffer][-1]
+        ]
+        
+        if current_timestamp - last_epoch_timestamp < self.buffer_step:
+            return False, "Not enough time has passed"
+            
+        return True, ""
+
+    def next_available_epoch_on_buffer(self, buffer_id):
+        """Return the next available epoch on the buffer"""
+        
+        # Check if we can process this buffer
+        can_process, reason = self._has_enough_data_for_buffer(buffer_id)
+        if not can_process:
+            return False, reason, None, None
+        
+
+        epoch_start_idx, epoch_end_idx = self._get_next_epoch_indices(buffer_id)
+
+        enough_data_to_process_epoch = self._enough_data_to_process_epoch(buffer_id, epoch_end_idx)
+        # Check if we have enough data to process the epoch
+        if not enough_data_to_process_epoch:
+            return False, "Not enough data to process the epoch", None, None
+        
+        return True, None, epoch_start_idx, epoch_end_idx
+
+    def manage_epoch(self, buffer_id, epoch_start_idx, epoch_end_idx):
+        """Validate and process a specified epoch on a specified buffer."""
+
+
+        # validate that we can process the epoch
+        has_gap, gap_size = self.validate_epoch_gaps(buffer_id, epoch_start_idx, epoch_end_idx)
+
+        if has_gap:
+            # Handle the gap
+            self.handle_gap(
+                prev_timestamp=self.all_previous_buffers_data[self.buffer_timestamp_index][epoch_start_idx-1],
+                gap_size=gap_size, buffer_id=buffer_id
+            )
+       
+        # Update buffer status
+        self.processed_epoch_start_indices[buffer_id].append(epoch_start_idx)
+        self.last_processed_buffer = buffer_id  
+
+        if has_gap:
+            return
+
+        # Process the epoch
+        self._process_epoch(start_idx=epoch_start_idx, end_idx=epoch_end_idx, buffer_id=buffer_id)
+
+    def _process_epoch(self, start_idx, end_idx, buffer_id):
+        """Handle the data for a specified epoch on a specified buffer which has valid data."""        
+        
+        print(f"\rProcessing buffer {buffer_id}")
+        print(f"\rEpoch range: {start_idx} to {end_idx}")
+        print(f"\rBuffer {buffer_id}: Epoch range: {start_idx * self.expected_interval} to {end_idx * self.expected_interval} seconds")
+        
+        # Extract EXACTLY points_per_epoch data points from the correct slice
+        epoch_data = np.array([
+            self.all_previous_buffers_data[channel][start_idx:end_idx]
+            for channel in self.electrode_channels
+        ])
+        
+        # Verify we have exactly the right number of points
+        assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
+        
+        # Get the timestamp data for this epoch
+        timestamp_data = self.all_previous_buffers_data[self.buffer_timestamp_index][start_idx:end_idx]
+        epoch_start_time = timestamp_data[0]  # First timestamp in the epoch
+        
+        # Get sleep stage prediction using SignalProcessor
+        sleep_stage, new_hidden_states = self.signal_processor.predict_sleep_stage(
+            epoch_data,
+            self.buffer_hidden_states[buffer_id]
+        )
+        
+        print(f"\rSleep stage: {self.visualizer.get_sleep_stage_text(sleep_stage[0])}")
+        
+        # Update visualization using Visualizer
+        time_offset = start_idx / self.sampling_rate
+        self.visualizer.plot_polysomnograph(
+            epoch_data, 
+            self.sampling_rate, 
+            sleep_stage[0], 
+            time_offset, 
+            epoch_start_time
+        )
+        
+        self.buffer_hidden_states[buffer_id] = new_hidden_states
+
+    def save_to_csv(self, output_path):
+        """Save raw data to CSV file"""
+        self.output_csv_path = output_path
+        if not self.saved_data:
+            print("\rNo data to save")
+            return False
+            
+        try:
+            # Convert to numpy array
+            data_array = np.array(self.saved_data)
+            
+            # Create format specifiers to match original file
+            # All columns should use %.6f for consistent floating-point precision
+            fmt = ['%.6f'] * data_array.shape[1]
+            
+            # Save with exact format matching
+            np.savetxt(output_path, data_array, delimiter='\t', fmt=fmt)
+            print(f"\rData saved to {output_path}")
+            return True
+        except Exception as e:
+            print(f"\rError saving to CSV: {str(e)}")
+            return False
+
+    def validate_saved_csv(self, original_csv_path):
+        """Validate that the saved CSV matches the original format exactly"""
+        try:
+            # Read both CSVs as strings first
+            with open(self.output_csv_path, 'r') as f:
+                saved_lines = f.readlines()
+            with open(original_csv_path, 'r') as f:
+                original_lines = f.readlines()
+            
+            print("\nCSV Validation Results:")
+            
+            # Check number of lines
+            if len(saved_lines) != len(original_lines):
+                print(f"\r❌ Line count mismatch: Original={len(original_lines)}, Saved={len(saved_lines)}")
+                return False
+            print(f"\r✅ Line count matches: {len(original_lines)} lines")
+            
+            # Compare each line exactly
+            for i, (saved_line, original_line) in enumerate(zip(saved_lines, original_lines)):
+                if saved_line != original_line:
+                    print(f"\r❌ Line {i+1} does not match exactly:")
+                    print(f"\rOriginal: {original_line.strip()}")
+                    print(f"\rSaved:    {saved_line.strip()}")
+                    return False
+            
+            print("\r✅ All lines match exactly")
+            return True
+        except Exception as e:
+            print(f"\rError validating CSV: {str(e)}")
+            return False
+
+    def _get_affected_buffer(self, timestamp):
+        """
+        Determine which buffer is affected by a gap based on timestamp.
+        
+        Args:
+            timestamp: The timestamp where the gap occurred
+            
+        Returns:
+            int: Buffer ID (0-5) or None if cannot be determined
+        """
+        if not self.all_previous_buffers_data[0]:  # No data yet
+            return None
+        
+        # Calculate time from start of recording
+        start_time = self.all_previous_buffers_data[self.buffer_timestamp_index][0]
+        relative_time = timestamp - start_time
+        
+        # Calculate which buffer this timestamp would belong to
+        buffer_id = int((relative_time % self.seconds_per_epoch) // 5)
+        return buffer_id if 0 <= buffer_id <= 5 else None
+
+    def detect_gap(self, timestamps, prev_timestamp):
+        """
+        Detect if there is a gap in the timestamps.
+        Checks both between chunks and within the current chunk.
+        
+        Args:
+            timestamps: Current timestamps array
+            prev_timestamp: Previous timestamp to compare against
+            
+        Returns:
+            tuple: (has_gap, gap_size, gap_start_idx, gap_end_idx)
+            - has_gap: True if a gap was detected
+            - gap_size: Size of the largest gap found
+            - gap_start_idx: Start index of the gap (or None if no gap)
+            - gap_end_idx: End index of the gap (or None if no gap)
+        """
+        has_gap = False
+        max_gap = 0
+        gap_start_idx = None
+        gap_end_idx = None
+
+        # Check gap between chunks if we have a previous timestamp
+        if prev_timestamp is not None:
+            between_chunks_gap = timestamps[0] - prev_timestamp - self.expected_interval
+            if abs(between_chunks_gap) >= self.gap_threshold:
+                has_gap = True
+                max_gap = between_chunks_gap
+                gap_start_idx = -1  # -1 indicates gap is between chunks
+                gap_end_idx = 0
+
+        # Check gaps within the chunk
+        for i in range(1, len(timestamps)):
+            interval_deviation = timestamps[i] - timestamps[i-1] - self.expected_interval
+            if abs(interval_deviation) >= self.gap_threshold:
+                has_gap = True
+                if abs(interval_deviation) > abs(max_gap):
+                    max_gap = interval_deviation
+                    gap_start_idx = i-1
+                    gap_end_idx = i
+
+        return has_gap, max_gap, gap_start_idx, gap_end_idx
+
+    def handle_gap(self, prev_timestamp, gap_size, buffer_id):
+        """
+        Handle a detected gap by resetting the appropriate buffer.
+        
+        Args:
+            prev_timestamp: Timestamp where gap was detected
+            gap_size: Size of the gap in seconds
+            buffer_id: Buffer ID to reset
+        """
+        self.reset_buffer_states(buffer_id, gap_size)
+
+    def reset_buffer_states(self, buffer_id, gap_size):
+        """
+        Reset the hidden states and buffer indices for the affected buffer.
+        
+        Args:
+            buffer_id: Buffer ID to reset
+            gap_size: Size of the gap (for logging)
+        """
+        if buffer_id is not None:
+            print(f"\nLarge gap detected ({gap_size:.2f}s): Resetting buffer {buffer_id}")
+            
+            # Reset hidden states
+            self.buffer_hidden_states[buffer_id] = [
+                torch.zeros(10, 1, 256) for _ in range(7)
+            ]
+            
+            print(f"\rBuffer {buffer_id} reset complete - hidden states cleared")
+
+    def _get_next_epoch_indices(self, buffer_id):
+        """Get the start and end indices for a buffers next epoch based on the last processed epoch plus the points per epoch.
+        
+        Args:
+            buffer_id: The ID of the buffer to get indices for
+            
+        Returns:
+            tuple: (epoch_start_idx, epoch_end_idx)
+            - epoch_start_idx: The starting index for the epoch
+            - epoch_end_idx: The ending index for the epoch
+        """
+        buffer_start_offset = buffer_id * self.points_per_step
+        last_epoch_start_idx = None
+        
+        try:
+            last_epoch_start_idx = self.processed_epoch_start_indices[buffer_id][-1]
+        except (IndexError, KeyError):
+            pass
+
+        # If this is the first epoch for this buffer, start at the buffer's offset
+        if last_epoch_start_idx is None:
+            epoch_start_idx = buffer_start_offset
+        else:
+            # Otherwise, start after the last processed epoch
+            epoch_start_idx = last_epoch_start_idx + self.points_per_epoch
+
+        epoch_end_idx = epoch_start_idx + self.points_per_epoch
+        
+        return epoch_start_idx, epoch_end_idx
+
+    def _calculate_next_buffer_id_to_process(self):
+        """Calculate the ID of the next buffer to process"""
+        return (self.last_processed_buffer + 1) % 6
+
+class DataStreamProcessor:
+    """Handles the main processing loop and stream control"""
+    def __init__(self, data_acquisition: DataAcquisition, buffer_manager: BufferManager):
+        self.data_acquisition = data_acquisition
+        self.buffer_manager = buffer_manager
+        self._processing = False
+        self._processing_thread = None
+        self.consecutive_empty_count = 0
+        self.sleep_time = 0.1
+        self.iteration_count = 0
+        self._timestamp_thread = None
+        self._timestamp_running = False
+        self.output_lock = threading.Lock()
+        self._new_data_received = False  # Flag to track new data
+        
+    def _timestamp_loop(self):
+        """Thread for handling timestamp output"""
+        while self._timestamp_running:
+            try:
+                if self.data_acquisition.last_chunk_last_timestamp is not None and self._new_data_received:
+                    total_duration = self.data_acquisition.last_chunk_last_timestamp - self.data_acquisition.recording_start_time
+                    hours = int(total_duration // 3600)
+                    minutes = int((total_duration % 3600) // 60)
+                    seconds = total_duration % 60
+                    with self.output_lock:
+                        print(f"\rTimestamps: Total={hours}h {minutes}m {seconds:.3f}s")
+                    self._new_data_received = False  # Reset the flag after showing timestamp
+                time.sleep(0.1)
+            except Exception as e:
+                print(f"\rTimestamp thread error: {str(e)}")
+                
+    def _process_loop(self):
+        """Main processing loop"""
+        while self._processing:
+            self.iteration_count += 1
+            if DEBUG_VERBOSE:
+                print(f"\rIteration {self.iteration_count}")
+            
+            try:
+                # Get new data
+                new_data = self.data_acquisition.get_new_data()
+                
+                # Handle empty or invalid data
+                if new_data.size == 0:
+                    self.consecutive_empty_count += 1
+                    self.sleep_time = min(1.0, self.sleep_time * 1.5)
+                    with self.output_lock:
+                        print(f"\rNo data received. Sleeping for {self.sleep_time:.2f}s. Empty count: {self.consecutive_empty_count}")
+                    time.sleep(self.sleep_time)
+                    continue
+                
+                # Successfully got data
+                if self.buffer_manager.add_data(new_data):
+                    # Save data first, before any processing
+                    self.buffer_manager.save_new_data(new_data)
+                    self._new_data_received = True  # Set flag when new data is received
+                    
+                    # Then try to process
+                    self.consecutive_empty_count = 0
+                    self.sleep_time = 0.1
+                    next_buffer_id = self.buffer_manager._calculate_next_buffer_id_to_process()
+
+                    # Process next epoch on next buffer
+                    can_process, reason, epoch_start_idx, epoch_end_idx = self.buffer_manager.next_available_epoch_on_buffer(next_buffer_id)
+
+                    if can_process:
+                        self.buffer_manager.manage_epoch(buffer_id=next_buffer_id, epoch_start_idx=epoch_start_idx, epoch_end_idx=epoch_end_idx)
+                else:
+                    print(f"\rFailed to add new data to buffer. Data shape: {new_data.shape}")
+                    # Still try to save the data even if processing failed
+                    self.buffer_manager.save_new_data(new_data)
+                    continue
+                
+                # Check for end of file
+                if (self.data_acquisition.file_data is not None and 
+                    self.data_acquisition.last_chunk_last_timestamp is not None and 
+                    self.data_acquisition.last_chunk_last_timestamp >= self.data_acquisition.file_data.iloc[-1, self.data_acquisition.timestamp_channel]):
+                    print(f"\rReached end of file. Final timestamp: {self.data_acquisition.last_chunk_last_timestamp}. Total iterations: {self.iteration_count}")
+                    self._processing = False
+                    break
+                    
+                time.sleep(0.1)
+                
+            except Exception as e:
+                print(f"\rError in processing loop: {str(e)}")
+                self._processing = False
+                raise
+                
+    def start_processing(self):
+        """Start the processing loop"""
+        if self._processing:
+            print("\rProcessing is already running")
+            return
+            
+        self._processing = True
+        self._timestamp_running = True
+        # Start processing in a separate thread
+        self._processing_thread = threading.Thread(target=self._process_loop)
+        self._processing_thread.daemon = True
+        self._processing_thread.start()
+        
+        # Start timestamp thread
+        self._timestamp_thread = threading.Thread(target=self._timestamp_loop)
+        self._timestamp_thread.daemon = True
+        self._timestamp_thread.start()
+        
+    def stop_processing(self):
+        """Stop the processing loop"""
+        if not self._processing:
+            print("\rProcessing is not running")
+            return
+            
+        # Signal the threads to stop
+        self._processing = False
+        self._timestamp_running = False
+        
+        # Only try to join if we're not in the processing thread
+        if (self._processing_thread and 
+            self._processing_thread.is_alive() and 
+            threading.current_thread() != self._processing_thread):
+            self._processing_thread.join(timeout=1.0)
+            
+        if (self._timestamp_thread and 
+            self._timestamp_thread.is_alive() and 
+            threading.current_thread() != self._timestamp_thread):
+            self._timestamp_thread.join(timeout=1.0)
+        
+        self._processing_thread = None
+        self._timestamp_thread = None
+
+class ApplicationState:
+    """Manages the application state and lifecycle"""
+    def __init__(self):
+        self.running = False
+        self.streaming = False
+        self.processing = False
+        self.error = None
+        self.should_restart = False
+        self.should_quit = False
+
+class ApplicationManager:
+    """Manages the application lifecycle and resources"""
+    def __init__(self, input_file: str):
+        self.state = ApplicationState()
+        self.input_file = input_file
+        self.data_acquisition = None
+        self.buffer_manager = None
+        self.stream_processor = None
+        self.pyqt_app = None
+        self.montage = Montage.minimal_sleep_montage()
+        
+        # Setup output directory
+        self.output_dir = "../data/processed"
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.output_file = os.path.join(self.output_dir, f"processed_{self.timestamp}.csv")
+        
+    def initialize(self):
+        """Initialize the application"""
+        try:
+            # Initialize PyQt application
+            self.pyqt_app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+            
+            # Initialize data acquisition
+            self.data_acquisition = DataAcquisition(self.input_file)
+            board_shim = self.data_acquisition.setup_board()
+            
+            # Initialize buffer manager
+            self.buffer_manager = BufferManager(
+                board_shim, 
+                self.data_acquisition.sampling_rate, 
+                self.montage
+            )
+            self.data_acquisition.set_buffer_manager(self.buffer_manager)
+            
+            # Initialize stream processor
+            self.stream_processor = DataStreamProcessor(
+                self.data_acquisition, 
+                self.buffer_manager
+            )
+            
+            # Add this line after creating stream_processor
+            self.buffer_manager.stream_processor = self.stream_processor
+            
+            self.state.running = True
+            return True
+            
+        except Exception as e:
+            self.state.error = str(e)
+            print(f"\rInitialization failed: {str(e)}")
+            return False
+            
+    def start_stream(self):
+        """Start the data stream and processing"""
+        try:
+            # Start data stream
+            initial_count = self.data_acquisition.start_stream()
+            self.state.streaming = True
+            
+            # Wait for initial data
+            time.sleep(0.5)
+            initial_data = self.data_acquisition.get_initial_data()
+            
+            if initial_data.size > 0:
+                success = self.buffer_manager.add_data(initial_data, is_initial=True)
+                if success:
+                    self.buffer_manager.save_new_data(initial_data, is_initial=True)
+                print(f"\rInitial data processing: {'Success' if success else 'Failed'}")
+            
+            # Start processing
+            self.stream_processor.start_processing()
+            self.state.processing = True
+            return True
+            
+        except Exception as e:
+            self.state.error = str(e)
+            print(f"\rFailed to start stream: {str(e)}")
+            return False
+            
+    def stop_stream(self):
+        """Stop the data stream and processing"""
+        try:
+            if self.state.processing:
+                if self.stream_processor:
+                    self.stream_processor.stop_processing()
+                    self.state.processing = False
+                
+            if self.state.streaming:
+                self.data_acquisition.stop_stream()
+                self.state.streaming = False
+                
+            return True
+            
+        except Exception as e:
+            self.state.error = str(e)
+            print(f"\rFailed to stop stream: {str(e)}")
+            return False
+            
+    def cleanup(self):
+        """Clean up all resources"""
+        try:
+            if self.state.processing:
+                self.stop_stream()
+            
+            if self.buffer_manager and self.buffer_manager.visualizer:
+                # Stop timers in the main thread
+                if self.buffer_manager.visualizer.timer:
+                    self.buffer_manager.visualizer.timer.stop()
+                if self.buffer_manager.visualizer.countdown_timer:
+                    self.buffer_manager.visualizer.countdown_timer.stop()
+                self.buffer_manager.visualizer.close()
+                
+            if self.data_acquisition:
+                self.data_acquisition.release()
+                
+            # Save processed data
+            if self.buffer_manager:
+                if self.buffer_manager.save_to_csv(self.output_file):
+                    print(f"\rData saved to {self.output_file}")
+                    if self.buffer_manager.validate_saved_csv(self.input_file):
+                        print("\rCSV validation passed")
+                    else:
+                        print("\rCSV validation failed")
+                        
+        except Exception as e:
+            print(f"\rCleanup failed: {str(e)}")
+            
+    def run(self):
+        """Main application loop"""
+        try:
+            if not self.initialize():
+                print("\rInitialization failed. Exiting...")
+                return
+                
+            # Set terminal to raw mode for immediate key input
+            import termios
+            import tty
+            old_settings = termios.tcgetattr(sys.stdin)
+            tty.setraw(sys.stdin.fileno())
+            
+            while self.state.running:
+                if not self.start_stream():
+                    break
+                    
+                print("\rPress 'k' to restart the stream, 'q' to quit")
+                
+                while self.state.processing:
+                    self.pyqt_app.processEvents()
+                    
+                    # Check for keyboard input
+                    if select.select([sys.stdin], [], [], 0.1)[0]:
+                        key = sys.stdin.read(1).lower()
+                        if key == 'k':
+                            print("\rRestarting stream...")
+                            # Properly cleanup before reinitializing
+                            self.cleanup()
+                            # Reset state
+                            self.state = ApplicationState()
+                            # Reinitialize everything
+                            if not self.initialize():
+                                print("\rFailed to reinitialize. Exiting...")
+                                self.state.running = False
+                                break
+                            # Break out of the inner loop to restart the stream
+                            break
+                        elif key == 'q':
+                            print("\rQuitting...")
+                            self.state.running = False
+                            break
+                    
+                    # Add a small delay to prevent CPU overuse
+                    time.sleep(0.1)
+                            
+                if not self.state.running:
+                    break
+                    
+        except Exception as e:
+            print(f"\rApplication error: {str(e)}")
+        finally:
+            # Restore terminal settings
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+            self.cleanup()
+
+def main():
+    """Main entry point"""
+    try:
+        # Test data files - uncomment the one you want to use
+        # input_file = "data/cyton_BrainFlow-gap_short.csv"
+        # input_file = "gssc/sandbox/test_data"
+        # input_file = "data/tiny_gap.csv"
+        # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
+        input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv"    
+        # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
+        # input_file = "data/test_data/segmend_of_real_data.csv"   
+        # input_file = "data/test_data/gapped_data.csv" 
+        # input_file = "data/test_data/consecutive_data.csv"
+        
+        app_manager = ApplicationManager(input_file)
+        app_manager.run()
+    except Exception as e:
+        print(f"\rFatal error: {str(e)}")
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
+

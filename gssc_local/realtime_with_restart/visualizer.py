@@ -1,10 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Optional
-from montage import Montage
+from gssc_local.montage import Montage
 from brainflow.board_shim import BoardShim
 
-from .queue import VisualizationQueue
 
 class Visualizer:
     """Handles visualization of polysomnograph data and sleep stages"""
@@ -14,7 +13,6 @@ class Visualizer:
         self.recording_start_time = None
         self.seconds_per_epoch = seconds_per_epoch
         self.board_shim = board_shim
-        self.viz_queue = VisualizationQueue()
         
         # Use provided montage or create default
         self.montage = montage if montage is not None else Montage.default_sleep_montage()
@@ -28,11 +26,6 @@ class Visualizer:
         else:
             # Default to 16 channels for Cyton+Daisy
             self.electrode_channels = list(range(16))
-            
-        # Initialize figure in the main thread
-        self.init_polysomnograph()
-        # Start processing visualization updates
-        self.viz_queue.start_processing(self)
         
     def init_polysomnograph(self):
         """Initialize the polysomnograph figure and axes"""
@@ -95,11 +88,9 @@ class Visualizer:
         return stages.get(sleep_stage, 'Unknown')
     
     def plot_polysomnograph(self, epoch_data, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
-        """Add visualization update to queue instead of plotting directly"""
-        self.viz_queue.add_update(epoch_data, sampling_rate, sleep_stage, time_offset, epoch_start_time)
+        """Update polysomnograph plot with new data"""
+        self.init_polysomnograph()  # Ensure figure exists
         
-    def _plot_polysomnograph(self, epoch_data, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
-        """Internal method to actually perform the plotting (called from main thread)"""
         # Create time axis with offset
         time_axis = np.arange(epoch_data.shape[1]) / sampling_rate + time_offset
         
@@ -136,6 +127,7 @@ class Visualizer:
             
             # Plot the data
             ax.plot(time_axis, data, 'b-', linewidth=0.5)
+
             
             # Set y-axis label with units
             ax.set_ylabel(f'{label}\n({unit})', fontsize=7, rotation=0, ha='right', va='center')
@@ -170,6 +162,8 @@ class Visualizer:
                        fontweight='bold')
                 # Draw the zero line in light grey
                 ax.axhline(y=0, color='grey', linewidth=0.5, alpha=0.3)
+
+    
             
             # Add horizontal lines at the top and bottom of each channel's plot area
             ax.axhline(y=ax.get_ylim()[1], color='black', linewidth=1)  # Black line at top
@@ -191,9 +185,4 @@ class Visualizer:
         # Update the plot
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-        
-    def release(self):
-        """Clean up visualization resources"""
-        self.viz_queue.stop_processing()
-        if self.fig is not None:
-            plt.close(self.fig) 
+

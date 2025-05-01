@@ -1,7 +1,7 @@
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
-from montage import Montage
+from gssc_local.montage import Montage
 
 class PyQtVisualizer:
     """Handles visualization of polysomnograph data and sleep stages using PyQtGraph"""

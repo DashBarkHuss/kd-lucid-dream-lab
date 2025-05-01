@@ -1,15 +1,12 @@
+#previously called BufferManager
 import numpy as np
-import torch
 import logging
-import threading
-from typing import List, Tuple, Optional
-from montage import Montage
-from brainflow.board_shim import BoardShim
+import torch
+from gssc_local.montage import Montage
+from gssc_local.cyton_realtime.signal.processor import SignalProcessor
+from visualizer import Visualizer
 
-from ..visualization.pyqt_visualizer import PyQtVisualizer
-from .processor import SignalProcessor
-
-class BufferManager:
+class DataBufferManager:
     """Manages data buffers and their processing"""
     def __init__(self, board_shim, sampling_rate, montage: Montage = None):
         self.board_shim = board_shim
@@ -35,6 +32,15 @@ class BufferManager:
         self.epoch_interval = self.buffer_step  # Process every buffer_step seconds
         
         # List of lists tracking where each buffer has started processing epochs
+        # Example structure after processing some epochs:
+        # [
+        #     [0, 6000, 12000],      # Buffer 0 processed epochs starting at indices 0, 6000, 12000
+        #     [1000, 7000, 13000],   # Buffer 1 processed epochs starting at indices 1000, 7000, 13000
+        #     [2000, 8000, 14000],   # Buffer 2 processed epochs starting at indices 2000, 8000, 14000
+        #     [],                    # Buffer 3 hasn't processed any epochs yet
+        #     [],                    # Buffer 4 hasn't processed any epochs yet
+        #     []                     # Buffer 5 hasn't processed any epochs yet
+        # ]
         self.processed_epoch_start_indices = [[] for _ in range(6)]
         
         # Initialize hidden states for each buffer
@@ -43,7 +49,7 @@ class BufferManager:
             for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
         ]
         self.signal_processor = SignalProcessor()
-        self.visualizer = PyQtVisualizer(self.seconds_per_epoch, self.board_shim, montage)
+        self.visualizer = Visualizer(self.seconds_per_epoch, self.board_shim, montage)
         self.expected_interval = 1.0 / sampling_rate
         self.timestamp_tolerance = self.expected_interval * 0.01  # 1% tolerance
         self.gap_threshold = 2.0  # Large gap threshold (seconds)
@@ -58,10 +64,6 @@ class BufferManager:
         self.saved_data = []
         self.output_csv_path = None
         self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
-        self.shutdown_event = threading.Event()  # For signaling threads to stop
-        self.threads_stopped = threading.Event()  # For threads to signal they've stopped
-        self.active_threads = 0  # Counter for active threads
-        self.thread_lock = threading.Lock()  # For thread counter synchronization
 
     def _init_channels(self):
         """Initialize channel information"""
@@ -100,7 +102,7 @@ class BufferManager:
         adjusted_channel_idx = channel_idx + 1
             
         if adjusted_channel_idx >= len(data):
-            return False, f"\rChannel index {adjusted_channel_idx} out of range"
+            return False, f"Channel index {adjusted_channel_idx} out of range"
             
         channel_data = data[adjusted_channel_idx]
         
@@ -112,12 +114,12 @@ class BufferManager:
         # Check if the new data starts where the last data ended
         expected_next_value = self.last_validated_value + 1
         if channel_data[0] != expected_next_value:
-            return False, f"\rNon-consecutive data detected. Expected {expected_next_value}, got {channel_data[0]}"
+            return False, f"Non-consecutive data detected. Expected {expected_next_value}, got {channel_data[0]}"
             
         # Check if all values in the chunk are consecutive
         for i in range(1, len(channel_data)):
             if channel_data[i] != channel_data[i-1] + 1:
-                return False, f"\rNon-consecutive data within chunk at index {i}. Expected {channel_data[i-1] + 1}, got {channel_data[i]}"
+                return False, f"Non-consecutive data within chunk at index {i}. Expected {channel_data[i-1] + 1}, got {channel_data[i]}"
                 
         # Update last validated value
         self.last_validated_value = channel_data[-1]
@@ -127,7 +129,7 @@ class BufferManager:
         """Add new data to the buffer"""
         # Validate data values
         if np.any(np.isnan(new_data)) or np.any(np.isinf(new_data)):
-            logging.warning("\rData contains NaN or infinite values!")
+            logging.warning("Data contains NaN or infinite values!")
             return False
             
         # Validate consecutive values if enabled
@@ -135,7 +137,7 @@ class BufferManager:
             is_valid, message = self.validate_consecutive_data(new_data)
             if not is_valid:
                 #  throw an exception
-                raise Exception(f"\rConsecutive value validation failed: {message}")
+                raise Exception(f"Consecutive value validation failed: {message}")
             
         # Update points collected
         self.points_collected += len(new_data[0])
@@ -209,6 +211,7 @@ class BufferManager:
     def _enough_data_to_process_epoch(self, buffer_id, epoch_end_idx):
         """Check if we have enough data to process the given buffer"""
         buffer_delay = buffer_id * self.points_per_step
+
         
         return (epoch_end_idx <= len(self.all_previous_buffers_data[0]) and 
                 len(self.all_previous_buffers_data[0]) >= buffer_delay)
@@ -296,9 +299,9 @@ class BufferManager:
     def _process_epoch(self, start_idx, end_idx, buffer_id):
         """Handle the data for a specified epoch on a specified buffer which has valid data."""        
         
-        print(f"\rProcessing buffer {buffer_id}")
-        print(f"\rEpoch range: {start_idx} to {end_idx}")
-        print(f"\rBuffer {buffer_id}: Epoch range: {start_idx * self.expected_interval} to {end_idx * self.expected_interval} seconds")
+        print(f"\nProcessing buffer {buffer_id}")
+        print(f"Epoch range: {start_idx} to {end_idx}")
+        print(f"Buffer {buffer_id}: Epoch range: {start_idx * self.expected_interval} to {end_idx * self.expected_interval} seconds")
         
         # Extract EXACTLY points_per_epoch data points from the correct slice
         epoch_data = np.array([
@@ -319,7 +322,7 @@ class BufferManager:
             self.buffer_hidden_states[buffer_id]
         )
         
-        print(f"\rSleep stage: {self.visualizer.get_sleep_stage_text(sleep_stage[0])}")
+        print(f"Sleep stage: {self.visualizer.get_sleep_stage_text(sleep_stage[0])}")
         
         # Update visualization using Visualizer
         time_offset = start_idx / self.sampling_rate
@@ -337,7 +340,7 @@ class BufferManager:
         """Save raw data to CSV file"""
         self.output_csv_path = output_path
         if not self.saved_data:
-            print("\rNo data to save")
+            print("No data to save")
             return False
             
         try:
@@ -350,10 +353,10 @@ class BufferManager:
             
             # Save with exact format matching
             np.savetxt(output_path, data_array, delimiter='\t', fmt=fmt)
-            print(f"\rData saved to {output_path}")
+            print(f"Data saved to {output_path}")
             return True
         except Exception as e:
-            print(f"\rError saving to CSV: {str(e)}")
+            print(f"Error saving to CSV: {str(e)}")
             return False
 
     def validate_saved_csv(self, original_csv_path):
@@ -369,22 +372,22 @@ class BufferManager:
             
             # Check number of lines
             if len(saved_lines) != len(original_lines):
-                print(f"\r❌ Line count mismatch: Original={len(original_lines)}, Saved={len(saved_lines)}")
+                print(f"❌ Line count mismatch: Original={len(original_lines)}, Saved={len(saved_lines)}")
                 return False
-            print(f"\r✅ Line count matches: {len(original_lines)} lines")
+            print(f"✅ Line count matches: {len(original_lines)} lines")
             
             # Compare each line exactly
             for i, (saved_line, original_line) in enumerate(zip(saved_lines, original_lines)):
                 if saved_line != original_line:
-                    print(f"\r❌ Line {i+1} does not match exactly:")
-                    print(f"\rOriginal: {original_line.strip()}")
-                    print(f"\rSaved:    {saved_line.strip()}")
+                    print(f"❌ Line {i+1} does not match exactly:")
+                    print(f"Original: {original_line.strip()}")
+                    print(f"Saved:    {saved_line.strip()}")
                     return False
             
-            print("\r✅ All lines match exactly")
+            print("✅ All lines match exactly")
             return True
         except Exception as e:
-            print(f"\rError validating CSV: {str(e)}")
+            print(f"Error validating CSV: {str(e)}")
             return False
 
     def _get_affected_buffer(self, timestamp):
@@ -477,7 +480,7 @@ class BufferManager:
                 torch.zeros(10, 1, 256) for _ in range(7)
             ]
             
-            print(f"\rBuffer {buffer_id} reset complete - hidden states cleared")
+            print(f"Buffer {buffer_id} reset complete - hidden states cleared")
 
     def _get_next_epoch_indices(self, buffer_id):
         """Get the start and end indices for a buffers next epoch based on the last processed epoch plus the points per epoch.
@@ -511,4 +514,10 @@ class BufferManager:
 
     def _calculate_next_buffer_id_to_process(self):
         """Calculate the ID of the next buffer to process"""
-        return (self.last_processed_buffer + 1) % 6 
+        return (self.last_processed_buffer + 1) % 6
+
+
+
+
+
+
