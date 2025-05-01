@@ -5,6 +5,8 @@ import torch
 from gssc_local.montage import Montage
 from gssc_local.cyton_realtime.signal.processor import SignalProcessor
 from visualizer import Visualizer
+from gssc_local.pyqt_visualizer import PyQtVisualizer
+
 
 class DataBufferManager:
     """Manages data buffers and their processing"""
@@ -49,7 +51,8 @@ class DataBufferManager:
             for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
         ]
         self.signal_processor = SignalProcessor()
-        self.visualizer = Visualizer(self.seconds_per_epoch, self.board_shim, montage)
+        # self.visualizer = Visualizer(self.seconds_per_epoch, self.board_shim, montage)
+        self.visualizer = PyQtVisualizer(self.seconds_per_epoch, self.board_shim, montage)
         self.expected_interval = 1.0 / sampling_rate
         self.timestamp_tolerance = self.expected_interval * 0.01  # 1% tolerance
         self.gap_threshold = 2.0  # Large gap threshold (seconds)

@@ -202,7 +202,8 @@ def run_board_stream(playback_file, conn):
 def main():
     """Main function that manages the data acquisition and processing"""
     # Initialize playback file and timestamp tracking
-    playback_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv"
+    playback_file = "data/test_data/consecutive_data.csv"
+    # playback_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv"
     start_first_data_ts = None  # Keep this at module level for parent process
 
     # Verify input file exists
@@ -221,7 +222,8 @@ def main():
     timestamp_channel = board_manager.board_shim.get_timestamp_channel(board_id)
     received_streamed_data_handler = ReceivedStreamedDataHandler(playback_file, board_manager)
 
-
+    # Get the PyQt application instance from the visualizer. uncomment if using the regular matplotlib visualizer
+    qt_app = received_streamed_data_handler.data_buffer_manager.visualizer.app
 
     # Main processing loop
     while True:
@@ -260,8 +262,9 @@ def main():
                     # Process incoming data
                     received_streamed_data_handler.process_board_data(received['board_data'])
                     
-                    
-
+            # Process Qt events to update the GUI. uncomment if using the regular matplotlib visualizer
+            qt_app.processEvents()
+            
             time.sleep(0.1)
             
         # Clean up child process
