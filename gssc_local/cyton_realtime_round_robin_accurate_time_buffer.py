@@ -1035,11 +1035,11 @@ def main():
     # input_file = "gssc/sandbox/test_data"
     # input_file = "data/tiny_gap.csv"
     # input_file = "data/cyton_BrainFlow-adjusted-timestamps.csv"
-    input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
+    # input_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv"   
     # input_file = "data/test_data/segmend_of_real_data.csv"   
     # input_file = "data/test_data/gapped_data.csv"
     
-    # input_file = "data/test_data/consecutive_data.csv"
+    input_file = "data/test_data/consecutive_data.csv"
     data_acquisition = DataAcquisition(input_file)
     
     # Create minimal montage (without temporal channels and top/bottom EOG)
@@ -1187,4 +1187,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

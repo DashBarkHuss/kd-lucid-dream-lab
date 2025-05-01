@@ -1,7 +1,7 @@
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
-from montage import Montage
+from gssc_local.montage import Montage
 
 class PyQtVisualizer:
     """Handles visualization of polysomnograph data and sleep stages using PyQtGraph"""
@@ -42,6 +42,8 @@ class PyQtVisualizer:
         self.recording_start_time = None
         self.seconds_per_epoch = seconds_per_epoch
         self.board_shim = board_shim
+        self.countdown_remaining = seconds_per_epoch  # Add countdown counter
+        self.is_counting_down = True  # Flag to track if we're still counting down
         
         # Use provided montage or create default
         self.montage = montage if montage is not None else Montage.default_sleep_montage()
@@ -87,6 +89,9 @@ class PyQtVisualizer:
         self.title_label.setMaximumHeight(self.TITLE_LABEL_HEIGHT)  # Limit title height
         self.layout.addWidget(self.title_label)
         
+        # Set initial loading message
+        self.title_label.setText(f"Waiting {self.seconds_per_epoch} seconds for initial data...")
+        
         # Create GraphicsLayoutWidget for plots
         self.plot_widget = pg.GraphicsLayoutWidget()
         self.plot_widget.setContentsMargins(self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS)  # Remove internal margins
@@ -107,6 +112,11 @@ class PyQtVisualizer:
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update)
         self.timer.start(self.TIMER_UPDATE_INTERVAL_MS)  # Update every 50ms
+        
+        # Set up countdown timer
+        self.countdown_timer = QtCore.QTimer()
+        self.countdown_timer.timeout.connect(self._update_countdown)
+        self.countdown_timer.start(1000)  # Update every second
         
     def _init_polysomnograph(self):
         """Initialize the polysomnograph figure and plots"""
@@ -182,8 +192,22 @@ class PyQtVisualizer:
         }
         return stages.get(sleep_stage, 'Unknown')
     
+    def _update_countdown(self):
+        """Update the countdown timer and title"""
+        if self.is_counting_down and self.countdown_remaining > 0:
+            self.countdown_remaining -= 1
+            self.title_label.setText(f"Waiting {self.countdown_remaining} seconds for initial data...")
+        elif self.countdown_remaining == 0:
+            self.is_counting_down = False
+            self.countdown_timer.stop()
+            
     def plot_polysomnograph(self, epoch_data, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
         """Update polysomnograph plot with new data"""
+        # Stop countdown if it's still running
+        if self.is_counting_down:
+            self.is_counting_down = False
+            self.countdown_timer.stop()
+            
         # Calculate elapsed time
         elapsed_seconds = (epoch_start_time - self.recording_start_time 
                          if self.recording_start_time is not None and epoch_start_time is not None 

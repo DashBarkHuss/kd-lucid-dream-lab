@@ -83,8 +83,9 @@ we're now detecting gaps in all buffers. lets save the main buffer to a csv and 
 Tested the sythesized gapped data file. It works.
 Tested with real data. It works.
 
-Next we should alter the visualizer to show all 8 channels,
-We did this.
+Next we should alter the visualizer to show all 8 channels
+
+e did this.
 
 We need to refactor the main loop to be a separate class/method.
 
@@ -161,6 +162,7 @@ what we did already:
 - Tried to add 5 labeled ticks to the y-axis but it didn't work. Its only labeling 3
 
 see if filtering is necessary, compares the detection with the scored file, and handle the visualizatoin of the main buffer vs the other buffers: we updated the scoring every 5 seconds but really the main buffer is every 30 seconds.
+
 Need to Refactor.
 Need to set up tests better.
 

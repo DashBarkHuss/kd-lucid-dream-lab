@@ -1,1 +1,0 @@
-"""GSSC (Generic Sleep Stage Classifier) package.""" 
