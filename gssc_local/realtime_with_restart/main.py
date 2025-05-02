@@ -256,6 +256,7 @@ def main():
                     last_good_ts = float(received)
                     logger.info(f"Received last good timestamp: {last_good_ts}")
                     child_exited_normally = True
+                    # break this loop to start the gap handling process
                     break
                     
                 elif msg_type == 'data':
@@ -286,7 +287,13 @@ def main():
         next_rows = timestamps[timestamps > last_good_ts]
 
         if next_rows.empty:
-            logger.info("No more data after last timestamp. Exiting.")
+            logger.info("No more data after last timestamp. Saving csv and exiting.")
+        
+            output_csv_path = received_streamed_data_handler.data_buffer_manager.output_csv_path = "data/test_data/reconstructed_data.csv"
+            received_streamed_data_handler.data_buffer_manager.save_to_csv(output_csv_path)
+            # validate the saved csv
+            received_streamed_data_handler.data_buffer_manager.validate_saved_csv(playback_file)
+        
             break
 
         # Create new trimmed file starting from the gap

@@ -133,33 +133,26 @@ Processing pipeline
 Interface Design
 Need to design a clean interface for:
 Starting/stopping the stream
-Checking stream status
-Getting current processing state
-
-what we did already:
-
-- Added Stream State Management:
-  - Added \_streaming flag to DataAcquisition class
-  - Added stop_stream() and is_streaming() methods
-  - Added proper stream state checks in data acquisition methods
-- Created StreamProcessor Class:
-  - Moved the main processing loop into a dedicated StreamProcessor class
-  - Added proper thread management with start/stop methods
-  - Improved error handling and logging
-  - Added iteration counting and debug output
-- Improved Main Function:
-  - Simplified the main function by using the new StreamProcessor
-  - Added proper cleanup and error handling
-  - Improved CSV validation and saving
-- Added Threading Support:
-
-  - Added threading imports
-  - Made the processing loop run in a separate thread
-  - Added proper thread cleanup
 
 - In pyqt_visualizer.py, tried rotating channel labels (EMG2 etc) to be horizontal using `p.getAxis('left').label.setRotation(0)` and but this messed up the label position.
 
 - Tried to add 5 labeled ticks to the y-axis but it didn't work. Its only labeling 3
+
+- started a refactor that uses multiprocessing to run the board stream in a separate process. realtime_with_restart/main.py
+
+- next steps:
+  - in realtime_with_restart
+    - ✅ test gap handling with the visualizer
+      - improvements:
+        - updated the visualizer to show there is a gap
+    - understand why pytqt visualizer had to implement threads
+    - handle large variables likethe previous buffer and the saved data for csv
+    - validate csv after gap handling
+    - delete offset files
+    - better logs to see gap handling
+    - test gap handling when the gap is in the middle of the stream and hidden states already exist
+  - see what changes need to be made for working with streamed data
+  - test against scored file - wee can probably make a test file that doesn't need the rull processing/realtime stream loop. like just haddle hiddens and compare the results. hiddens are handle differently in trealtime vs after the fact processing.
 
 see if filtering is necessary, compares the detection with the scored file, and handle the visualizatoin of the main buffer vs the other buffers: we updated the scoring every 5 seconds but really the main buffer is every 30 seconds.
 
