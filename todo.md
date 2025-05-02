@@ -147,7 +147,7 @@ Starting/stopping the stream
         - updated the visualizer to show there is a gap
     - understand why pytqt visualizer had to implement threads
     - handle large variables likethe previous buffer and the saved data for csv
-    - validate csv after gap handling
+    - ✅ validate csv after gap handling
     - delete offset files
     - better logs to see gap handling
     - test gap handling when the gap is in the middle of the stream and hidden states already exist
