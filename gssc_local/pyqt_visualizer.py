@@ -257,10 +257,10 @@ class PyQtVisualizer:
             plot.getAxis('left').setStyle(tickTextOffset=5)  # Adjust text offset for better visibility
             plot.getAxis('left').setTickSpacing(major=(y_max_with_margin - y_min_with_margin) / (self.Y_AXIS_TICK_COUNT - 1))
             
-            # Show "All values are 0.0" text if needed
-            if np.allclose(data, 0):
-                # Create text item for "All values are 0.0" message
-                text = pg.TextItem("All values are 0.0", color='r', anchor=(0, 0))  # Changed anchor to (0, 0) for left alignment
+            # Show "All values are ---" text if needed
+            if np.allclose(data, data[0]):
+                # Create text item for "All values are ---" message
+                text = pg.TextItem(f"All values are {data[0]:.1f}", color='r', anchor=(0, 0))  # Changed anchor to (0, 0) for left alignment
                 plot.addItem(text)
                 # Position the text at the left side of the plot
                 text.setPos(time_offset, y_max_with_margin - margin/2)  # Changed x position to time_offset
@@ -269,6 +269,9 @@ class PyQtVisualizer:
                 for item in plot.items:
                     if isinstance(item, pg.TextItem):
                         plot.removeItem(item)
+
+            
+
     
     def update(self):
         """Update the visualization (called by timer)"""

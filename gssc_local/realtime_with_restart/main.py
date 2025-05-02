@@ -202,10 +202,11 @@ def run_board_stream(playback_file, conn):
 def main():
     """Main function that manages the data acquisition and processing"""
     # Initialize playback file and timestamp tracking
-    playback_file = "data/test_data/consecutive_data.csv"
+    # playback_file = "data/test_data/consecutive_data.csv"
+    original_data_file = "data/test_data/gapped_data_2_second_gap_at_4000.csv"
     # playback_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv"
     start_first_data_ts = None  # Keep this at module level for parent process
-
+    playback_file = original_data_file
     # Verify input file exists
     if not os.path.isfile(playback_file):
         logger.error(f"File not found: {playback_file}")
@@ -292,7 +293,7 @@ def main():
             output_csv_path = received_streamed_data_handler.data_buffer_manager.output_csv_path = "data/test_data/reconstructed_data.csv"
             received_streamed_data_handler.data_buffer_manager.save_to_csv(output_csv_path)
             # validate the saved csv
-            received_streamed_data_handler.data_buffer_manager.validate_saved_csv(playback_file)
+            received_streamed_data_handler.data_buffer_manager.validate_saved_csv(original_data_file)
         
             break
 
