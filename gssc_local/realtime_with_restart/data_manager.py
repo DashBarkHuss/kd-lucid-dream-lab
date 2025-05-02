@@ -3,12 +3,12 @@ import numpy as np
 import logging
 import torch
 from gssc_local.montage import Montage
-from gssc_local.cyton_realtime.signal.processor import SignalProcessor
+from processor import SignalProcessor
 from visualizer import Visualizer
 from gssc_local.pyqt_visualizer import PyQtVisualizer
 
 
-class DataBufferManager:
+class DataManager:
     """Manages data buffers and their processing"""
     def __init__(self, board_shim, sampling_rate, montage: Montage = None):
         self.board_shim = board_shim
@@ -162,6 +162,10 @@ class DataBufferManager:
             
         new_rows = new_data.T.tolist()
         
+        # Add NaN placeholders for sleep stage and buffer ID to each row
+        for row in new_rows:
+            row.extend([float('nan'), float('nan')])  # Add NaN for sleep stage and buffer ID
+        
         # For initial data, save everything
         if is_initial:
             self.saved_data.extend(new_rows)
@@ -187,6 +191,17 @@ class DataBufferManager:
             self.saved_data.extend(new_rows)
             if new_rows:
                 self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+
+    def add_sleep_stage_to_csv(self, sleep_stage, next_buffer_id, epoch_end_idx):
+        """Add the sleep stage and buffer ID to the end of the row at epoch_end_idx"""
+        # Ensure the row exists
+        if epoch_end_idx >= len(self.saved_data):
+            print(f"Warning: epoch_end_idx {epoch_end_idx} is out of range for saved_data with length {len(self.saved_data)}")
+            return
+        
+        # Update the last two columns (which were initialized as NaN)
+        self.saved_data[epoch_end_idx][-2] = float(sleep_stage[0])  # Convert to float
+        self.saved_data[epoch_end_idx][-1] = float(next_buffer_id)  # Convert to float
 
     def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
         """Validate the epoch has no gaps
@@ -297,7 +312,9 @@ class DataBufferManager:
             return
 
         # Process the epoch
-        self._process_epoch(start_idx=epoch_start_idx, end_idx=epoch_end_idx, buffer_id=buffer_id)
+        sleep_stage = self._process_epoch(start_idx=epoch_start_idx, end_idx=epoch_end_idx, buffer_id=buffer_id)
+
+        return sleep_stage
 
     def _process_epoch(self, start_idx, end_idx, buffer_id):
         """Handle the data for a specified epoch on a specified buffer which has valid data."""        
@@ -338,6 +355,7 @@ class DataBufferManager:
         )
         
         self.buffer_hidden_states[buffer_id] = new_hidden_states
+        return sleep_stage
 
     def save_to_csv(self, output_path):
         """Save raw data to CSV file"""
@@ -348,10 +366,9 @@ class DataBufferManager:
             
         try:
             # Convert to numpy array
-            data_array = np.array(self.saved_data)
+            data_array = np.array(self.saved_data, dtype=float)
             
-            # Create format specifiers to match original file
-            # All columns should use %.6f for consistent floating-point precision
+            # Create format specifiers - all columns use float format
             fmt = ['%.6f'] * data_array.shape[1]
             
             # Save with exact format matching
@@ -363,7 +380,7 @@ class DataBufferManager:
             return False
 
     def validate_saved_csv(self, original_csv_path):
-        """Validate that the saved CSV matches the original format exactly"""
+        """Validate that the saved CSV matches the original format exactly, ignoring sleep stage and buffer ID columns"""
         try:
             # Read both CSVs as strings first
             with open(self.output_csv_path, 'r') as f:
@@ -379,15 +396,22 @@ class DataBufferManager:
                 return False
             print(f"✅ Line count matches: {len(original_lines)} lines")
             
-            # Compare each line exactly
+            # Compare each line exactly, but only the original columns
             for i, (saved_line, original_line) in enumerate(zip(saved_lines, original_lines)):
-                if saved_line != original_line:
+                # Split lines into columns and remove the last two columns from saved data
+                saved_columns = saved_line.strip().split('\t')[:-2]  # Remove sleep stage and buffer ID
+                original_columns = original_line.strip().split('\t')
+                
+                # Rejoin columns for comparison
+                saved_line_trimmed = '\t'.join(saved_columns)
+                
+                if saved_line_trimmed != original_line.strip():
                     print(f"❌ Line {i+1} does not match exactly:")
                     print(f"Original: {original_line.strip()}")
-                    print(f"Saved:    {saved_line.strip()}")
+                    print(f"Saved:    {saved_line_trimmed}")
                     return False
             
-            print("✅ All lines match exactly")
+            print("✅ All lines match exactly (ignoring sleep stage and buffer ID columns)")
             return True
         except Exception as e:
             print(f"Error validating CSV: {str(e)}")

@@ -7,7 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 # Now use absolute imports
 from gssc_local.montage import Montage
-from data_buffer_manager import DataBufferManager
+from gssc_local.realtime_with_restart.data_manager import DataManager
 from board_manager import BoardManager
 
 # we are using  cyton_daisy_example_gap_stream_reset_and_manage_data.py as a template
@@ -109,7 +109,7 @@ class ReceivedStreamedDataHandler:
         self.timestamp_buffer = []  # Stores corresponding timestamps
         self.sample_count = 0  # Total number of samples processed
         self.board_manager = board_manager
-        self.data_buffer_manager = DataBufferManager(self.board_manager.board_shim, self.board_manager.sampling_rate, Montage.minimal_sleep_montage())
+        self.data_buffer_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, Montage.minimal_sleep_montage())
     
     def process_board_data(self, board_data):
         """Process incoming data chunk and store it"""
@@ -133,9 +133,11 @@ class ReceivedStreamedDataHandler:
 
             if can_process:
                 # Only process when we have a complete epoch ready
-                self.data_buffer_manager.manage_epoch(buffer_id=next_buffer_id, 
+                sleep_stage = self.data_buffer_manager.manage_epoch(buffer_id=next_buffer_id, 
                                         epoch_start_idx=epoch_start_idx, 
                                         epoch_end_idx=epoch_end_idx)
+                # add the sleep stage to the csv at the epoch end idx and include the buffer id
+                self.data_buffer_manager.add_sleep_stage_to_csv(sleep_stage, next_buffer_id, epoch_end_idx)
         
         # Log processing statistics
         logger.info(f"Processed {self.sample_count} samples")        
@@ -202,8 +204,8 @@ def run_board_stream(playback_file, conn):
 def main():
     """Main function that manages the data acquisition and processing"""
     # Initialize playback file and timestamp tracking
-    # playback_file = "data/test_data/consecutive_data.csv"
-    original_data_file = "data/test_data/gapped_data_2_second_gap_at_4000.csv"
+    original_data_file = "data/test_data/consecutive_data.csv"
+    # original_data_file = "data/test_data/gapped_data_2_second_gap_at_4000.csv"
     # playback_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv"
     start_first_data_ts = None  # Keep this at module level for parent process
     playback_file = original_data_file
