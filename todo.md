@@ -150,7 +150,7 @@ Starting/stopping the stream
     - ✅ validate csv after gap handling
     - delete offset files
     - better logs to see gap handling
-    - test gap handling when the gap is in the middle of the stream and hidden states already exist
+    - ✅ test gap handling when the gap is in the middle of the stream and hidden states already exist
   - see what changes need to be made for working with streamed data
   - test against scored file - wee can probably make a test file that doesn't need the rull processing/realtime stream loop. like just haddle hiddens and compare the results. hiddens are handle differently in trealtime vs after the fact processing.
 
