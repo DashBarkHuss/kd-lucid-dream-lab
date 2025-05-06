@@ -9,6 +9,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from gssc_local.montage import Montage
 from gssc_local.realtime_with_restart.data_manager import DataManager
 from board_manager import BoardManager
+from received_stream_data_handler import ReceivedStreamedDataHandler
+
 
 # we are using  cyton_daisy_example_gap_stream_reset_and_manage_data.py as a template
 
@@ -101,48 +103,6 @@ def create_trimmed_csv(input_file, output_file, skip_samples):
             if idx >= skip_samples:
                 outfile.write(line)
 
-class ReceivedStreamedDataHandler: 
-    """Handles processing and storage of incoming EEG data"""
-    def __init__(self, input_file: str, board_manager: BoardManager):
-        # Initialize buffers to store data chunks and their timestamps
-        self.data_buffer = []  # Stores raw EEG data chunks
-        self.timestamp_buffer = []  # Stores corresponding timestamps
-        self.sample_count = 0  # Total number of samples processed
-        self.board_manager = board_manager
-        self.data_buffer_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, Montage.minimal_sleep_montage())
-    
-    def process_board_data(self, board_data):
-        """Process incoming data chunk and store it"""
-        # Store the new data chunk and its timestamps
-        self.data_buffer.append(board_data)
-        timestamps = board_data[self.board_manager.timestamp_channel]
-        self.timestamp_buffer.append(timestamps)
-
-        self.sample_count += board_data.shape[1]  # Increment total sample count
-
-        # Successfully got data
-        if self.data_buffer_manager.add_data(board_data): # add data to the full buffer. this only saves the relevant data to the buffer and it validates the data
-            # First just save the raw data
-            self.data_buffer_manager.save_new_data(board_data)
-            
-            # Calculate which buffer should be processed next
-            next_buffer_id = self.data_buffer_manager._calculate_next_buffer_id_to_process()
-
-            # Check if we CAN process an epoch (have enough data + right timing)
-            can_process, reason, epoch_start_idx, epoch_end_idx = self.data_buffer_manager.next_available_epoch_on_buffer(next_buffer_id)
-
-            if can_process:
-                # Only process when we have a complete epoch ready
-                sleep_stage = self.data_buffer_manager.manage_epoch(buffer_id=next_buffer_id, 
-                                        epoch_start_idx=epoch_start_idx, 
-                                        epoch_end_idx=epoch_end_idx)
-                # add the sleep stage to the csv at the epoch end idx and include the buffer id
-                self.data_buffer_manager.add_sleep_stage_to_csv(sleep_stage, next_buffer_id, epoch_end_idx)
-        
-        # Log processing statistics
-        logger.info(f"Processed {self.sample_count} samples")        
-        # Calculate and log basic statistics for monitoring
-        
 def run_board_stream(playback_file, conn):
     """Child process that handles data acquisition from the board"""
     try:
@@ -204,9 +164,9 @@ def run_board_stream(playback_file, conn):
 def main():
     """Main function that manages the data acquisition and processing"""
     # Initialize playback file and timestamp tracking
-    original_data_file = "data/test_data/consecutive_data.csv"
+    # original_data_file = "data/test_data/consecutive_data.csv"
     # original_data_file = "data/test_data/gapped_data_2_second_gap_at_4000.csv"
-    # playback_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv"
+    original_data_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv"
     start_first_data_ts = None  # Keep this at module level for parent process
     playback_file = original_data_file
     # Verify input file exists
@@ -223,10 +183,10 @@ def main():
     board_manager = BoardManager(playback_file, board_id)
     board_manager.setup_board()
     timestamp_channel = board_manager.board_shim.get_timestamp_channel(board_id)
-    received_streamed_data_handler = ReceivedStreamedDataHandler(playback_file, board_manager)
+    received_streamed_data_handler = ReceivedStreamedDataHandler( board_manager, logger)
 
     # Get the PyQt application instance from the visualizer. uncomment if using the regular matplotlib visualizer
-    qt_app = received_streamed_data_handler.data_buffer_manager.visualizer.app
+    qt_app = received_streamed_data_handler.data_manager.visualizer.app
 
     # Main processing loop
     while True:
@@ -292,10 +252,10 @@ def main():
         if next_rows.empty:
             logger.info("No more data after last timestamp. Saving csv and exiting.")
         
-            output_csv_path = received_streamed_data_handler.data_buffer_manager.output_csv_path = "data/test_data/reconstructed_data.csv"
-            received_streamed_data_handler.data_buffer_manager.save_to_csv(output_csv_path)
+            output_csv_path = received_streamed_data_handler.data_manager.output_csv_path = "data/test_data/reconstructed_data.csv"
+            received_streamed_data_handler.data_manager.save_to_csv(output_csv_path)
             # validate the saved csv
-            received_streamed_data_handler.data_buffer_manager.validate_saved_csv(original_data_file)
+            received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file)
         
             break
 

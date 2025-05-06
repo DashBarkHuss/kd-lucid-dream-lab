@@ -7,7 +7,7 @@ from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 
 class BoardManager:
     """Handles board setup and data collection"""
-    def __init__(self, file_path: str, master_board_id: BoardIds = BoardIds.CYTON_DAISY_BOARD):
+    def __init__(self, file_path: str = None, master_board_id: BoardIds = BoardIds.CYTON_DAISY_BOARD):
         self.file_path = file_path
         self.board_shim = None
         self.sampling_rate = None
@@ -26,27 +26,32 @@ class BoardManager:
     def set_buffer_manager(self, buffer_manager):
         self.buffer_manager = buffer_manager
 
-    def setup_board(self):
-        """Initialize and setup the board for data collection"""
+    def set_board_shim(self):
         BoardShim.enable_dev_board_logger()
         logging.basicConfig(level=logging.DEBUG)
 
         params = BrainFlowInputParams()
         params.board_id = BoardIds.PLAYBACK_FILE_BOARD
         params.master_board = self.master_board_id  # Use class variable
-        params.file = self.file_path
+        # params.file = self.file_path
         params.playback_file_max_count = 1
         params.playback_speed = 1
         params.playback_file_offset = 0
 
         self.board_shim = BoardShim(BoardIds.PLAYBACK_FILE_BOARD, params)
+
+        # Get sampling rate and timestamp channel from master board, not playback board
+        self.sampling_rate = BoardShim.get_sampling_rate(self.master_board_id)
+        self.timestamp_channel = BoardShim.get_timestamp_channel(self.master_board_id)
+        
+        return self.board_shim
+
+    def setup_board(self):
+        """Initialize and setup the board for data collection"""
+        self.set_board_shim()
         
         try:
             self.board_shim.prepare_session()
-            # Get sampling rate and timestamp channel from master board, not playback board
-            self.sampling_rate = BoardShim.get_sampling_rate(self.master_board_id)
-            self.timestamp_channel = BoardShim.get_timestamp_channel(self.master_board_id)
-            
             print(f"\nBoard Configuration:")
             print(f"Master board: {self.master_board_id}")
             print(f"Timestamp channel: {self.timestamp_channel}")

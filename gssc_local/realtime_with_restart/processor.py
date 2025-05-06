@@ -69,10 +69,10 @@ class SignalProcessor:
             
         return combinations
     
-    def prepare_input_data(self, epoch_data):
+    def prepare_input_data(self, epoch_data, eeg_indices, eog_indices):
         """Prepare input data for prediction"""
-        # Hardcoded indices for now - could be made configurable
-        index_combinations = self.get_index_combinations([0, 1, 2], [3])
+        # used to be hardcoded - [0, 1, 2], [3]. this  comment can be removed once we make sure this is working, just saving this for reference
+        index_combinations = self.get_index_combinations(eeg_indices, eog_indices)
         
         # Create input dictionaries
         input_dict_list = []
@@ -92,10 +92,10 @@ class SignalProcessor:
             
         return resampled_dict_list
     
-    def predict_sleep_stage(self, epoch_data, hidden_states):
+    def predict_sleep_stage(self, epoch_data, hidden_states, eeg_indices = [0, 1, 2], eog_indices = [3]):
         """Predict sleep stage from epoch data"""
         # Prepare input data
-        input_dict_list = self.prepare_input_data(epoch_data)
+        input_dict_list = self.prepare_input_data(epoch_data, eeg_indices, eog_indices)
         
         # Get predictions for each combination
         results = []

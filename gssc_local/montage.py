@@ -52,8 +52,8 @@ class Montage:
         eog_channels = [
             ("T-EOG", "Top EOG"),
             ("B-EOG", "Bottom EOG"),
-            ("R-LEOG", "Right Lateral EOG"),
-            ("L-LEOG", "Left Lateral EOG")
+            ("R-HEOG", "Right Horizontal EOG"),
+            ("L-HEOG", "Left Horizontal EOG")
         ]
         
         for i, (label, description) in enumerate(eog_channels, 9):

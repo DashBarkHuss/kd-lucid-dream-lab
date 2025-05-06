@@ -26,23 +26,7 @@ The simplest approach that processes data in non-overlapping 30-second windows.
 - Only provides updates every 30 seconds
 - High latency for initial prediction
 
-### 2. Overlapping Windows with Single Hidden State
-
-This approach processes overlapping windows to provide more frequent updates.
-
-**Pros:**
-
-- More frequent updates (configurable shift interval)
-- Reuses existing data for faster feedback
-- Lower latency than basic approach
-
-**Cons:**
-
-- May reduce accuracy due to hidden state inconsistency
-- Doesn't match the model's training pattern
-- Introduces redundancy in processing
-
-### 3. Multiple Hidden States (Round-Robin Approach)
+### 2. Multiple Hidden States (Round-Robin Approach)
 
 This approach maintains separate hidden states for different time-shifted streams of the same data.
 

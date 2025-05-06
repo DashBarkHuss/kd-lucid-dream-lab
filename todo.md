@@ -149,9 +149,13 @@ Starting/stopping the stream
     - handle large variables likethe previous buffer and the saved data for csv
     - ✅ validate csv after gap handling
     - delete offset files
+    - handle the reconstructed files better- better naming etc
     - better logs to see gap handling
     - ✅ test gap handling when the gap is in the middle of the stream and hidden states already exist
-  - see what changes need to be made for working with streamed data
+  - do we need to add filtering? i believe so. i think set sinclude filtering in them and csv raws do not.
+  - warn if bad channel isbeing used for inference- like all the same value
+  - ✅ remove harded coded combinations from gssc_array_with_fif
+  - see what changes need to be made for working with streamed data vs playback from file
   - test against scored file - wee can probably make a test file that doesn't need the rull processing/realtime stream loop. like just haddle hiddens and compare the results. hiddens are handle differently in trealtime vs after the fact processing.
 
 see if filtering is necessary, compares the detection with the scored file, and handle the visualizatoin of the main buffer vs the other buffers: we updated the scoring every 5 seconds but really the main buffer is every 30 seconds.

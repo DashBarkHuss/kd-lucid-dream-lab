@@ -24,7 +24,7 @@ class DataManager:
         
         # Initialize channels and buffers
         self.electrode_channels, self.timestamp_channel, self.all_channels_with_timestamp = self._init_channels()
-        self.all_previous_buffers_data = [[] for _ in range(len(self.all_channels_with_timestamp))]
+        self.all_previous_relevant_column_data = [[] for _ in range(len(self.all_channels_with_timestamp))]
         
         # Buffer tracking
         self.points_collected = 0
@@ -148,10 +148,10 @@ class DataManager:
         # Update all_previous_data
         if not is_initial:
             for i, channel in enumerate(self.all_channels_with_timestamp):
-                self.all_previous_buffers_data[i].extend(new_data[channel].tolist())
+                self.all_previous_relevant_column_data[i].extend(new_data[channel].tolist())
         else:
             for i, channel in enumerate(self.all_channels_with_timestamp):
-                self.all_previous_buffers_data[i] = new_data[channel].tolist()
+                self.all_previous_relevant_column_data[i] = new_data[channel].tolist()
                 
         return True
 
@@ -218,7 +218,7 @@ class DataManager:
         """
             
         # Check for gaps in the timestamp data
-        timestamp_data = self.all_previous_buffers_data[self.buffer_timestamp_index]
+        timestamp_data = self.all_previous_relevant_column_data[self.buffer_timestamp_index]
         has_gap, gap_size, gap_start_idx, gap_end_idx = self.detect_gap(
             timestamp_data[epoch_start_idx:epoch_end_idx],
             timestamp_data[epoch_start_idx-1] if epoch_start_idx > 0 else None
@@ -231,8 +231,8 @@ class DataManager:
         buffer_delay = buffer_id * self.points_per_step
 
         
-        return (epoch_end_idx <= len(self.all_previous_buffers_data[0]) and 
-                len(self.all_previous_buffers_data[0]) >= buffer_delay)
+        return (epoch_end_idx <= len(self.all_previous_relevant_column_data[0]) and 
+                len(self.all_previous_relevant_column_data[0]) >= buffer_delay)
     
     def _has_enough_data_for_buffer(self, buffer_id):
         """Check if we have enough data points and time has passed for the specified buffer
@@ -252,18 +252,18 @@ class DataManager:
             buffer_delay = buffer_id * self.points_per_step
             required_points = buffer_delay + self.points_per_epoch
             
-        if len(self.all_previous_buffers_data[0]) < required_points:
+        if len(self.all_previous_relevant_column_data[0]) < required_points:
             return False, "Not enough data points"
             
         # Get the current timestamp from the data
-        current_timestamp = self.all_previous_buffers_data[self.buffer_timestamp_index][-1]
+        current_timestamp = self.all_previous_relevant_column_data[self.buffer_timestamp_index][-1]
         
         # For the first epoch, we can process it
         if self.last_processed_buffer == -1:
             return True, ""
             
         # For subsequent epochs, check if we've moved forward by buffer_step seconds
-        last_epoch_timestamp = self.all_previous_buffers_data[self.buffer_timestamp_index][
+        last_epoch_timestamp = self.all_previous_relevant_column_data[self.buffer_timestamp_index][
             self.processed_epoch_start_indices[self.last_processed_buffer][-1]
         ]
         
@@ -300,7 +300,7 @@ class DataManager:
         if has_gap:
             # Handle the gap
             self.handle_gap(
-                prev_timestamp=self.all_previous_buffers_data[self.buffer_timestamp_index][epoch_start_idx-1],
+                prev_timestamp=self.all_previous_relevant_column_data[self.buffer_timestamp_index][epoch_start_idx-1],
                 gap_size=gap_size, buffer_id=buffer_id
             )
        
@@ -325,7 +325,7 @@ class DataManager:
         
         # Extract EXACTLY points_per_epoch data points from the correct slice
         epoch_data = np.array([
-            self.all_previous_buffers_data[channel][start_idx:end_idx]
+            self.all_previous_relevant_column_data[channel][start_idx:end_idx]
             for channel in self.electrode_channels
         ])
         
@@ -333,13 +333,15 @@ class DataManager:
         assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
         
         # Get the timestamp data for this epoch
-        timestamp_data = self.all_previous_buffers_data[self.buffer_timestamp_index][start_idx:end_idx]
+        timestamp_data = self.all_previous_relevant_column_data[self.buffer_timestamp_index][start_idx:end_idx]
         epoch_start_time = timestamp_data[0]  # First timestamp in the epoch
         
         # Get sleep stage prediction using SignalProcessor
         sleep_stage, new_hidden_states = self.signal_processor.predict_sleep_stage(
             epoch_data,
-            self.buffer_hidden_states[buffer_id]
+            self.buffer_hidden_states[buffer_id],
+            [0, 1, 2], # eeg indices
+            [3] # eog indices
         )
         
         print(f"Sleep stage: {self.visualizer.get_sleep_stage_text(sleep_stage[0])}")
@@ -427,11 +429,11 @@ class DataManager:
         Returns:
             int: Buffer ID (0-5) or None if cannot be determined
         """
-        if not self.all_previous_buffers_data[0]:  # No data yet
+        if not self.all_previous_relevant_column_data[0]:  # No data yet
             return None
         
         # Calculate time from start of recording
-        start_time = self.all_previous_buffers_data[self.buffer_timestamp_index][0]
+        start_time = self.all_previous_relevant_column_data[self.buffer_timestamp_index][0]
         relative_time = timestamp - start_time
         
         # Calculate which buffer this timestamp would belong to
