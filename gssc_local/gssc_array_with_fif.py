@@ -80,6 +80,27 @@ import scipy
 from scipy.signal import butter, lfilter
 import warnings
 
+def make_eeg_eog_combinations(eeg_indices, eog_indices):
+    """
+    Create all combinations of EEG and EOG indices.
+
+    Args:
+    eeg_indices (list): List of EEG channel indices.
+    eog_indices (list): List of EOG channel indices.
+    
+    Returns:
+    list: All combinations of EEG and EOG indices.
+    """
+    combinations = []
+    # rmemeber to include none as an option
+    for eeg_index in eeg_indices+[None]:
+        for eog_index in eog_indices+[None]:
+            # if both are none, skip
+            if eeg_index is None and eog_index is None:
+                continue
+            combinations.append((eeg_index, eog_index))
+    return combinations
+
 
 def bandpass_filter(data, lowcut, highcut, fs, order=4):
     """
@@ -120,12 +141,10 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
     hidden_size = 256 # this is what mne_infer uses, I'm not sure why
     n_signals = 7  # Number of signal indices or permutations
     # TODO: make n_signals dynamic
-    warnings.warn("WARNING: n_signals is currently hardcoded to 5. This should be made dynamic based on the permutation matrix size.", 
+    warnings.warn("WARNING: n_signals is currently hardcoded. This should be made dynamic based on the permutation matrix size.", 
                      UserWarning)
 
 
-    # Initialize the hidden state for each signal index
-    hiddens = torch.zeros((n_signals, num_layers * num_directions, batch_size, hidden_size))
 
    
 
@@ -173,12 +192,24 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
         events = mne.make_fixed_length_events(raw, duration=epoch_duration)
         epochs = mne.Epochs(raw, events, tmin=0, tmax=epoch_duration, baseline=None, preload=True)
         if filter:
+            # Store a copy of the data before filtering
+            data_before = raw.get_data().copy()
+            
             filter_band = [None, None]
             if round(raw.info["highpass"], 2) < 0.3:
                 filter_band[0] = 0.3
             if round(raw.info["lowpass"], 2) > 30.:
                 filter_band[1] = 30.
             raw.filter(*filter_band)
+            
+            # Get data after filtering
+            data_after = raw.get_data()
+            
+            # Check if data actually changed
+            if np.array_equal(data_before, data_after):
+                warnings.warn("WARNING: Filtering did not change the data. This might indicate an issue with the filtering process.")
+            else:
+                print(f"Filtering changed the data. Max difference: {np.max(np.abs(data_before - data_after))}")
         if round(raw.info["highpass"], 2) != 0.3:
             warnings.warn("WARNING: GSSC was trained on data with a highpass "
                          "filter of 0.3Hz. These data have a highpass filter "
@@ -192,6 +223,8 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
         epo3, start_time3 = prepare_inst(raw, 2560, 'back')
         sig_combs3, perm_matrix3, all_chans3, _ = permute_sigs(epo3, signals)
         data1 = epo3.get_data(picks=channel_names) * 1e+6
+        # data1.shape
+        # (100, 8, 2560)
         data3 = epo_arr_zscore(data1)
 
 
@@ -207,7 +240,8 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
         
         # Step 5: Convert to tensor
         eeg_tensor = torch.from_numpy(eeg_data).float()
-        
+        # tensor_data.shape
+        # torch.Size([100, 8, 2560])
         return tensor_data, channel_names, epochs.times, perm_matrix3
         # return eeg_tensor, channel_names, epochs.times
    
@@ -297,17 +331,8 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
             input_dict['eog'] = eog_data
         
         return input_dict
-    # Initialize hiddens
-    hidden_1 = torch.zeros(10, 1, 256)
-    hidden_2 = torch.zeros(10, 1, 256)
-    hidden_3 = torch.zeros(10, 1, 256)
-    hidden_4 = torch.zeros(10, 1, 256)
-    hidden_5 = torch.zeros(10, 1, 256)
-    hidden_6 = torch.zeros(10, 1, 256)
-    hidden_7 = torch.zeros(10, 1, 256)
 
-    # List to store all logits
-    all_logits = []
+
         # Convert logits to a PyTorch tensor if they're not already
     def get_predicted_classes(logits):
         """
@@ -355,22 +380,27 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
         class_probabilities = probabilities.numpy()
 
         return predicted_classes, class_probabilities
+        
+    raw = mne.io.read_raw_fif(fif_file_path, preload=True)
     
-
+    # find the indices of the eeg and eog channels
+    eeg_indices = [raw.ch_names.index(ch) for ch in eeg_channels]
+    eog_indices = [raw.ch_names.index(ch) for ch in eog_channels]
+    eeg_eog_combinations = make_eeg_eog_combinations(eeg_indices, eog_indices)
 
     # Perform inference on each epoch
+    hiddens = torch.zeros(len(eeg_eog_combinations), 10, 1, 256)
+    all_logits_mod = []
 
     #  for each epoch, get the logits, predicted classes, and class probabilities
     # for i in range(len(filtered_eeg_tensor_epoched)):  
     for i in range(len(eeg_tensor_epoched)):  
-        # this is hardcoded for eeg indices: 0, 1, 2 eeg: 4
-        input_dict_combo_1 = prepare_input(eeg_tensor_epoched[i], [0], [4])
-        input_dict_combo_2 = prepare_input(eeg_tensor_epoched[i], [1], [4])
-        input_dict_combo_3 = prepare_input(eeg_tensor_epoched[i], [2], [4])
-        input_dict_combo_4 = prepare_input(eeg_tensor_epoched[i], [0], None)
-        input_dict_combo_5 = prepare_input(eeg_tensor_epoched[i], [1], None)
-        input_dict_combo_6 = prepare_input(eeg_tensor_epoched[i], [2], None)
-        input_dict_combo_7 = prepare_input(eeg_tensor_epoched[i], None, [4])
+
+
+        input_dicts = []
+        for eeg_index, eog_index in eeg_eog_combinations:
+            input_dicts.append(prepare_input(eeg_tensor_epoched[i], eeg_index, eog_index))
+
 
         # eeg_tensor_epoched.shape
         # torch.Size([100, 8, 2560])
@@ -379,34 +409,24 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
 
         # input_dict_combo_1['eeg'].shape
         # # torch.Size([1, 1, 2560])
+        results = []
+        for i2, input_dict in enumerate(input_dicts):
+            results.append(infer.infer(input_dict, hiddens[i2]))
 
-        # get logits for each combo
-        logits_1, res_logits_1, hidden_1 = infer.infer(input_dict_combo_1, hidden_1)
-        logits_2, res_logits_2, hidden_2 = infer.infer(input_dict_combo_2, hidden_2)
-        logits_3, res_logits_3, hidden_3 = infer.infer(input_dict_combo_3, hidden_3)
-        logits_4, res_logits_4, hidden_4 = infer.infer(input_dict_combo_4, hidden_4)
-        logits_5, res_logits_5, hidden_5 = infer.infer(input_dict_combo_5, hidden_5)
-        logits_6, res_logits_6, hidden_6 = infer.infer(input_dict_combo_6, hidden_6)
-        logits_7, res_logits_7, hidden_7 = infer.infer(input_dict_combo_7, hidden_7)
+        # for each result, set the hidden to the third dimension of the result
+        for i2, result in enumerate(results):
+            hiddens[i2] = result[2]
 
-        # Convert logits to numpy arrays and combine them all combinations logit
-        all_combo_logits = np.stack([
-            logits_1.numpy(),
-            logits_2.numpy(),
-            logits_3.numpy(),
-            logits_4.numpy(),
-            logits_5.numpy(),
-            logits_6.numpy(),
-            logits_7.numpy()
-        ])
-        
-        # list of logits for all epochs. This wouldn't be used if we were actually streaming the data.
-        all_logits.append(all_combo_logits) 
+        all_combo_logits_mod = np.stack([r[0].numpy() for r in results])  # Only take the first element (logits) from each result tuple
+        all_logits_mod.append(all_combo_logits_mod)
+        predicted_classes_mod = get_predicted_classes(all_combo_logits_mod)
 
-        predicted_classes = get_predicted_classes(all_combo_logits)
-    
-        print(f"Predicted classes for epoch {i+1}: {predicted_classes}")
-        predicted_classes, class_probs = get_predicted_classes_and_probabilities(all_combo_logits)
+
+ 
+        print(f"Predicted classes for epoch {i+1} mod: {predicted_classes_mod}")
+
+
+        predicted_classes, class_probs = get_predicted_classes_and_probabilities(all_combo_logits_mod)
         # for each possible class of the individual epoch, print the class probabilities
         for i in range(len(predicted_classes)):
             print(f"  Predicted class: {predicted_classes[i][0]}")
@@ -417,7 +437,7 @@ def realtime_inference(fif_file_path, eeg_channels, eog_channels, sig_len = 2560
 
 
     # Convert all logits to predicted classes
-    all_predicted_classes = [loudest_vote(logits) for logits in all_logits]
+    all_predicted_classes = [loudest_vote(logits) for logits in all_logits_mod]
 
 
     # Example usage:
