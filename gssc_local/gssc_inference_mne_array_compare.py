@@ -14,7 +14,7 @@ import h5py
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report
 # import realtime inference from gssc_array_infer.py in this directory
-from gssc_array_with_fif import realtime_inference
+from gssc_array_with_fif_modular_refactor import realtime_inference
 
 
 # Path to your .set file
@@ -263,11 +263,11 @@ def compare_sleep_stages(inferred_stages, expected_stages, verbose=True):
 
 
 # all_predicted_classes = realtime_inference(fif_file_path)
-all_predicted_classes = realtime_inference(fif_file_path, eeg_channels, eog_channels)
+loudest_votes, predicted_classes_list, class_probs_list = realtime_inference(raw_sliced, eeg_channels, eog_channels)
 print("mne-eeglab---------------")
 compare_sleep_stages(inferred_stages, expected_stages, verbose=False)
 # print("old---------------")
 # compare_sleep_stages(all_predicted_classes, expected_stages, verbose=False)
 print("array_inference---------------")
-compare_sleep_stages(all_predicted_classes, expected_stages, verbose=False)
+compare_sleep_stages(loudest_votes, expected_stages, verbose=False)
 

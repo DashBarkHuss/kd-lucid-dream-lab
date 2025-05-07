@@ -141,6 +141,7 @@ Starting/stopping the stream
 - started a refactor that uses multiprocessing to run the board stream in a separate process. realtime_with_restart/main.py
 
 - next steps:
+
   - in realtime_with_restart
     - ✅ test gap handling with the visualizer
       - improvements:
@@ -157,6 +158,8 @@ Starting/stopping the stream
   - ✅ remove harded coded combinations from gssc_array_with_fif
   - see what changes need to be made for working with streamed data vs playback from file
   - test against scored file - wee can probably make a test file that doesn't need the rull processing/realtime stream loop. like just haddle hiddens and compare the results. hiddens are handle differently in trealtime vs after the fact processing.
+
+  - gssc_inference_csv_to_fif_to_raw_mne_and_compare.py works. we need to recreate this in our realtime stream without converting to fif or whatever
 
 see if filtering is necessary, compares the detection with the scored file, and handle the visualizatoin of the main buffer vs the other buffers: we updated the scoring every 5 seconds but really the main buffer is every 30 seconds.
 
