@@ -14,6 +14,9 @@ import h5py
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report
 # import realtime inference from gssc_array_infer.py in this directory
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from gssc_helper import realtime_inference
 
 

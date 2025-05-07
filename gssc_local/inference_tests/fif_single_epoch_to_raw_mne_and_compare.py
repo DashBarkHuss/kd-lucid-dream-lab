@@ -1,5 +1,8 @@
 """
-The script compares sleep stage classification results of the csv from different inference methods.
+This script convertsa csv to a fif file andraw mne so we can use it with some of the functinos
+and scripts we already have. This would probably eb more modular if we just used mne raw, but
+we originally coded the functions to accept a fif file and convert it to raw so whatever for now.
+The script compares sleep stage classification results of the fif file from different inference methods.
 It processes EEG data from the fif file, and runs both MNE-based and array-based GSSC inference
 algorithms. The script then compares the predicted sleep stages with ground truth data from a .mat
 file, calculating accuracy metrics and providing detailed analysis of classification performance
@@ -16,35 +19,30 @@ import h5py
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report
 # import realtime inference from gssc_array_infer.py in this directory
-from gssc_helper import realtime_inference, compare_sleep_stages
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from gssc_helper import realtime_inference, make_hiddens, convert_single_epoch_to_gssc_tensor, prepare_input, get_predicted_classes, get_predicted_classes_and_probabilities, get_results_for_each_combo, make_eeg_eog_combinations, make_infer, compare_sleep_stages
 from convert_csv_to_fif import convert_csv_to_raw, save_raw_to_fif, convert_csv_to_fif
-
-
-
-csv_file_path = '/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv'
-# Read the .set file
-raw_csv = convert_csv_to_raw(csv_file_path)
-
-# resample the data to 1000 Hz. 125hz caused a floating point error in prepare_inst
-raw_csv.resample(1000)
-
-
-start = 3000
-end = 6000
-
-# Slice the data 
-raw_csv_sliced = raw_csv.copy().crop(tmin=start, tmax=end) 
-# get channel labels from default montage
+start = 30
+end = 59.999
 montage = Montage.default_sleep_montage()
 montage_ch_names = montage.get_channel_labels()
 eeg_channels = ['C4', 'O1', 'O2']  #  Adjust based on your data
 eog_channels = []  # Adjust based on your data
+# eeg_channels = ['C3']  # Adjust based on your data
+# eog_channels = ['L-HEOG', 'R-HEOG']  # Adjust based on your data
 
 
-channel_names = raw_csv_sliced.ch_names
+# Path to save the .fif file
+fif_file_path = 'data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0_thirty_seconds.fif'
+
+# Then read it to get the correct channel names
+raw_csv_as_fif = mne.io.read_raw_fif(fif_file_path, preload=True)
+channel_names = raw_csv_as_fif.ch_names
+
+# check the number of samples in the raw file
+print(raw_csv_as_fif.n_times)
 
 # Create indices from the newly saved file
 eeg_indices = [i for i, ch in enumerate(channel_names) if ch in eeg_channels]
@@ -53,6 +51,27 @@ eog_indices = [i for i, ch in enumerate(channel_names) if ch in eog_channels]
 # Initialize the EEGInfer class
 eeg_infer = EEGInfer()
 
+# Specify the EEG and EOG channels
+# I'm testing with only C3 to get ArrayInfer to match, usually you should use the comment out portion below
+# eeg_channels = ['C3']  # Adjust based on your data
+# eog_channels = []  # Adjust based on your data
+
+# # Perform inference
+# out_infs, times, probs = eeg_infer.mne_infer(
+#     inst=raw,
+#     eeg=eeg_channels,
+#     eog=eog_channels,
+#     eeg_drop=True,
+#     eog_drop=True,
+#     filter=False # put back after we make a filter for real time. I just took this out to stay consistent with real time inference
+# )
+
+
+
+# log the sleep stages expected
+
+
+# Path to your .mat file
 mat_file_path = 'data/realtime_inference_test/scoring.mat'
 
 # Open the .mat file
@@ -92,27 +111,39 @@ end_epoch = int(end // epoch_duration)
 if start is None and end is None:
     expected_stages = sleep_stages[:-1]
 else:
-    expected_stages = sleep_stages[start_epoch:end_epoch]
+    expected_stages = sleep_stages[start_epoch:2]
 
 # compare the inferred sleep stages with the expected sleep stages
 
+
+# inferred_stages = out_infs
+
+# print the inferred stages
+# print(inferred_stages)
+
+
+
+    # print(f"Cohen's Kappa: {kappa:.4f}")
 
 
 
 
 # all_predicted_classes = realtime_inference(fif_file_path)
-loudest_votes, predicted_classes, class_probs = realtime_inference(raw_csv_sliced, eeg_channels, eog_channels)
+# get combinations of eeg and eog channels
+eeg_eog_combinations = make_eeg_eog_combinations(eeg_indices, eog_indices)
+# make hiddens
+hiddens = make_hiddens(eeg_eog_combinations)
+# get eeg tensor epoched
+eeg_tensor_epoched = convert_single_epoch_to_gssc_tensor(raw_csv_as_fif)
+# get results for each combo
+infer = make_infer()
+loudest_vote, predicted_classes, class_probs, new_hiddens = get_results_for_each_combo(eeg_tensor_epoched, eeg_eog_combinations, hiddens, infer)
 
-for i in range(len(predicted_classes)):
-        print(f"  Predicted class: {int(predicted_classes[i][0])}")
-        print("  Class probabilities:")
-        for class_idx, prob in enumerate(class_probs[i][0]):
-            print(f"    Class {class_idx}: {float(prob[0])*100:.2f}%")
 
 # print("mne-eeglab---------------")
 # compare_sleep_stages(inferred_stages, expected_stages, verbose=False)
 # print("old---------------")
 # compare_sleep_stages(all_predicted_classes, expected_stages, verbose=False)
 print("array_inference---------------")
-compare_sleep_stages(loudest_votes, expected_stages, verbose=False)
+compare_sleep_stages([loudest_vote], expected_stages, verbose=False)
 
