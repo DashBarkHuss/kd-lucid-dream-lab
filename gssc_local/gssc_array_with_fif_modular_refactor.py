@@ -158,12 +158,49 @@ def apply_filter_raw(raw):
                         f"of {raw.info['lowpass']}Hz")
     return raw
 
+def convert_single_epoch_to_gssc_tensor(raw, filter=True):
+    """
+    Convert a single 30-second epoch of raw data to a GSSC-compatible tensor.
+    This function is specifically for processing single epochs, unlike convert_raw_full_data_to_gssc_tensor
+    which handles full nights of data.
+    
+    Args:
+        raw (mne.io.Raw): Raw data containing a single 30-second epoch
+        filter (bool): Whether to apply bandpass filtering (default: True)
+    
+    Returns:
+        torch.Tensor: Processed data ready for GSSC inference
+    """
+    channel_names = raw.ch_names
+    
+    if filter:
+        apply_filter_raw(raw)
+
+    # Get the data directly from raw
+    data = raw.get_data(picks=channel_names) * 1e+6  # Convert to microvolts
+    # Ensure we have exactly 30 seconds of data
+    expected_samples = int(30 * raw.info['sfreq'])
+    if data.shape[1] != expected_samples:
+        raise ValueError(f"Expected {expected_samples} samples for 30s epoch, got {data.shape[1]}")
+    
+      # Resample to get exactly 2560 samples
+    target_sfreq = 2560 / 30.  # ~85.3 Hz
+    if raw.info['sfreq'] != target_sfreq:
+        raw_resampled = raw.copy().resample(target_sfreq)
+        data = raw_resampled.get_data(picks=channel_names) * 1e+6
+    
+    # Apply z-scoring
+    data = epo_arr_zscore(data)
+    
+    # Convert to tensor
+    tensor_data = torch.tensor(data).float()
+    
+    return tensor_data
+
 def convert_raw_full_data_to_gssc_tensor(raw, epoch_duration=30, filter=True):
     channel_names = raw.ch_names
     
-    events = mne.make_fixed_length_events(raw, duration=epoch_duration)
-    epochs = mne.Epochs(raw, events, tmin=0, tmax=epoch_duration, baseline=None, preload=True)
-    
+
     if filter:
         apply_filter_raw(raw)
 
@@ -174,12 +211,6 @@ def convert_raw_full_data_to_gssc_tensor(raw, epoch_duration=30, filter=True):
 
     tensor_data = torch.tensor(data3).float()
 
-    # Step 3: Extract EEG data as a numpy array
-    eeg_data = epochs.get_data()
-    
-    # Step 4: Preprocess the data (example: normalize)
-    # Adjust this step based on your specific preprocessing needs
-    eeg_data = (eeg_data - np.mean(eeg_data)) / np.std(eeg_data)
 
     return tensor_data
 
@@ -274,22 +305,26 @@ def get_results_for_each_combo(eeg_tensor_epoched, eeg_eog_combinations, hiddens
 
 
     predicted_classes, class_probs = get_predicted_classes_and_probabilities(all_combo_logits)
-    return all_combo_logits, predicted_classes, class_probs, new_hiddens   
-    
-def realtime_inference(raw, eeg_channels, eog_channels, sig_len = 2560):
-    signals = {"eeg":{"chans":eeg_channels, "drop":True, "flip":False}, "eog":{"chans":eog_channels, "drop":True, "flip":False}}
+    loudest_vote_result = loudest_vote(all_combo_logits)
+    return loudest_vote_result, predicted_classes, class_probs, new_hiddens
 
-    # If you want to use the epoched version:
-    eeg_tensor_epoched = convert_raw_full_data_to_gssc_tensor(raw)
-   
-    # new
-    infer = ArrayInfer(
+def make_hiddens(eeg_eog_combinations):
+    return torch.zeros(len(eeg_eog_combinations), 10, 1, 256)
+
+def make_infer():
+    return ArrayInfer(
         net=None,  # Use default network
         con_net=None,  # Use default context network
         use_cuda=False,  # Set to True if you want to use CUDA
         gpu_idx=None,  # Specify GPU index if needed
     )
+def realtime_inference(raw, eeg_channels, eog_channels, sig_len = 2560):
 
+    # If you want to use the epoched version:
+    eeg_tensor_epoched = convert_raw_full_data_to_gssc_tensor(raw)
+   
+    # new
+    infer = make_infer()
     # find the indices of the eeg and eog channels
     eeg_indices = [raw.ch_names.index(ch) for ch in eeg_channels]
     eog_indices = [raw.ch_names.index(ch) for ch in eog_channels]
@@ -297,20 +332,23 @@ def realtime_inference(raw, eeg_channels, eog_channels, sig_len = 2560):
     eeg_eog_combinations = make_eeg_eog_combinations(eeg_indices, eog_indices)
 
     # set up variables to store the results
-    hiddens = torch.zeros(len(eeg_eog_combinations), 10, 1, 256)
+    hiddens = make_hiddens(eeg_eog_combinations)
     loudest_votes = []
     predicted_classes_list = []
     class_probs_list = []
 
     #  for each epoch, get the logits, predicted classes, and class probabilities
     for i in range(len(eeg_tensor_epoched)): 
-        all_combo_logits, predicted_classes, class_probs, new_hiddens = get_results_for_each_combo(eeg_tensor_epoched[i], eeg_eog_combinations, hiddens, infer)
+        loudest_vote, predicted_classes, class_probs, new_hiddens = get_results_for_each_combo(eeg_tensor_epoched[i], eeg_eog_combinations, hiddens, infer)
+        # update hiddens
         hiddens = torch.stack(new_hiddens)
-        loudest_votes.append(loudest_vote(all_combo_logits))
+        loudest_votes.append(loudest_vote)
         predicted_classes_list.append(predicted_classes)
         class_probs_list.append(class_probs)
 
     return loudest_votes, predicted_classes_list, class_probs_list
 
-if __name__ == "__main__": 
-    realtime_inference("/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/sleep_data/dash_data_104_session_6/alphah104ses06scoring_raw.fif", ['F3','C3', 'O1'], ['L-HEOG'])
+
+# if __name__ == "__main__": 
+    # this no logerworks, we need to passin raw not fif
+    # realtime_inference("/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/sleep_data/dash_data_104_session_6/alphah104ses06scoring_raw.fif", ['F3','C3', 'O1'], ['L-HEOG'])

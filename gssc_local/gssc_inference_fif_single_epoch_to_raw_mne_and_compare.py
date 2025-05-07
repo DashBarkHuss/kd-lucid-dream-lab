@@ -19,55 +19,13 @@ import h5py
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report
 # import realtime inference from gssc_array_infer.py in this directory
-from gssc_array_with_fif_modular_refactor import realtime_inference
+from gssc_array_with_fif_modular_refactor import realtime_inference, make_hiddens, convert_single_epoch_to_gssc_tensor, prepare_input, get_predicted_classes, get_predicted_classes_and_probabilities, get_results_for_each_combo, make_eeg_eog_combinations, make_infer
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from convert_csv_to_fif import convert_csv_to_raw, save_raw_to_fif, convert_csv_to_fif
-
-# loading another file just to compare the result of the raw
-
-# # Path to your .set file
-# set_file_path = '/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/sleep_data/dash_data_104_session_6/alphah104ses06scoring_corrected_to_1000hz.set'
-
-# # Read the .set file
-# raw_set = mne.io.read_raw_eeglab(
-#     input_fname=set_file_path,
-#     eog=['L-HEOG', 'R-HEOG', 'B-VEOG'],  # Specify EOG channels if needed
-#     preload=True,  # Load data into memory
-#     verbose=True  # Enable verbose output for debugging
-# )
-
-
-# start = 3000
-# end = 6000
-
-# # Slice the data 
-# raw_set_sliced = raw_set.copy().crop(tmin=start, tmax=end) 
-# # Path to save the .fif file
-# fif_file_path = '/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/sleep_data/dash_data_104_session_6/alphah104ses06scoring_raw.fif'
-
-# # Save the sliced data as a .fif file
-# raw_set_sliced.save(fif_file_path, overwrite=True)
-
-# Load the .fif file
-# raw_set_as_fif = mne.io.read_raw_fif(fif_file_path, preload=True)
-
-
-csv_file_path = '/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv'
-# Read the .set file
-raw_csv = convert_csv_to_raw(csv_file_path)
-
-# resample the data to 1000 Hz. 125hz caused a floating point error in prepare_inst
-raw_csv.resample(1000)
-
-
-start = 3000
-end = 6000
-
-# Slice the data 
-raw_csv_sliced = raw_csv.copy().crop(tmin=start, tmax=end) 
-# get channel labels from default montage
+start = 30
+end = 59.999
 montage = Montage.default_sleep_montage()
 montage_ch_names = montage.get_channel_labels()
 eeg_channels = ['C4', 'O1', 'O2']  #  Adjust based on your data
@@ -77,18 +35,14 @@ eog_channels = []  # Adjust based on your data
 
 
 # Path to save the .fif file
-fif_file_path = 'data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0_sliced.fif'
-
-# Save the sliced data as a .fif file
-raw_csv_sliced.save(fif_file_path, overwrite=True)
-
-# Load the .fif file
-# raw_csv_as_fif = mne.io.read_raw_fif(fif_file_path, preload=True)
+fif_file_path = 'data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0_thirty_seconds.fif'
 
 # Then read it to get the correct channel names
 raw_csv_as_fif = mne.io.read_raw_fif(fif_file_path, preload=True)
-print(raw_csv_as_fif.n_times)
 channel_names = raw_csv_as_fif.ch_names
+
+# check the number of samples in the raw file
+print(raw_csv_as_fif.n_times)
 
 # Create indices from the newly saved file
 eeg_indices = [i for i, ch in enumerate(channel_names) if ch in eeg_channels]
@@ -157,7 +111,7 @@ end_epoch = int(end // epoch_duration)
 if start is None and end is None:
     expected_stages = sleep_stages[:-1]
 else:
-    expected_stages = sleep_stages[start_epoch:end_epoch]
+    expected_stages = sleep_stages[start_epoch:2]
 
 # compare the inferred sleep stages with the expected sleep stages
 
@@ -299,11 +253,21 @@ def compare_sleep_stages(inferred_stages, expected_stages, verbose=True):
 
 
 # all_predicted_classes = realtime_inference(fif_file_path)
-loudest_votes, predicted_classes_list, class_probs_list = realtime_inference(raw_csv_sliced, eeg_channels, eog_channels)
+# get combinations of eeg and eog channels
+eeg_eog_combinations = make_eeg_eog_combinations(eeg_indices, eog_indices)
+# make hiddens
+hiddens = make_hiddens(eeg_eog_combinations)
+# get eeg tensor epoched
+eeg_tensor_epoched = convert_single_epoch_to_gssc_tensor(raw_csv_as_fif)
+# get results for each combo
+infer = make_infer()
+loudest_vote, predicted_classes, class_probs, new_hiddens = get_results_for_each_combo(eeg_tensor_epoched, eeg_eog_combinations, hiddens, infer)
+
+
 # print("mne-eeglab---------------")
 # compare_sleep_stages(inferred_stages, expected_stages, verbose=False)
 # print("old---------------")
 # compare_sleep_stages(all_predicted_classes, expected_stages, verbose=False)
 print("array_inference---------------")
-compare_sleep_stages(loudest_votes, expected_stages, verbose=False)
+compare_sleep_stages([loudest_vote], expected_stages, verbose=False)
 
