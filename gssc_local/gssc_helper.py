@@ -283,44 +283,83 @@ def apply_filter_raw(raw):
                         f"of {raw.info['lowpass']}Hz")
     return raw
 
-def convert_single_epoch_to_gssc_tensor(raw, filter=True):
-    """
-    Convert a single 30-second epoch of raw data to a GSSC-compatible tensor.
-    This function is specifically for processing single epochs, unlike convert_raw_full_data_to_gssc_tensor
-    which handles full nights of data.
-    
-    Args:
-        raw (mne.io.Raw): Raw data containing a single 30-second epoch
-        filter (bool): Whether to apply bandpass filtering (default: True)
-    
-    Returns:
-        torch.Tensor: Processed data ready for GSSC inference
-    """
-    channel_names = raw.ch_names
-    
-    if filter:
-        apply_filter_raw(raw)
-
-    # Get the data directly from raw
-    data = raw.get_data(picks=channel_names) * 1e+6  # Convert to microvolts
-    # Ensure we have exactly 30 seconds of data
-    expected_samples = int(30 * raw.info['sfreq'])
+def validate_epoch_length(data, sfreq):
+    """Validate that the data has exactly 30 seconds of samples."""
+    expected_samples = int(30 * sfreq)
     if data.shape[1] != expected_samples:
         raise ValueError(f"Expected {expected_samples} samples for 30s epoch, got {data.shape[1]}")
+    return data
+
+def resample_to_target_frequency(raw, target_sfreq):
+    """
+    Resample raw data to target sampling frequency.
+    First upsamples to 1000 Hz if current sampling rate is lower,
+    then downsamples to target frequency.
     
-      # Resample to get exactly 2560 samples
-    target_sfreq = 2560 / 30.  # ~85.3 Hz
-    if raw.info['sfreq'] != target_sfreq:
+    Args:
+        raw (mne.io.Raw): Raw EEG data
+        target_sfreq (float): Target sampling frequency (typically 85.3 Hz for GSSC)
+    
+    Returns:
+        numpy.ndarray: Resampled data in microvolts
+    """
+    current_sfreq = raw.info['sfreq']
+    # print the number of samples in the raw data
+    print(f"Number of samples in raw data: {raw.n_times}")
+    
+    # First upsample to 1000 Hz if needed
+ 
+    raw_upsampled = raw.copy().resample(1000)
+    data = raw_upsampled.get_data(picks=raw.ch_names) * 1e+6
+    print(f"Number of samples in upsampled data: {raw_upsampled.n_times}")
+  
+
+    validate_epoch_length(data, raw.info['sfreq'])
+    
+    # Then downsample to target frequency if needed
+    if current_sfreq != target_sfreq:
         raw_resampled = raw.copy().resample(target_sfreq)
-        data = raw_resampled.get_data(picks=channel_names) * 1e+6
+        data = raw_resampled.get_data(picks=raw.ch_names) * 1e+6
     
-    # Apply z-scoring
-    data = epo_arr_zscore(data)
+    return data
+
+def preprocess_eeg_epoch_for_gssc(raw, apply_bandpass_filter=True):
+    """
+    Preprocess a 30-second epoch of EEG data for sleep stage classification with GSSC.
     
-    # Convert to tensor
-    tensor_data = torch.tensor(data).float()
+    This function performs the following steps:
+    1. Applies bandpass filtering (optional)
+    2. Extracts and converts data to microvolts
+    3. Validates epoch length
+    4. Resamples to target frequency (85.3 Hz)
+    5. Applies z-scoring normalization using gssc.utils.epo_arr_zscore
+       - Centers data around zero (removes DC offset)
+       - Normalizes amplitude across channels
+       - Makes data suitable for GSSC model input
+    6. Converts to PyTorch tensor
     
-    return tensor_data
+    Args:
+        raw (mne.io.Raw): Raw EEG data containing a single 30-second epoch
+        apply_bandpass_filter (bool): Whether to apply bandpass filtering (default: True)
+    
+    Returns:
+        torch.Tensor: Preprocessed EEG data ready for GSSC inference
+    """
+    if apply_bandpass_filter:
+        apply_filter_raw(raw)
+    
+    # Extract and convert data
+    data = raw.get_data(picks=raw.ch_names) * 1e+6
+    
+    # Validate epoch length
+    
+    # Resample to target frequency
+    target_sfreq = 2560 / 30.  # ~85.3 Hz
+    data = resample_to_target_frequency(raw, target_sfreq)
+    
+    # Apply z-scoring using GSSC's implementation
+    data = epo_arr_zscore(data)  # Uses gssc.utils.epo_arr_zscore for consistency with model training
+    return torch.tensor(data).float()
 
 def convert_raw_full_data_to_gssc_tensor(raw, epoch_duration=30, filter=True):
     channel_names = raw.ch_names

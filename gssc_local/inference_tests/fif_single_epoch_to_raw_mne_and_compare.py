@@ -12,7 +12,6 @@ This file uses gssc_array_inference_with_fif.py to get the predicted classes.
 """
 
 # import montage class
-from montage import Montage
 import mne
 from gssc.infer import EEGInfer
 import h5py
@@ -22,8 +21,11 @@ from sklearn.metrics import confusion_matrix, classification_report
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from gssc_helper import realtime_inference, make_hiddens, convert_single_epoch_to_gssc_tensor, prepare_input, get_predicted_classes, get_predicted_classes_and_probabilities, get_results_for_each_combo, make_eeg_eog_combinations, make_infer, compare_sleep_stages
+from montage import Montage
+from gssc_helper import realtime_inference, make_hiddens, preprocess_eeg_epoch_for_gssc, prepare_input, get_predicted_classes, get_predicted_classes_and_probabilities, get_results_for_each_combo, make_eeg_eog_combinations, make_infer, compare_sleep_stages
 from convert_csv_to_fif import convert_csv_to_raw, save_raw_to_fif, convert_csv_to_fif
+from processor_improved import SignalProcessor
+
 start = 30
 end = 59.999
 montage = Montage.default_sleep_montage()
@@ -134,7 +136,7 @@ eeg_eog_combinations = make_eeg_eog_combinations(eeg_indices, eog_indices)
 # make hiddens
 hiddens = make_hiddens(eeg_eog_combinations)
 # get eeg tensor epoched
-eeg_tensor_epoched = convert_single_epoch_to_gssc_tensor(raw_csv_as_fif)
+eeg_tensor_epoched = preprocess_eeg_epoch_for_gssc(raw_csv_as_fif)
 # get results for each combo
 infer = make_infer()
 loudest_vote, predicted_classes, class_probs, new_hiddens = get_results_for_each_combo(eeg_tensor_epoched, eeg_eog_combinations, hiddens, infer)
@@ -146,4 +148,11 @@ loudest_vote, predicted_classes, class_probs, new_hiddens = get_results_for_each
 # compare_sleep_stages(all_predicted_classes, expected_stages, verbose=False)
 print("array_inference---------------")
 compare_sleep_stages([loudest_vote], expected_stages, verbose=False)
+
+
+
+
+
+
+
 

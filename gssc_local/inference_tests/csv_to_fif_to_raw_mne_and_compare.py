@@ -12,17 +12,17 @@ This file uses gssc_array_inference_with_fif.py to get the predicted classes.
 """
 
 # import montage class
-from montage import Montage
 import mne
 from gssc.infer import EEGInfer
 import h5py
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report
 # import realtime inference from gssc_array_infer.py in this directory
-from gssc_helper import realtime_inference, compare_sleep_stages
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from gssc_helper import realtime_inference, compare_sleep_stages
+from montage import Montage
 from convert_csv_to_fif import convert_csv_to_raw, save_raw_to_fif, convert_csv_to_fif
 
 # loading another file just to compare the result of the raw

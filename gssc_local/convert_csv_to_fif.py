@@ -14,28 +14,29 @@ import mne
 from brainflow.board_shim import BoardShim, BoardIds
 import sys
 from pathlib import Path
-from gssc_local.montage import Montage
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from montage import Montage
 
-
-def convert_csv_to_raw(input_file):
+def convert_numpy_to_raw(numpy_data, board_id = BoardIds.CYTON_DAISY_BOARD):
     """
-    Convert BrainFlow CSV data to FIF format
+    Convert numpy data to MNE Raw object
     
     Args:
-        input_file: Path to input CSV file
-        output_file: Path to output FIF file
+        numpy_data: Either a pandas DataFrame or numpy array containing the data
+        board_id: The BrainFlow board ID (default: CYTON_DAISY_BOARD)
     """
-    # Read CSV file
-    data = pd.read_csv(input_file, sep='\t', header=None)
     
-    # Get board configuration
-    board_id = BoardIds.CYTON_DAISY_BOARD
     sampling_rate = BoardShim.get_sampling_rate(board_id)  # 125 Hz
     timestamp_channel = BoardShim.get_timestamp_channel(board_id)
     eeg_channels = BoardShim.get_eeg_channels(board_id)
     
-    # Extract EEG data (channels 1-16)
-    eeg_data = data.iloc[:, eeg_channels].values.T  # Convert to (n_channels, n_samples)
+    # Handle both pandas DataFrame and numpy array inputs
+    if isinstance(numpy_data, pd.DataFrame):
+        eeg_data = numpy_data.iloc[:, eeg_channels].values.T  # Convert to (n_channels, n_samples)
+    else:
+        # If numpy array, assume it's already in the correct format (n_channels, n_samples)
+        eeg_data = numpy_data
     
     # Convert ADC counts to microvolts for Cyton+Daisy board
     # Formula: V = (ADC_value - 8192) * (4.5 / 24) / 24
@@ -65,6 +66,20 @@ def convert_csv_to_raw(input_file):
     # Create Raw object
     raw = mne.io.RawArray(eeg_data, info)
     
+    return raw
+
+def convert_csv_to_raw(input_file, board_id = BoardIds.CYTON_DAISY_BOARD):
+    """
+    Convert BrainFlow CSV data to FIF format
+    
+    Args:
+        input_file: Path to input CSV file
+        output_file: Path to output FIF file
+    """
+    # Read CSV file
+    data = pd.read_csv(input_file, sep='\t', header=None)
+    # convert numpy to raw
+    raw = convert_numpy_to_raw(data, board_id)
     return raw
 
 def save_raw_to_fif(raw, output_file):
