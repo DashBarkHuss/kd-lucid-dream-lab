@@ -2,6 +2,10 @@
 Improved signal processor for sleep stage classification using GSSC model.
 Combines functionality from processor.py and gssc_helper.py with enhanced features.
 """
+import sys
+import os
+# Add the parent directory to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 import torch.nn as nn
@@ -245,7 +249,7 @@ class SignalProcessor:
             
         return processed_dicts
     
-    def predict_sleep_stage(self, epoch_data: torch.Tensor, index_combinations: List[Tuple[Optional[int], Optional[int]]], hidden_states: List[torch.Tensor] = None) -> Tuple[int, List[torch.Tensor], np.ndarray]:
+    def predict_sleep_stage(self, epoch_data: torch.Tensor, index_combinations: List[Tuple[Optional[int], Optional[int]]], hidden_states: List[torch.Tensor] = None) -> Tuple[int, np.ndarray, List[torch.Tensor]]:
         """
         Predict sleep stage from epoch data with enhanced error handling.
         
@@ -256,10 +260,10 @@ class SignalProcessor:
             hidden_states (List[torch.Tensor]): List of hidden states for each combination
             
         Returns:
-            Tuple[int, List[torch.Tensor], np.ndarray]: 
+            Tuple[int, np.ndarray, List[torch.Tensor]]: 
                 - Predicted class (0-4)
+                - Class probabilities (shape: [n_combinations, 5])
                 - Updated hidden states
-                - Class probabilities
         """
      
         # Prepare input data
@@ -277,7 +281,8 @@ class SignalProcessor:
         ])
         
         # Get final prediction using loudest vote
-        final_predicted_class = loudest_vote(all_combo_logits)
+        # Extract the first (and only) element to avoid deprecation warning
+        final_predicted_class = int(loudest_vote(all_combo_logits).item())
         
         # Get class probabilities
         logits_tensor = torch.tensor(all_combo_logits)
