@@ -12,15 +12,23 @@ from datetime import datetime, timezone
 import multiprocessing
 from brainflow.board_shim import BoardShim, BoardIds
 import time
+import logging
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 # Import the components we'll be testing
-from gssc_local.realtime_with_restart.main import main, run_board_stream
+from gssc_local.realtime_with_restart.main import main
 from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.board_manager import BoardManager
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
+from gssc_local.realtime_with_restart.core.stream_manager import StreamManager
+
+# Configure logging for tests
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(processName)s - %(levelname)s - L%(lineno)s - %(message)s'
+)
 
 class TestRealtimeStream(unittest.TestCase):
     def setUp(self):
@@ -241,9 +249,9 @@ class TestRealtimeStream(unittest.TestCase):
     @patch('gssc_local.realtime_with_restart.main.create_trimmed_csv')
     @patch('gssc_local.realtime_with_restart.main.BoardManager')
     @patch('gssc_local.realtime_with_restart.main.ReceivedStreamedDataHandler')
-    @patch('multiprocessing.Pipe')
-    @patch('multiprocessing.Process')
-    def test_stream_restart_and_trim_flow(self, mock_process, mock_pipe, mock_handler_class, 
+    @patch('gssc_local.realtime_with_restart.main.StreamManager')
+    @patch('gssc_local.realtime_with_restart.main.logger')
+    def test_stream_restart_and_trim_flow(self, mock_logger, mock_stream_manager_class, mock_handler_class, 
                                         mock_board_manager_class, mock_create_trimmed, mock_isfile):
         """Test the complete flow of streaming, gap detection, and restart."""
         print("\nTesting stream restart and trim flow...")
@@ -252,22 +260,9 @@ class TestRealtimeStream(unittest.TestCase):
         mock_isfile.return_value = True
         mock_create_trimmed.return_value = None
         
-        # Setup mock pipe
-        mock_parent_conn = Mock()
-        mock_child_conn = Mock()
-        mock_pipe.return_value = (mock_parent_conn, mock_child_conn)
-        
-        # Setup mock process
-        mock_process_instance = Mock()
-        mock_process.return_value = mock_process_instance
-        # Return True for the first two checks, then False for the third
-        mock_process_instance.is_alive.side_effect = [True, True, True, True, True, False]
-        
-        # Setup mock board manager
-        mock_board_manager_class.return_value = self.mock_board_manager
-        
-        # Setup mock handler
-        mock_handler_class.return_value = self.mock_data_handler
+        # Setup mock stream manager
+        mock_stream_manager = Mock(spec=StreamManager)
+        mock_stream_manager_class.return_value = mock_stream_manager
         
         # Setup message sequence
         message_sequence = [
@@ -277,13 +272,19 @@ class TestRealtimeStream(unittest.TestCase):
             ('last_ts', time.time())  # Gap detection
         ]
         
-        def mock_recv():
+        def mock_get_next_message():
             if message_sequence:
                 return message_sequence.pop(0)
             return None
         
-        mock_parent_conn.recv.side_effect = mock_recv
-        mock_parent_conn.poll.return_value = True
+        mock_stream_manager.get_next_message.side_effect = mock_get_next_message
+        mock_stream_manager.is_streaming.side_effect = [True, True, True, True, True, False]
+        
+        # Setup mock board manager
+        mock_board_manager_class.return_value = self.mock_board_manager
+        
+        # Setup mock handler
+        mock_handler_class.return_value = self.mock_data_handler
         
         # Mock DataFrame for file reading
         mock_df = pd.DataFrame(np.zeros((1000, 32)))
@@ -294,9 +295,10 @@ class TestRealtimeStream(unittest.TestCase):
             mock_read_csv.return_value = mock_df
             main()
         
-        # Verify process was started
-        mock_process.assert_called_once()
-        mock_process_instance.start.assert_called_once()
+        # Verify stream manager was used correctly
+        mock_stream_manager_class.assert_called_once()
+        mock_stream_manager.start_stream.assert_called_once()
+        mock_stream_manager.stop_stream.assert_called_once()
         
         # Verify data was processed
         self.mock_data_handler.process_board_data.assert_called()
@@ -307,16 +309,11 @@ class TestRealtimeStream(unittest.TestCase):
         self.assertEqual(actual_calls, expected_calls, 
                         f"Expected {expected_calls} process_board_data calls, got {actual_calls}")
         
-        print("✓ Process started correctly")
+        print("✓ Stream manager was used correctly")
         print(f"✓ Data was processed {actual_calls} times")
         print("✓ Pipeline completed successfully")
         
         print("\nStream restart test passed! ✨")
-
-    def _simulate_pipe_messages(self, parent_conn):
-        """Helper method to simulate messages from the child process."""
-        # TODO: Implement message simulation
-        pass
 
     def test_mock_setup(self):
         """Test that all mocks are properly configured."""

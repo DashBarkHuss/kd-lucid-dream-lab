@@ -3,32 +3,22 @@
 import sys
 import os
 # Add the project root to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(workspace_root)
 
 # Now use absolute imports
 from gssc_local.montage import Montage
 from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.board_manager import BoardManager
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
+from gssc_local.realtime_with_restart.core.stream_manager import StreamManager
 
-
-# we are using  cyton_daisy_example_gap_stream_reset_and_manage_data.py as a template
-
-# Let's  build out the code to stream open bci data, and match the functionality of @cyton_realtime_round_robin_before_refactor.py plus the ability to start and stop the stream
-# Functionality:
-# - Start and stop the stream
-# - Collect data from the stream
-# - Pass data to a buffer manager
-# - Pass the data from the buffer manager to the epoch manager/signal manager
-
-# parent.py
 import time
-import os
 import multiprocessing
 import pandas as pd
 import numpy as np
 from datetime import datetime, timezone, timedelta
-from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
+from brainflow.board_shim import BoardShim, BoardIds
 import logging
 
 # ANSI color codes for logging
@@ -72,7 +62,7 @@ logger.setLevel(logging.INFO)
 # Create console handler with colored formatter
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(ColoredFormatter(
-    '%(processName)s - %(levelname)s - %(lineno)s - %(message)s'
+    '%(processName)s - %(levelname)s - L%(lineno)s - %(message)s'
 ))
 logger.addHandler(console_handler)
 
@@ -103,72 +93,12 @@ def create_trimmed_csv(input_file, output_file, skip_samples):
             if idx >= skip_samples:
                 outfile.write(line)
 
-def run_board_stream(playback_file, conn):
-    """Child process that handles data acquisition from the board"""
-    try:
-        # Receive initial timestamp from parent process
-        msg_type, start_first_data_ts = conn.recv()
-        start_first_data_ts = float(start_first_data_ts) if start_first_data_ts is not None else None
-        
-        # Set up board configuration for playback
-        params = BrainFlowInputParams()
-        params.board_id = BoardIds.PLAYBACK_FILE_BOARD
-        params.file = playback_file
-        params.master_board = BoardIds.CYTON_DAISY_BOARD
-
-        # Initialize and start the board
-        board = BoardShim(BoardIds.PLAYBACK_FILE_BOARD, params)
-        board.prepare_session()
-        board.config_board('old_timestamps')
-        board.start_stream()
-
-        time.sleep(0.1)  # Brief pause to ensure stream is started
-
-        timestamp_channel = BoardShim.get_timestamp_channel(params.master_board)
-        last_valid_data_ts = None
-
-        while True:
-            # Get new data from the board
-            board_data = board.get_board_data()
-
-            # Check for gap in data (empty data array)
-            if board_data.shape[1] == 0:
-                logger.info(f"Gap detected at {time.time()}, exiting and telling parent to restart. last_valid_data_ts: {last_valid_data_ts}")
-                conn.send(('last_ts', last_valid_data_ts))
-                logger.info(f"Closed connection at {time.time()}")
-                conn.close()
-                return
-
-            timestamps = board_data[timestamp_channel]
-
-            # If this is the first data chunk, set the start timestamp
-            if start_first_data_ts is None:
-                start_first_data_ts = float(timestamps[0])
-                # Send the updated start_first_data_ts back to parent
-                conn.send(('start_ts', start_first_data_ts))
-
-            last_valid_data_ts = float(timestamps[-1])
-            elapsed = last_valid_data_ts - start_first_data_ts
-            
-            # Send both data and metadata to parent process
-            conn.send(('data', {
-                'board_data': board_data,
-            }))
-
-            time.sleep(1)  # Control the rate of data acquisition
-
-    except Exception as e:
-        logger.error(f"Error in board stream: {e}")
-        conn.close()
-
 def main():
     """Main function that manages the data acquisition and processing"""
     # Initialize playback file and timestamp tracking
-    # original_data_file = "data/test_data/consecutive_data.csv"
-    # original_data_file = "data/test_data/gapped_data_2_second_gap_at_4000.csv"
-    original_data_file = "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv"
-    start_first_data_ts = None  # Keep this at module level for parent process
+    original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
     playback_file = original_data_file
+    
     # Verify input file exists
     if not os.path.isfile(playback_file):
         logger.error(f"File not found: {playback_file}")
@@ -177,64 +107,52 @@ def main():
     # Load the CSV file for offset calculation
     original_playback_data = pd.read_csv(playback_file, sep='\t', header=None)
 
-    offset = 0
     board_id = BoardIds.CYTON_DAISY_BOARD
-
     board_manager = BoardManager(playback_file, board_id)
     board_manager.setup_board()
     timestamp_channel = board_manager.board_shim.get_timestamp_channel(board_id)
-    received_streamed_data_handler = ReceivedStreamedDataHandler( board_manager, logger)
+    received_streamed_data_handler = ReceivedStreamedDataHandler(board_manager, logger)
 
-    # Get the PyQt application instance from the visualizer. uncomment if using the regular matplotlib visualizer
+    # Get the PyQt application instance from the visualizer
     qt_app = received_streamed_data_handler.data_manager.visualizer.app
 
     # Main processing loop
     while True:
-        # Create pipe for inter-process communication
-        # multiprocessing.Pipe() creates a pair of connected endpoints (two-way communication)
-        parent_conn, child_conn = multiprocessing.Pipe()
-        
-        # Start child process for data acquisition
-        p = multiprocessing.Process(target=run_board_stream, args=(playback_file, child_conn))
-        p.start()
-        
-        # Send current timestamp to child process
-        parent_conn.send(('start_ts', start_first_data_ts))
+        # Create and start stream manager
+        stream_manager = StreamManager(playback_file, board_id)
+        stream_manager.start_stream()
         
         last_good_ts = None
         child_exited_normally = False
         
-        # Monitor child process and handle incoming data
-        while p.is_alive():
-            if parent_conn.poll():
-                msg_type, received = parent_conn.recv()
+        # Monitor stream and handle incoming data
+        while stream_manager.is_streaming():
+            message = stream_manager.get_next_message()
+            if message:
+                msg_type, received = message
                 
                 if msg_type == 'start_ts':
                     # Update start timestamp from child
-                    start_first_data_ts = float(received) if received is not None else None
-                    logger.info(f"Updated start_first_data_ts to: {start_first_data_ts}")
+                    stream_manager.start_first_data_ts = float(received) if received is not None else None
+                    logger.info(f"Updated start_first_data_ts to: {stream_manager.start_first_data_ts}")
                     
                 elif msg_type == 'last_ts':
                     # Handle gap detection
                     last_good_ts = float(received)
                     logger.info(f"Received last good timestamp: {last_good_ts}")
                     child_exited_normally = True
-                    # break this loop to start the gap handling process
                     break
                     
                 elif msg_type == 'data':
                     # Process incoming data
                     received_streamed_data_handler.process_board_data(received['board_data'])
                     
-            # Process Qt events to update the GUI. uncomment if using the regular matplotlib visualizer
+            # Process Qt events to update the GUI
             qt_app.processEvents()
-            
             time.sleep(0.1)
             
-        # Clean up child process
-        if p.is_alive():
-            p.terminate()
-        p.join()  # Always join to ensure proper cleanup
+        # Clean up stream
+        stream_manager.stop_stream()
         
         # Handle abnormal child exit
         if not child_exited_normally:
@@ -251,21 +169,20 @@ def main():
 
         if next_rows.empty:
             logger.info("No more data after last timestamp. Saving csv and exiting.")
-        
-            output_csv_path = received_streamed_data_handler.data_manager.output_csv_path = "data/test_data/reconstructed_data.csv"
+            output_csv_path = os.path.join(workspace_root, "data/test_data/reconstructed_data.csv")
+            received_streamed_data_handler.data_manager.output_csv_path = output_csv_path
             received_streamed_data_handler.data_manager.save_to_csv(output_csv_path)
             # validate the saved csv
             received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file)
-        
             break
 
         # Create new trimmed file starting from the gap
         offset = int(next_rows.index[0])
-        elapsed_from_start  = original_playback_data.iloc[offset, timestamp_channel] - start_first_data_ts
+        elapsed_from_start = original_playback_data.iloc[offset, timestamp_channel] - stream_manager.start_first_data_ts
         elapsed_from_last_good_ts = original_playback_data.iloc[offset, timestamp_channel] - last_good_ts
         logger.info(f"Restarting from: {offset} | Time from start: {format_elapsed_time(elapsed_from_start)} | Time from last good ts: {format_elapsed_time(elapsed_from_last_good_ts)}")
 
-        trimmed_file = f"data/offset_files/offset_{offset}_{os.path.basename(playback_file)}"
+        trimmed_file = os.path.join(workspace_root, f"data/offset_files/offset_{offset}_{os.path.basename(playback_file)}")
         create_trimmed_csv(playback_file, trimmed_file, offset)
 
         # Update playback file for next iteration
