@@ -8,8 +8,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 # Now use absolute imports
 from gssc_local.montage import Montage
 from gssc_local.realtime_with_restart.data_manager import DataManager
-from board_manager import BoardManager
-from received_stream_data_handler import ReceivedStreamedDataHandler
+from gssc_local.realtime_with_restart.board_manager import BoardManager
+from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 
 
 # we are using  cyton_daisy_example_gap_stream_reset_and_manage_data.py as a template

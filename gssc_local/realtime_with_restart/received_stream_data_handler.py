@@ -1,5 +1,5 @@
-from data_manager import DataManager
-from board_manager import BoardManager
+from gssc_local.realtime_with_restart.data_manager import DataManager
+from gssc_local.realtime_with_restart.board_manager import BoardManager
 from logging import Logger
 from gssc_local.montage import Montage
 
