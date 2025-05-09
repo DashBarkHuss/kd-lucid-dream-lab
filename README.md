@@ -14,7 +14,7 @@
 6. If you want the value in the OpenBCI GUI to match the value in the script, you need to remove the filters.
    1. Click on the filters icon in the top left corner of the OpenBCI GUI
    2. Click "All" to turn the channel icons black which means no filters are applied
-7. In a new terminal, run the script `stream-from-openbci-GUI.py`
+7. In a new terminal, run the script `demo_files/stream-from-openbci-GUI.py`
 
 In the terminal you'll see the samples ploted out in a vertical stream.
 
@@ -30,7 +30,7 @@ In the terminal you'll see the samples ploted out in a vertical stream.
 ## How to plot data from Brainflow with python
 
 1. Follow steps 1-5 in the "How to stream from OpenBCI GUI to Brainflow" section
-2. Run the script `plot_python_example.py`
+2. Run the script `demo_files/plot_python_example.py`
 
 <div>
     <a href="https://www.loom.com/share/7783bd62fe1b4170b1a8eb21419f26f6">
@@ -44,7 +44,7 @@ In the terminal you'll see the samples ploted out in a vertical stream.
 ## How to filter and plot data from Brainflow
 
 1. Follow steps 1-5 in the "How to stream from OpenBCI GUI to Brainflow" section
-2. Run the script `filtered_plot.py`
+2. Run the script `demo_files/filtered_plot.py`
 
 <div>
     <a href="https://www.loom.com/share/ee904b05f8484db69ce555ad0e6a11c5">
@@ -78,7 +78,7 @@ You need to use the BrainFlow-RAW.csv file to play from the file
 ### Playback Data
 
 1. Move the BrainFlow CSV file to the same folder as this script.
-2. Write your .csv's path into `/data/playback_from_file.py`
+2. Write your .csv's path into `demo_files/playback_from_file.py`
 3. Run the script, and you should see the data you previosly recorded show up in the plot.
 
 # Real-Time Inference with GSSC (Greifswald Sleep Stage Classifier)
