@@ -3,6 +3,7 @@ import numpy as np
 import logging
 import torch
 from gssc_local.realtime_with_restart.processor import SignalProcessor
+from gssc_local.realtime_with_restart.processor_improved import SignalProcessor as ImprovedSignalProcessor
 from gssc_local.realtime_with_restart.visualizer import Visualizer
 from gssc_local.pyqt_visualizer import PyQtVisualizer
 from gssc_local.montage import Montage
@@ -54,7 +55,7 @@ class DataManager:
             [torch.zeros(10, 1, 256) for _ in range(7)]  # 7 hidden states for 7 combinations
             for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
         ]
-        self.signal_processor = SignalProcessor()
+        self.signal_processor = ImprovedSignalProcessor(use_cuda=False)
         # self.visualizer = Visualizer(self.seconds_per_epoch, self.board_shim, montage)
         self.visualizer = PyQtVisualizer(self.seconds_per_epoch, self.board_shim, montage)
         self.expected_interval = 1.0 / sampling_rate
@@ -340,28 +341,32 @@ class DataManager:
         timestamp_data = self.all_previous_relevant_column_data[self.buffer_timestamp_index][start_idx:end_idx]
         epoch_start_time = timestamp_data[0]  # First timestamp in the epoch
         
-        # Get sleep stage prediction using SignalProcessor
-        sleep_stage, new_hidden_states = self.signal_processor.predict_sleep_stage(
+        # Get index combinations for EEG and EOG channels
+        eeg_indices = [0, 1, 2]  # EEG channels
+        eog_indices = [3]       # EOG channels
+        index_combinations = self.signal_processor.get_index_combinations(eeg_indices, eog_indices)
+        
+        # Get sleep stage prediction using improved SignalProcessor
+        predicted_class, class_probs, new_hidden_states = self.signal_processor.predict_sleep_stage(
             epoch_data,
-            self.buffer_hidden_states[buffer_id],
-            [0, 1, 2], # eeg indices
-            [3] # eog indices
+            index_combinations,
+            self.buffer_hidden_states[buffer_id]
         )
         
-        print(f"Sleep stage: {self.visualizer.get_sleep_stage_text(sleep_stage[0])}")
+        print(f"Sleep stage: {self.visualizer.get_sleep_stage_text(predicted_class)}")
         
         # Update visualization using Visualizer
         time_offset = start_idx / self.sampling_rate
         self.visualizer.plot_polysomnograph(
             epoch_data, 
             self.sampling_rate, 
-            sleep_stage[0], 
+            predicted_class, 
             time_offset, 
             epoch_start_time
         )
         
         self.buffer_hidden_states[buffer_id] = new_hidden_states
-        return sleep_stage
+        return np.array([predicted_class])  # Keep return format consistent
 
     def save_to_csv(self, output_path):
         """Save raw data to CSV file"""

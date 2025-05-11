@@ -1,14 +1,16 @@
 import os
 import sys
-# Add the parent directory to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Add the project root directory to the Python path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, project_root)
 
 import numpy as np
 import h5py
 import pytest
-from montage import Montage
-from processor_improved import SignalProcessor
-from convert_csv_to_fif import convert_csv_to_raw
+from gssc_local.montage import Montage
+from gssc_local.realtime_with_restart.processor_improved import SignalProcessor
+from gssc_local.convert_csv_to_fif import convert_csv_to_raw
 
 def test_predict_sleep_stage():
     """Test the predict_sleep_stage functionality of SignalProcessor using real data"""

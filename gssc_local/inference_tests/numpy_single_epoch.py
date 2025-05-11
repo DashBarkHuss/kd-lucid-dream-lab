@@ -5,6 +5,13 @@ of gsssc_helper.py and processor.py. We should be able to delete both of these f
 processor_improved.py for all inference needs.
 """
 
+import os
+import sys
+
+# Add the project root directory to the Python path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, project_root)
+
 # import montage class
 import mne
 from gssc.infer import EEGInfer
@@ -18,7 +25,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from montage import Montage
 from gssc_helper import realtime_inference, make_hiddens, preprocess_eeg_epoch_for_gssc, prepare_input, get_predicted_classes, get_predicted_classes_and_probabilities, get_results_for_each_combo, make_eeg_eog_combinations, make_infer, compare_sleep_stages
 from convert_csv_to_fif import convert_csv_to_raw, save_raw_to_fif, convert_csv_to_fif
-from processor_improved import SignalProcessor
+from gssc_local.realtime_with_restart.processor_improved import SignalProcessor
 
 csv_file_path = 'data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv'
 start = 30
@@ -112,10 +119,10 @@ hiddens = processor.make_hiddens(len(eeg_eog_combo_dict))
 predicted_classes, class_probs, new_hiddens = processor.predict_sleep_stage(numpy_data, eeg_eog_combo_dict, hiddens)
 
 # print the predicted classes
-processor.compare_sleep_stages(predicted_classes, expected_stages, verbose=False)
+processor.compare_sleep_stages(np.array([predicted_classes]), expected_stages, verbose=False)
 
 # print the class probabilities
-processor.print_class_probabilities(predicted_classes, class_probs)
+processor.print_class_probabilities(np.array([predicted_classes]), class_probs)
 
 
 
