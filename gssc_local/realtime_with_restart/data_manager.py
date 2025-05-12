@@ -7,6 +7,7 @@ from gssc_local.realtime_with_restart.processor_improved import SignalProcessor 
 from gssc_local.realtime_with_restart.visualizer import Visualizer
 from gssc_local.pyqt_visualizer import PyQtVisualizer
 from gssc_local.montage import Montage
+from gssc_local.realtime_with_restart.export.csv_manager import CSVManager
 import pandas as pd
 import time
 import os
@@ -72,6 +73,9 @@ class DataManager:
         self.saved_data = []
         self.output_csv_path = None
         self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
+        
+        # Initialize CSVManager
+        self.csv_manager = CSVManager(self.board_shim)
 
     def _init_channels(self):
         """Initialize channel information"""
@@ -161,52 +165,53 @@ class DataManager:
         return True
 
     def save_new_data(self, new_data, is_initial=False):
-        """Save new data to the saved_data buffer for later CSV export"""
-        if not hasattr(self, 'saved_data'):
-            self.saved_data = []
+        # """Save new data to the saved_data buffer for later CSV export"""
+        # if not hasattr(self, 'saved_data'):
+        #     self.saved_data = []
             
-        new_rows = new_data.T.tolist()
+        # new_rows = new_data.T.tolist()
         
-        # Add NaN placeholders for sleep stage and buffer ID to each row
-        for row in new_rows:
-            row.extend([float('nan'), float('nan')])  # Add NaN for sleep stage and buffer ID
+        # # Add NaN placeholders for sleep stage and buffer ID to each row
+        # for row in new_rows:
+        #     row.extend([float('nan'), float('nan')])  # Add NaN for sleep stage and buffer ID
         
-        # For initial data, save everything
-        if is_initial:
-            self.saved_data.extend(new_rows)
-            if new_rows:
-                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
-            return
+        # # For initial data, save everything
+        # if is_initial:
+        #     self.saved_data.extend(new_rows)
+        #     if new_rows:
+        #         self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+        #     return
             
-        # For subsequent data, only filter out exact duplicates
-        if self.last_saved_timestamp is not None:
-            # Find the first row with a timestamp greater than the last saved timestamp
-            start_idx = 0
-            for i, row in enumerate(new_rows):
-                if row[self.buffer_timestamp_index] > self.last_saved_timestamp:
-                    start_idx = i
-                    break
+        # # For subsequent data, only filter out exact duplicates
+        # if self.last_saved_timestamp is not None:
+        #     # Find the first row with a timestamp greater than the last saved timestamp
+        #     start_idx = 0
+        #     for i, row in enumerate(new_rows):
+        #         if row[self.buffer_timestamp_index] > self.last_saved_timestamp:
+        #             start_idx = i
+        #             break
             
-            # Save all rows from that point forward
-            if start_idx < len(new_rows):
-                self.saved_data.extend(new_rows[start_idx:])
-                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
-        else:
-            # If no last saved timestamp, save all rows
-            self.saved_data.extend(new_rows)
-            if new_rows:
-                self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+        #     # Save all rows from that point forward
+        #     if start_idx < len(new_rows):
+        #         self.saved_data.extend(new_rows[start_idx:])
+        #         self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+        # else:
+        #     # If no last saved timestamp, save all rows
+        #     self.saved_data.extend(new_rows)
+        #     if new_rows:
+        #         self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
+        self.csv_manager.save_new_data(new_data, is_initial)
 
     def add_sleep_stage_to_csv(self, sleep_stage, next_buffer_id, epoch_end_idx):
         """Add the sleep stage and buffer ID to the end of the row at epoch_end_idx"""
         # Ensure the row exists
-        if epoch_end_idx >= len(self.saved_data):
-            print(f"Warning: epoch_end_idx {epoch_end_idx} is out of range for saved_data with length {len(self.saved_data)}")
+        if epoch_end_idx >= len(self.csv_manager.saved_data):
+            print(f"Warning: epoch_end_idx {epoch_end_idx} is out of range for saved_data with length {len(self.csv_manager.saved_data)}")
             return
         
         # Update the last two columns (which were initialized as NaN)
-        self.saved_data[epoch_end_idx][-2] = float(sleep_stage[0])  # Convert to float
-        self.saved_data[epoch_end_idx][-1] = float(next_buffer_id)  # Convert to float
+        self.csv_manager.saved_data[epoch_end_idx][-2] = float(sleep_stage[0])  # Convert to float
+        self.csv_manager.saved_data[epoch_end_idx][-1] = float(next_buffer_id)  # Convert to float
 
     def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
         """Validate the epoch has no gaps
@@ -371,13 +376,13 @@ class DataManager:
     def save_to_csv(self, output_path):
         """Save raw data to CSV file"""
         self.output_csv_path = output_path
-        if not self.saved_data:
+        if not self.csv_manager.saved_data:
             print("No data to save")
             return False
             
         try:
             # Convert to numpy array
-            data_array = np.array(self.saved_data, dtype=float)
+            data_array = np.array(self.csv_manager.saved_data, dtype=float)
             
             # Create format specifiers - all columns use float format
             fmt = ['%.6f'] * data_array.shape[1]

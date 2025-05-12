@@ -13,6 +13,8 @@ import multiprocessing
 from brainflow.board_shim import BoardShim, BoardIds
 import time
 import logging
+from gssc.infer import ArrayInfer
+print(ArrayInfer)
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
