@@ -155,6 +155,7 @@ def main():
                 
             # Clean up stream
             stream_manager.stop_stream()
+            stream_manager = None  # Prevent double stop in finally
             
             # Handle abnormal child exit
             if not child_exited_normally:
@@ -200,7 +201,7 @@ def main():
                 received_streamed_data_handler.data_manager.cleanup()
             if 'board_manager' in locals():
                 board_manager.release()
-            if 'stream_manager' in locals():
+            if 'stream_manager' in locals() and stream_manager is not None:
                 stream_manager.stop_stream()
         except Exception as e:
             logger.error(f"Error during cleanup: {str(e)}")
