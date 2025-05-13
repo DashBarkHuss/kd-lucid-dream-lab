@@ -96,7 +96,8 @@ def create_trimmed_csv(input_file, output_file, skip_samples):
 def main():
     """Main function that manages the data acquisition and processing"""
     # Initialize playback file and timestamp tracking
-    original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
+    # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
+    original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     playback_file = original_data_file
     
     # Verify input file exists
@@ -116,78 +117,93 @@ def main():
     # Get the PyQt application instance from the visualizer
     qt_app = received_streamed_data_handler.data_manager.visualizer.app
 
-    # Main processing loop
-    while True:
-        # Create and start stream manager
-        stream_manager = StreamManager(playback_file, board_id)
-        stream_manager.start_stream()
-        
-        last_good_ts = None
-        child_exited_normally = False
-        
-        # Monitor stream and handle incoming data
-        while stream_manager.is_streaming():
-            message = stream_manager.get_next_message()
-            if message:
-                msg_type, received = message
-                
-                if msg_type == 'start_ts':
-                    # Update start timestamp from child
-                    stream_manager.start_first_data_ts = float(received) if received is not None else None
-                    logger.info(f"Updated start_first_data_ts to: {stream_manager.start_first_data_ts}")
-                    
-                elif msg_type == 'last_ts':
-                    # Handle gap detection
-                    last_good_ts = float(received)
-                    logger.info(f"Received last good timestamp: {last_good_ts}")
-                    child_exited_normally = True
-                    break
-                    
-                elif msg_type == 'data':
-                    # Process incoming data
-                    received_streamed_data_handler.process_board_data(received['board_data'])
-                    
-            # Process Qt events to update the GUI
-            qt_app.processEvents()
-            time.sleep(0.1)
+    try:
+        # Main processing loop
+        while True:
+            # Create and start stream manager
+            stream_manager = StreamManager(playback_file, board_id)
+            stream_manager.start_stream()
             
-        # Clean up stream
-        stream_manager.stop_stream()
-        
-        # Handle abnormal child exit
-        if not child_exited_normally:
-            logger.error("Child exited without sending a message. Exiting program.")
-            break
+            last_good_ts = None
+            child_exited_normally = False
+            
+            # Monitor stream and handle incoming data
+            while stream_manager.is_streaming():
+                message = stream_manager.get_next_message()
+                if message:
+                    msg_type, received = message
+                    
+                    if msg_type == 'start_ts':
+                        # Update start timestamp from child
+                        stream_manager.start_first_data_ts = float(received) if received is not None else None
+                        logger.info(f"Updated start_first_data_ts to: {stream_manager.start_first_data_ts}")
+                        
+                    elif msg_type == 'last_ts':
+                        # Handle gap detection
+                        last_good_ts = float(received)
+                        logger.info(f"Received last good timestamp: {last_good_ts}")
+                        child_exited_normally = True
+                        break
+                        
+                    elif msg_type == 'data':
+                        # Process incoming data
+                        received_streamed_data_handler.process_board_data(received['board_data'])
+                        
+                # Process Qt events to update the GUI
+                qt_app.processEvents()
+                time.sleep(0.1)
+                
+            # Clean up stream
+            stream_manager.stop_stream()
+            
+            # Handle abnormal child exit
+            if not child_exited_normally:
+                logger.error("Child exited without sending a message. Exiting program.")
+                break
 
-        if last_good_ts is None:
-            logger.error("No valid timestamp received. Exiting.")
-            break
+            if last_good_ts is None:
+                logger.error("No valid timestamp received. Exiting.")
+                break
 
-        # Calculate new offset after gap
-        timestamps = original_playback_data.iloc[:, timestamp_channel]
-        next_rows = timestamps[timestamps > last_good_ts]
+            # Calculate new offset after gap
+            timestamps = original_playback_data.iloc[:, timestamp_channel]
+            next_rows = timestamps[timestamps > last_good_ts]
 
-        if next_rows.empty:
-            logger.info("No more data after last timestamp. Saving csv and exiting.")
-            output_csv_path = os.path.join(workspace_root, "data/test_data/reconstructed_data.csv")
-            received_streamed_data_handler.data_manager.output_csv_path = output_csv_path
-            received_streamed_data_handler.data_manager.save_to_csv(output_csv_path)
-            # validate the saved csv
-            received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file)
-            break
+            if next_rows.empty:
+                logger.info("No more data after last timestamp. Saving csv and exiting.")
+                output_csv_path = os.path.join(workspace_root, "data/test_data/reconstructed_data.csv")
+                received_streamed_data_handler.data_manager.output_csv_path = output_csv_path
+                received_streamed_data_handler.data_manager.save_to_csv(output_csv_path)
+                # validate the saved csv
+                received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file)
+                break
 
-        # Create new trimmed file starting from the gap
-        offset = int(next_rows.index[0])
-        elapsed_from_start = original_playback_data.iloc[offset, timestamp_channel] - stream_manager.start_first_data_ts
-        elapsed_from_last_good_ts = original_playback_data.iloc[offset, timestamp_channel] - last_good_ts
-        logger.info(f"Restarting from: {offset} | Time from start: {format_elapsed_time(elapsed_from_start)} | Time from last good ts: {format_elapsed_time(elapsed_from_last_good_ts)}")
+            # Create new trimmed file starting from the gap
+            offset = int(next_rows.index[0])
+            elapsed_from_start = original_playback_data.iloc[offset, timestamp_channel] - stream_manager.start_first_data_ts
+            elapsed_from_last_good_ts = original_playback_data.iloc[offset, timestamp_channel] - last_good_ts
+            logger.info(f"Restarting from: {offset} | Time from start: {format_elapsed_time(elapsed_from_start)} | Time from last good ts: {format_elapsed_time(elapsed_from_last_good_ts)}")
 
-        trimmed_file = os.path.join(workspace_root, f"data/offset_files/offset_{offset}_{os.path.basename(playback_file)}")
-        create_trimmed_csv(playback_file, trimmed_file, offset)
+            trimmed_file = os.path.join(workspace_root, f"data/offset_files/offset_{offset}_{os.path.basename(playback_file)}")
+            create_trimmed_csv(playback_file, trimmed_file, offset)
 
-        # Update playback file for next iteration
-        playback_file = trimmed_file
-        logger.info(f"Updated playback file to: {playback_file}")
+            # Update playback file for next iteration
+            playback_file = trimmed_file
+            logger.info(f"Updated playback file to: {playback_file}")
+
+    except Exception as e:
+        logger.error(f"Error in main loop: {str(e)}")
+    finally:
+        # Clean up resources
+        try:
+            if 'received_streamed_data_handler' in locals():
+                received_streamed_data_handler.data_manager.cleanup()
+            if 'board_manager' in locals():
+                board_manager.release()
+            if 'stream_manager' in locals():
+                stream_manager.stop_stream()
+        except Exception as e:
+            logger.error(f"Error during cleanup: {str(e)}")
 
 if __name__ == "__main__":
     # Use spawn method for process creation (more reliable than fork)

@@ -57,9 +57,9 @@ Extracts CSV management functionality from DataManager into a dedicated CSVManag
 
 In progress:
 
-- [... ] Update DataManager to use new CSVManager
-- [... ] Ensure proper initialization and cleanup
-- [... ] Handle timestamp channel configuration
+- [x] Update DataManager to use new CSVManager
+- [x] Ensure proper initialization and cleanup
+- [x] Handle timestamp channel configuration
 
 ### 4. Add Unit Tests
 

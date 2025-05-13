@@ -165,53 +165,14 @@ class DataManager:
         return True
 
     def save_new_data(self, new_data, is_initial=False):
-        # """Save new data to the saved_data buffer for later CSV export"""
-        # if not hasattr(self, 'saved_data'):
-        #     self.saved_data = []
-            
-        # new_rows = new_data.T.tolist()
-        
-        # # Add NaN placeholders for sleep stage and buffer ID to each row
-        # for row in new_rows:
-        #     row.extend([float('nan'), float('nan')])  # Add NaN for sleep stage and buffer ID
-        
-        # # For initial data, save everything
-        # if is_initial:
-        #     self.saved_data.extend(new_rows)
-        #     if new_rows:
-        #         self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
-        #     return
-            
-        # # For subsequent data, only filter out exact duplicates
-        # if self.last_saved_timestamp is not None:
-        #     # Find the first row with a timestamp greater than the last saved timestamp
-        #     start_idx = 0
-        #     for i, row in enumerate(new_rows):
-        #         if row[self.buffer_timestamp_index] > self.last_saved_timestamp:
-        #             start_idx = i
-        #             break
-            
-        #     # Save all rows from that point forward
-        #     if start_idx < len(new_rows):
-        #         self.saved_data.extend(new_rows[start_idx:])
-        #         self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
-        # else:
-        #     # If no last saved timestamp, save all rows
-        #     self.saved_data.extend(new_rows)
-        #     if new_rows:
-        #         self.last_saved_timestamp = new_rows[-1][self.buffer_timestamp_index]
         self.csv_manager.save_new_data(new_data, is_initial)
 
     def add_sleep_stage_to_csv(self, sleep_stage, next_buffer_id, epoch_end_idx):
         """Add the sleep stage and buffer ID to the end of the row at epoch_end_idx"""
-        # Ensure the row exists
-        if epoch_end_idx >= len(self.csv_manager.saved_data):
-            print(f"Warning: epoch_end_idx {epoch_end_idx} is out of range for saved_data with length {len(self.csv_manager.saved_data)}")
-            return
-        
-        # Update the last two columns (which were initialized as NaN)
-        self.csv_manager.saved_data[epoch_end_idx][-2] = float(sleep_stage[0])  # Convert to float
-        self.csv_manager.saved_data[epoch_end_idx][-1] = float(next_buffer_id)  # Convert to float
+        #  logged the current length of the saved_data and epoch_end_idx
+        print(f"Current length of saved_data: {len(self.csv_manager.saved_data)}")
+        print(f"Epoch end index: {epoch_end_idx}")
+        self.csv_manager.add_sleep_stage_to_csv(float(sleep_stage[0]), float(next_buffer_id), epoch_end_idx)
 
     def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
         """Validate the epoch has no gaps
@@ -239,9 +200,7 @@ class DataManager:
     def _enough_data_to_process_epoch(self, buffer_id, epoch_end_idx):
         """Check if we have enough data to process the given buffer"""
         buffer_delay = buffer_id * self.points_per_step
-
-        
-        return (epoch_end_idx <= len(self.all_previous_relevant_column_data[0]) and 
+        return (epoch_end_idx < len(self.all_previous_relevant_column_data[0]) and 
                 len(self.all_previous_relevant_column_data[0]) >= buffer_delay)
     
     def _has_enough_data_for_buffer(self, buffer_id):
@@ -376,62 +335,11 @@ class DataManager:
     def save_to_csv(self, output_path):
         """Save raw data to CSV file"""
         self.output_csv_path = output_path
-        if not self.csv_manager.saved_data:
-            print("No data to save")
-            return False
-            
-        try:
-            # Convert to numpy array
-            data_array = np.array(self.csv_manager.saved_data, dtype=float)
-            
-            # Create format specifiers - all columns use float format
-            fmt = ['%.6f'] * data_array.shape[1]
-            
-            # Save with exact format matching
-            np.savetxt(output_path, data_array, delimiter='\t', fmt=fmt)
-            print(f"Data saved to {output_path}")
-            return True
-        except Exception as e:
-            print(f"Error saving to CSV: {str(e)}")
-            return False
+        return self.csv_manager.save_to_csv(output_path)
 
     def validate_saved_csv(self, original_csv_path):
         """Validate that the saved CSV matches the original format exactly, ignoring sleep stage and buffer ID columns"""
-        try:
-            # Read both CSVs as strings first
-            with open(self.output_csv_path, 'r') as f:
-                saved_lines = f.readlines()
-            with open(original_csv_path, 'r') as f:
-                original_lines = f.readlines()
-            
-            print("\nCSV Validation Results:")
-            
-            # Check number of lines
-            if len(saved_lines) != len(original_lines):
-                print(f"❌ Line count mismatch: Original={len(original_lines)}, Saved={len(saved_lines)}")
-                return False
-            print(f"✅ Line count matches: {len(original_lines)} lines")
-            
-            # Compare each line exactly, but only the original columns
-            for i, (saved_line, original_line) in enumerate(zip(saved_lines, original_lines)):
-                # Split lines into columns and remove the last two columns from saved data
-                saved_columns = saved_line.strip().split('\t')[:-2]  # Remove sleep stage and buffer ID
-                original_columns = original_line.strip().split('\t')
-                
-                # Rejoin columns for comparison
-                saved_line_trimmed = '\t'.join(saved_columns)
-                
-                if saved_line_trimmed != original_line.strip():
-                    print(f"❌ Line {i+1} does not match exactly:")
-                    print(f"Original: {original_line.strip()}")
-                    print(f"Saved:    {saved_line_trimmed}")
-                    return False
-            
-            print("✅ All lines match exactly (ignoring sleep stage and buffer ID columns)")
-            return True
-        except Exception as e:
-            print(f"Error validating CSV: {str(e)}")
-            return False
+        return self.csv_manager.validate_saved_csv_matches_original_source(original_csv_path)
 
     def _get_affected_buffer(self, timestamp):
         """
@@ -558,6 +466,37 @@ class DataManager:
     def _calculate_next_buffer_id_to_process(self):
         """Calculate the ID of the next buffer to process"""
         return (self.last_processed_buffer + 1) % 6
+
+    def cleanup(self):
+        """Clean up resources and reset state"""
+        try:
+            # Clean up CSVManager
+            if hasattr(self, 'csv_manager'):
+                self.csv_manager.cleanup()
+            
+            # Reset state variables
+            self.points_collected = 0
+            self.last_processed_buffer = -1
+            self.current_epoch_start_time = None
+            self.last_validated_value = None
+            self.saved_data = []
+            self.output_csv_path = None
+            self.last_saved_timestamp = None
+            
+            # Clear data buffers
+            self.all_previous_relevant_column_data = [[] for _ in range(len(self.all_channels_with_timestamp))]
+            self.processed_epoch_start_indices = [[] for _ in range(6)]
+            
+            # Reset hidden states
+            self.buffer_hidden_states = [
+                [torch.zeros(10, 1, 256) for _ in range(7)]  # 7 hidden states for 7 combinations
+                for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
+            ]
+            
+            logging.info("DataManager cleanup completed successfully")
+        except Exception as e:
+            logging.error(f"Error during DataManager cleanup: {str(e)}")
+            raise
 
 
 

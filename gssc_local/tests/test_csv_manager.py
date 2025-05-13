@@ -224,6 +224,29 @@ def test_error_handling(csv_manager, temp_csv_path):
     with pytest.raises(CSVValidationError):
         csv_manager.validate_saved_csv_matches_original_source(temp_csv_path) 
 
+def test_cleanup():
+    """Test that cleanup properly resets all state."""
+    # Create a CSVManager with some initial state
+    manager = CSVManager(board_shim=MockBoardShim(timestamp_channel=0))
+    
+    # Set up some initial state
+    manager.saved_data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    manager.last_saved_timestamp = 123.456
+    manager.output_csv_path = "test.csv"
+    
+    # Verify initial state
+    assert len(manager.saved_data) == 2
+    assert manager.last_saved_timestamp == 123.456
+    assert manager.output_csv_path == "test.csv"
+    
+    # Call cleanup
+    manager.cleanup()
+    
+    # Verify state is reset
+    assert len(manager.saved_data) == 0
+    assert manager.last_saved_timestamp is None
+    assert manager.output_csv_path is None
+
 if __name__ == '__main__':
     print("\nRunning tests directly...")
     pytest.main([__file__, '-v'])

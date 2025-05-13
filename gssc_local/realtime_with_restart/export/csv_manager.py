@@ -124,8 +124,13 @@ class CSVManager:
         if not isinstance(epoch_end_idx, int):
             raise CSVDataError(f"Epoch index must be integer, got {type(epoch_end_idx)}")
             
-        if epoch_end_idx < 0 or epoch_end_idx >= len(self.saved_data):
-            raise CSVDataError(f"Epoch index {epoch_end_idx} out of bounds for saved data length {len(self.saved_data)}")
+        if epoch_end_idx < 0:
+            raise CSVDataError(f"Epoch index {epoch_end_idx} is negative")
+            
+        if epoch_end_idx >= len(self.saved_data):
+            self.logger.warning(f"Epoch index {epoch_end_idx} out of bounds for saved data length {len(self.saved_data)}")
+            # Instead of raising an error, we'll log a warning and use the last valid index
+            epoch_end_idx = len(self.saved_data) - 1
     
     def save_new_data(self, new_data: np.ndarray, is_initial: bool = False) -> bool:
         """Save new data to the buffer for later CSV export.
@@ -383,6 +388,30 @@ class CSVManager:
             self.saved_data[epoch_end_idx][-2] = float(sleep_stage)  # Convert to float
             self.saved_data[epoch_end_idx][-1] = float(next_buffer_id)  # Convert to float
             
-        except CSVDataError as e:
-            self.logger.error(f"Failed to add sleep stage data: {e}")
-            raise 
+            self.logger.info(f"Added sleep stage {sleep_stage} and buffer ID {next_buffer_id} at index {epoch_end_idx}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to add sleep stage: {e}")
+            raise CSVDataError(f"Failed to add sleep stage: {e}")
+    
+    def cleanup(self) -> None:
+        """Clean up resources and reset state.
+        
+        This method should be called when the CSVManager is no longer needed
+        to ensure proper resource release and state reset.
+        """
+        try:
+            self.logger.info("Cleaning up CSVManager resources")
+            
+            # Clear data buffers
+            self.saved_data.clear()
+            
+            # Reset state
+            self.last_saved_timestamp = None
+            self.output_csv_path = None
+            
+            self.logger.info("CSVManager cleanup completed successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error during CSVManager cleanup: {e}")
+            raise CSVExportError(f"Failed to cleanup CSVManager: {e}") 

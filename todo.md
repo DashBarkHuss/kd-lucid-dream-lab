@@ -147,6 +147,7 @@ Starting/stopping the stream
       - improvements:
         - updated the visualizer to show there is a gap
     - understand why pytqt visualizer had to implement threads
+    - understand why we need to cleanup the csv manager
     - handle large variables likethe previous buffer and the saved data for csv
     - ✅ validate csv after gap handling
     - delete offset files
@@ -157,6 +158,7 @@ Starting/stopping the stream
   - do we need to add filtering? i believe so. i think set sinclude filtering in them and csv raws do not.
   - warn if bad channel isbeing used for inference- like all the same value
   - ✅ remove harded coded combinations from gssc_array_with_fif
+  - need to test a 35 second exact consecutive data- bug
   - see what changes need to be made for working with streamed data vs playback from file
   - test against scored file - wee can probably make a test file that doesn't need the rull processing/realtime stream loop. like just haddle hiddens and compare the results. hiddens are handle differently in trealtime vs after the fact processing.
 
