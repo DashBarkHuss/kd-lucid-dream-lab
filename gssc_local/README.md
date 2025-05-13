@@ -79,3 +79,35 @@ pip install git+https://github.com/jshanna100/gssc.git --force-reinstall
 ```
 
 Then verify the installation by checking for the latest code patterns identified in Step 1.
+
+## CSV Export and Validation
+
+The system provides robust CSV export capabilities through the `CSVManager` class in the `realtime_with_restart` package which helps manage brainflow data.
+
+### Features
+
+- Exact format preservation for compatibility
+- Comprehensive data validation
+- Sleep stage data integration
+- Detailed error reporting
+
+### Usage
+
+```python
+from gssc_local.realtime_with_restart.export import CSVManager
+
+# Initialize
+csv_manager = CSVManager(board_shim)
+
+# Save data
+csv_manager.save_new_data(new_data, is_initial=True)
+csv_manager.save_to_csv("output.csv")
+
+# Add sleep stage data
+csv_manager.add_sleep_stage_to_csv(sleep_stage=1.0,
+                                 next_buffer_id=2.0,
+                                 epoch_end_idx=100)
+
+# Validate
+csv_manager.validate_saved_csv_matches_original_source("original.csv")
+```

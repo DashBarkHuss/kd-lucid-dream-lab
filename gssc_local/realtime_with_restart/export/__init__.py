@@ -1,9 +1,9 @@
 """
 Export module for the realtime_with_restart package.
 
-This module contains components for exporting and managing data in various formats.
-Currently supports:
-- CSV export with validation and sleep stage data
+This module provides CSV export functionality specifically for brainflow data, including:
+
+For detailed usage examples and validation rules, see the README.md and individual module docstrings.
 """
 
 from .csv_manager import CSVManager

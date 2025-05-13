@@ -70,10 +70,10 @@ In progress:
 
 ### 5. Documentation
 
-- [ ] Add class and method documentation
-- [ ] Add usage examples
-- [ ] Document validation rules
-- [ ] Update main README if needed
+- [x] Add class and method documentation
+- [x] Add usage examples
+- [x] Document validation rules
+- [x] Update main README if needed
 
 ### 6. Validation & Review
 

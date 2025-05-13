@@ -191,7 +191,7 @@ gssc_local/realtime_with_restart/
 
 See detailed implementation plans for each module in the `tasks_and_plans/modules/` directory:
 
-- [`modules/csv_manager.md`](modules/csv_manager.md) - CSV Export/Management implementation
+- ✅ [`modules/csv_manager.md`](modules/csv_manager.md) - CSV Export/Management implementation
 - `modules/buffer_manager.md` (Coming soon)
 - `modules/epoch_processor.md` (Coming soon)
 - `modules/gap_handler.md` (Coming soon)

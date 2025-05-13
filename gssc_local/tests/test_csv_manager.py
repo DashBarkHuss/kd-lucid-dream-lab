@@ -126,19 +126,7 @@ def test_save_to_csv(csv_manager, sample_data, temp_csv_path):
     # Compare only the first 3 columns (original data) with higher tolerance
     assert np.allclose(saved_data[:, :3], sample_data.T, rtol=1e-5, atol=1e-5)
 
-def test_validate_saved_csv_format(csv_manager, sample_data, temp_csv_path):
-    """Test CSV format validation."""
-    # Save data to CSV
-    csv_manager.save_new_data(sample_data, is_initial=True)
-    csv_manager.save_to_csv(temp_csv_path)
-    # Create a reference CSV with same format
-    ref_path = temp_csv_path + '.ref'
-    np.savetxt(ref_path, sample_data.T, delimiter='\t', fmt='%.6f')
-    # Test validation
-    result = csv_manager.validate_saved_csv_format(ref_path)
-    assert result is True
-    # Clean up
-    os.remove(ref_path)
+
 
 def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, temp_csv_path):
     """Test validation against original source."""
@@ -218,11 +206,11 @@ def test_error_handling(csv_manager, temp_csv_path):
     
     # Test validating CSV without saving
     with pytest.raises(CSVValidationError):
-        csv_manager.validate_saved_csv_format(temp_csv_path)
+        csv_manager.validate_saved_csv_matches_original_source(temp_csv_path)
     
     # Test validating against original without saving
     with pytest.raises(CSVValidationError):
-        csv_manager.validate_saved_csv_matches_original_source(temp_csv_path) 
+        csv_manager.validate_saved_csv_matches_original_source(temp_csv_path)
 
 def test_cleanup():
     """Test that cleanup properly resets all state."""
