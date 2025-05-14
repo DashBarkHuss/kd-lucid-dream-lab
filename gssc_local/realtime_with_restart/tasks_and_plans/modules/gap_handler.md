@@ -43,11 +43,10 @@ Extracts gap detection functionality from DataManager into a dedicated GapHandle
 
 ### 5. Documentation
 
-- [ ] Add class and method documentation
-- [ ] Add usage examples
-- [ ] Document validation rules
-- [ ] Update main README if needed
-- [ ] Update tasks_and_plans/REFACTORING.md with instructions to move buffer timing calculations to BufferManager
+- [x] Add class and method documentation
+- [x] Add usage examples
+- [x] Document validation rules (in docstrings)
+- [x] Update main README if needed
 
 ### 6. Validation & Review
 
@@ -67,6 +66,7 @@ The following functionality from `_get_affected_buffer()` needs to be moved to B
 - [ ] Update DataManager to use BufferManager for timing calculations
 - [ ] Add tests for buffer timing functionality
 - [ ] Document buffer timing rules and calculations
+- [ ] Update tasks_and_plans/REFACTORING.md with instructions to move buffer timing calculations to BufferManager
 
 ## Success Criteria
 

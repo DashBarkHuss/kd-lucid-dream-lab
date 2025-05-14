@@ -111,3 +111,58 @@ csv_manager.add_sleep_stage_to_csv(sleep_stage=1.0,
 # Validate
 csv_manager.validate_saved_csv_matches_original_source("original.csv")
 ```
+
+## Gap Detection
+
+The system provides robust gap detection capabilities through the `GapHandler` class in the `realtime_with_restart` package which helps identify discontinuities in EEG data streams. Gap detection is passed to the orchestrator class to determine how to handle gaps.
+
+### Features
+
+- Detects gaps between data chunks (`detect_gap()` with prev_timestamp parameter)
+- Identifies gaps within data chunks (`detect_gap()` without prev_timestamp parameter)
+- Validates epoch boundaries (`validate_epoch_gaps()`) TODO: Should this be in the GapHandler class or the epoch_manager class or orchestator class?
+- Comprehensive error handling (via custom exceptions: `GapError`, `InvalidTimestampError`, `EmptyTimestampError`, `InvalidGapThresholdError`, `InvalidSamplingRateError`, `InvalidEpochIndicesError`)
+- Configurable gap thresholds (set in `__init__()`)
+
+### Usage
+
+```python
+from gssc_local.realtime_with_restart.core import GapHandler
+import numpy as np
+
+# Initialize with sampling rate and optional gap threshold
+gap_handler = GapHandler(sampling_rate=100.0, gap_threshold=2.0)
+
+# Detect gaps between chunks
+# BrainFlow timestamps are Unix timestamps with microsecond precision (6 decimal places)
+timestamps = np.array([
+    1746193963.801430,  # Base timestamp
+    1746193963.811430,  # 10ms later
+    1746193963.821430,  # 20ms later
+    1746193963.831430   # 30ms later
+])
+prev_timestamp = 1746193963.791430  # Previous chunk's last timestamp
+has_gap, gap_size, start_idx, end_idx = gap_handler.detect_gap(timestamps, prev_timestamp)
+
+# Detect gaps within a chunk
+timestamps = np.array([
+    1746193963.801430,  # Base timestamp
+    1746193963.811430,  # 10ms later
+    1746193963.851430,  # 50ms later (gap of 40ms)
+    1746193963.861430   # 60ms later
+])
+has_gap, gap_size, start_idx, end_idx = gap_handler.detect_gap(timestamps)
+
+# Validate epoch boundaries
+# Create a realistic 30-second epoch (3000 samples at 100Hz)
+epoch_duration = 30.0  # 30 seconds
+samples_per_epoch = int(epoch_duration * 100)  # 3000 samples at 100Hz
+epoch_timestamps = np.array([
+    1746193963.801430 + i * 0.01  # Base timestamp + i * (1/100) seconds
+    for i in range(samples_per_epoch)
+])
+has_gap, gap_size = gap_handler.validate_epoch_gaps(epoch_timestamps, epoch_start_idx=0, epoch_end_idx=samples_per_epoch)
+
+# Clean up resources when done
+gap_handler.cleanup()
+```

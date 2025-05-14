@@ -15,7 +15,7 @@ GAP_THRESHOLD = 2.0    # seconds
 EXPECTED_INTERVAL = 1.0 / SAMPLING_RATE  # 0.01 seconds
 TIMESTAMP_TOLERANCE = EXPECTED_INTERVAL * 0.01  # 1% of expected interval
 FLOAT_COMPARISON_TOLERANCE = 0.001  # For comparing floating point numbers
-BASE_TIME = 1719432000.0  # Example UNIX timestamp
+BASE_TIME = 1746193963.801430  # Example BrainFlow timestamp with microsecond precision
 
 @pytest.fixture
 def gap_handler():
@@ -44,8 +44,13 @@ def test_initialization():
 
 def test_validate_timestamps(gap_handler):
     """Test timestamp validation functionality."""
-    # Test valid timestamps
-    valid_timestamps = np.array([0.0, EXPECTED_INTERVAL, 2*EXPECTED_INTERVAL, 3*EXPECTED_INTERVAL])
+    # Test valid timestamps with microsecond precision
+    valid_timestamps = np.array([
+        BASE_TIME,
+        BASE_TIME + EXPECTED_INTERVAL,
+        2*EXPECTED_INTERVAL + BASE_TIME,
+        3*EXPECTED_INTERVAL + BASE_TIME
+    ])
     gap_handler._validate_timestamps(valid_timestamps)  # Should not raise
 
     # Test empty timestamps
@@ -54,7 +59,7 @@ def test_validate_timestamps(gap_handler):
 
     # Test non-numpy array
     with pytest.raises(InvalidTimestampError):
-        gap_handler._validate_timestamps([0.0, EXPECTED_INTERVAL, 2*EXPECTED_INTERVAL])
+        gap_handler._validate_timestamps([BASE_TIME, BASE_TIME + EXPECTED_INTERVAL])
 
     # Test non-numeric timestamps
     with pytest.raises(InvalidTimestampError):
@@ -62,15 +67,25 @@ def test_validate_timestamps(gap_handler):
 
     # Test NaN values
     with pytest.raises(InvalidTimestampError):
-        gap_handler._validate_timestamps(np.array([0.0, np.nan, 2*EXPECTED_INTERVAL]))
+        gap_handler._validate_timestamps(np.array([BASE_TIME, np.nan, BASE_TIME + 2*EXPECTED_INTERVAL]))
 
     # Test non-monotonic timestamps
     with pytest.raises(InvalidTimestampError):
-        gap_handler._validate_timestamps(np.array([0.0, 2*EXPECTED_INTERVAL, EXPECTED_INTERVAL]))
+        gap_handler._validate_timestamps(np.array([
+            BASE_TIME,
+            BASE_TIME + 2*EXPECTED_INTERVAL,
+            BASE_TIME + EXPECTED_INTERVAL
+        ]))
 
 def test_validate_epoch_indices(gap_handler):
     """Test epoch indices validation."""
-    timestamps = np.array([0.0, EXPECTED_INTERVAL, 2*EXPECTED_INTERVAL, 3*EXPECTED_INTERVAL, 4*EXPECTED_INTERVAL])
+    timestamps = np.array([
+        BASE_TIME,
+        BASE_TIME + EXPECTED_INTERVAL,
+        BASE_TIME + 2*EXPECTED_INTERVAL,
+        BASE_TIME + 3*EXPECTED_INTERVAL,
+        BASE_TIME + 4*EXPECTED_INTERVAL
+    ])
 
     # Test valid indices
     gap_handler._validate_epoch_indices(timestamps, 1, 3)  # Should not raise
@@ -88,8 +103,12 @@ def test_validate_epoch_indices(gap_handler):
 def test_detect_gap(gap_handler):
     """Test gap detection between chunks and within chunks."""
     # Test gap between chunks
-    prev_timestamp = BASE_TIME - GAP_THRESHOLD - 0.01 - EXPECTED_INTERVAL  # Corrected for UNIX time
-    timestamps = np.array([BASE_TIME, BASE_TIME + EXPECTED_INTERVAL, BASE_TIME + 2*EXPECTED_INTERVAL])
+    prev_timestamp = BASE_TIME - GAP_THRESHOLD - 0.01 - EXPECTED_INTERVAL
+    timestamps = np.array([
+        BASE_TIME,
+        BASE_TIME + EXPECTED_INTERVAL,
+        BASE_TIME + 2*EXPECTED_INTERVAL
+    ])
     has_gap, gap_size, start_idx, end_idx = gap_handler.detect_gap(timestamps, prev_timestamp)
     assert has_gap
     assert abs(gap_size - (GAP_THRESHOLD + 0.01)) < FLOAT_COMPARISON_TOLERANCE
@@ -97,7 +116,11 @@ def test_detect_gap(gap_handler):
     assert end_idx == 0
 
     # Test gap within chunk
-    timestamps = np.array([BASE_TIME, BASE_TIME + EXPECTED_INTERVAL, BASE_TIME + 2*EXPECTED_INTERVAL + GAP_THRESHOLD + 0.01])
+    timestamps = np.array([
+        BASE_TIME,
+        BASE_TIME + EXPECTED_INTERVAL,
+        BASE_TIME + 2*EXPECTED_INTERVAL + GAP_THRESHOLD + 0.01
+    ])
     has_gap, gap_size, start_idx, end_idx = gap_handler.detect_gap(timestamps)
     assert has_gap
     assert abs(gap_size - (GAP_THRESHOLD + 0.01)) < FLOAT_COMPARISON_TOLERANCE
@@ -110,7 +133,7 @@ def test_validate_epoch_gaps(gap_handler):
     epoch_duration = 30.0  # 30 seconds per epoch
     samples_per_epoch = int(epoch_duration * SAMPLING_RATE)  # 3000 samples at 100Hz
     
-    # First epoch: 30 seconds of data
+    # First epoch: 30 seconds of data with microsecond precision
     first_epoch = np.array([BASE_TIME + i * EXPECTED_INTERVAL for i in range(samples_per_epoch)])
     
     # Second epoch: 30 seconds of data, with a gap before it

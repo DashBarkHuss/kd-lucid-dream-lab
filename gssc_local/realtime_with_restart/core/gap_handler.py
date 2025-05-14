@@ -1,4 +1,8 @@
-"""Gap detection and reporting functionality for EEG data streams."""
+"""Gap detection and reporting functionality for EEG data streams.
+
+This module handles detection of gaps in BrainFlow EEG data streams. Timestamps should be
+Unix timestamps (seconds since epoch) as provided by BrainFlow's timestamp column.
+"""
 
 import logging
 import numpy as np
@@ -31,10 +35,11 @@ class InvalidEpochIndicesError(GapError):
     pass
 
 class GapHandler:
-    """Detects and reports gaps in EEG data streams.
+    """Detects and reports gaps in BrainFlow EEG data streams.
     
     Identifies discontinuities in timestamp sequences and returns information about
-    detected gaps, including their size and location.
+    detected gaps, including their size and location. Timestamps should be Unix timestamps
+    (seconds since epoch) as provided by BrainFlow's timestamp column.
     
     Attributes: TODO: Determine if these are needed or should be passed in directy to each method
         expected_interval (float): Expected time interval between samples in seconds
@@ -86,7 +91,7 @@ class GapHandler:
         """Validate timestamp array for basic integrity.
         
         Args:
-            timestamps: Array of timestamps to validate
+            timestamps: Array of Unix timestamps (seconds since epoch) from BrainFlow
             
         Raises:
             EmptyTimestampError: If timestamps array is empty
@@ -135,13 +140,13 @@ class GapHandler:
         Checks both between chunks and within the current chunk.
         
         Args:
-            timestamps: Current timestamps array
-            prev_timestamp: Previous timestamp to compare against
+            timestamps: Array of Unix timestamps (seconds since epoch) from BrainFlow
+            prev_timestamp: Previous timestamp to compare against (Unix timestamp)
             
         Returns:
             tuple: (has_gap, gap_size, gap_start_idx, gap_end_idx)
             - has_gap: True if a gap was detected
-            - gap_size: Size of the largest gap found
+            - gap_size: Size of the largest gap found in seconds
             - gap_start_idx: Start index of the gap (or None if no gap)
             - gap_end_idx: End index of the gap (or None if no gap)
             
@@ -186,14 +191,14 @@ class GapHandler:
         """Validate the epoch has no gaps.
         
         Args:
-            timestamps: Array of timestamps
+            timestamps: Array of Unix timestamps (seconds since epoch) from BrainFlow
             epoch_start_idx: Start index of the epoch
             epoch_end_idx: End index of the epoch
             
         Returns:
             tuple: (has_gap, gap_size)
             - has_gap: True if a gap was detected
-            - gap_size: Size of the gap if one was detected, otherwise 0
+            - gap_size: Size of the gap in seconds if one was detected, otherwise 0
             
         Raises:
             EmptyTimestampError: If timestamps array is empty
