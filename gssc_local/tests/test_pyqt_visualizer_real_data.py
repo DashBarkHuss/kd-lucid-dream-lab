@@ -1,7 +1,9 @@
-import os
-import sys
-# Add the parent directory to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# Add workspace root to path
+workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(workspace_root)
 
 import numpy as np
 import pandas as pd
@@ -11,7 +13,7 @@ from pyqt_visualizer import PyQtVisualizer
 def test_pyqt_visualizer_with_real_data():
     """Test the PyQtVisualizer with a 30-second chunk of real data from a BrainFlow recording"""
     # Path to the test data file
-    test_data_path = os.path.join('data', 'realtime_inference_test', 'BrainFlow-RAW_2025-03-29_23-14-54_0.csv')
+    test_data_path = os.path.join(workspace_root, 'data', 'realtime_inference_test', 'BrainFlow-RAW_2025-03-29_23-14-54_0.csv')
     
     # Read the data
     df = pd.read_csv(test_data_path, sep='\t', header=None)

@@ -1,6 +1,10 @@
 import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# Add workspace root to path
+workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(workspace_root)
+
 import numpy as np
 import pandas as pd
 from montage import Montage
@@ -54,7 +58,7 @@ def test_synthetic_data():
 def test_real_data():
     """Test the PyQtVisualizer with real data"""
     # Path to the test data file
-    test_data_path = os.path.join('data', 'realtime_inference_test', 'BrainFlow-RAW_2025-03-29_23-14-54_0.csv')
+    test_data_path = os.path.join(workspace_root, 'data', 'realtime_inference_test', 'BrainFlow-RAW_2025-03-29_23-14-54_0.csv')
     
     # Read the data
     df = pd.read_csv(test_data_path, sep='\t', header=None)
