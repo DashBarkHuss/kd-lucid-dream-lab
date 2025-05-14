@@ -1,5 +1,21 @@
 # kd-lucid-dream-lab
 
+A Python-based toolkit for working with OpenBCI and Brainflow for EEG data processing and analysis, with a focus on sleep stage classification using the Greifswald Sleep Stage Classifier (GSSC).
+
+## Table of Contents
+
+- [Usage](#usage)
+  - [Streaming from OpenBCI GUI to Brainflow](#how-to-stream-from-openbci-gui-to-brainflow)
+  - [Plotting Data with Python](#how-to-plot-data-from-brainflow-with-python)
+  - [Filtering and Plotting Data](#how-to-filter-and-plot-data-from-brainflow)
+  - [Data Playback](#how-to-playback-data-from-a-file)
+- [Real-Time Inference with GSSC](#real-time-inference-with-gssc-greifswald-sleep-stage-classifier)
+- [Development](#development)
+
+## Usage
+
+## TBD: How to auto sleep score in realtime OpenBCI stream
+
 ## How to stream from OpenBCI GUI to Brainflow
 
 1. Open OpenBCI GUI
@@ -199,31 +215,3 @@ For implementation details and code examples, refer to the following files in th
 - `basic_processor.py` - Basic 30-second window implementation
 - `overlapping_processor.py` - Overlapping windows implementation
 - `multi_state_processor.py` - Multiple hidden states implementation
-
-## Getting Started
-
-1. Install GSSC and dependencies:
-
-```bash
-pip install gssc torch numpy scipy
-```
-
-2. Choose an implementation approach based on your requirements
-
-3. Initialize the appropriate processor with your sampling rate:
-
-```python
-# Example for basic processor
-processor = BasicGSSCProcessor(sampling_rate=256, use_cuda=True)
-```
-
-4. Process your data stream:
-
-```python
-for eeg_sample, eog_sample in data_stream:
-    processor.add_sample(eeg_sample, eog_sample)
-    result = processor.process_if_ready()
-    if result:
-        stage, probabilities = result
-        # Handle the prediction
-```
