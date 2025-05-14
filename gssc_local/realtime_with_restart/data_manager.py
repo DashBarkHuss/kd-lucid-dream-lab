@@ -12,7 +12,10 @@ import pandas as pd
 import time
 import os
 from datetime import datetime
+from typing import Optional, Tuple, List
+from .core.gap_handler import GapHandler
 
+logger = logging.getLogger(__name__)
 
 class DataManager:
     """Manages data buffers and their processing"""
@@ -76,6 +79,9 @@ class DataManager:
         
         # Initialize CSVManager
         self.csv_manager = CSVManager(self.board_shim)
+        
+        # Initialize gap handler
+        self.gap_handler = GapHandler(sampling_rate=sampling_rate, gap_threshold=2.0)
 
     def _init_channels(self):
         """Initialize channel information"""
@@ -183,19 +189,33 @@ class DataManager:
             epoch_end_idx: End index of the epoch
             
         Returns:
-            tuple: ( has_gap, gap_size)
+            tuple: (has_gap, gap_size)
             - has_gap: True if a gap was detected
             - gap_size: Size of the gap if one was detected, otherwise 0
         """
-            
-        # Check for gaps in the timestamp data
-        timestamp_data = self.all_previous_relevant_column_data[self.buffer_timestamp_index]
-        has_gap, gap_size, gap_start_idx, gap_end_idx = self.detect_gap(
-            timestamp_data[epoch_start_idx:epoch_end_idx],
-            timestamp_data[epoch_start_idx-1] if epoch_start_idx > 0 else None
+        # Get timestamp data
+        timestamp_data = np.array(self.all_previous_relevant_column_data[self.buffer_timestamp_index])
+        
+        # Use GapHandler to validate gaps
+        has_gap, gap_size = self.gap_handler.validate_epoch_gaps(
+            timestamps=timestamp_data,
+            epoch_start_idx=epoch_start_idx,
+            epoch_end_idx=epoch_end_idx
         )
         
         return has_gap, gap_size
+
+        # OLD IMPLEMENTATION:
+        # """
+        # # Check for gaps in the timestamp data
+        # timestamp_data = self.all_previous_relevant_column_data[self.buffer_timestamp_index]
+        # has_gap, gap_size, gap_start_idx, gap_end_idx = self.detect_gap(
+        #     timestamp_data[epoch_start_idx:epoch_end_idx],
+        #     timestamp_data[epoch_start_idx-1] if epoch_start_idx > 0 else None
+        # )
+        # 
+        # return has_gap, gap_size
+        # """
 
     def _enough_data_to_process_epoch(self, buffer_id, epoch_end_idx):
         """Check if we have enough data to process the given buffer"""
@@ -282,8 +302,9 @@ class DataManager:
 
         # Process the epoch
         sleep_stage = self._process_epoch(start_idx=epoch_start_idx, end_idx=epoch_end_idx, buffer_id=buffer_id)
-
-        return sleep_stage
+        
+        # Add sleep stage to CSV
+        self.add_sleep_stage_to_csv(sleep_stage, buffer_id, epoch_end_idx)
 
     def _process_epoch(self, start_idx, end_idx, buffer_id):
         """Handle the data for a specified epoch on a specified buffer which has valid data."""        
@@ -378,31 +399,40 @@ class DataManager:
             - gap_start_idx: Start index of the gap (or None if no gap)
             - gap_end_idx: End index of the gap (or None if no gap)
         """
-        has_gap = False
-        max_gap = 0
-        gap_start_idx = None
-        gap_end_idx = None
-
-        # Check gap between chunks if we have a previous timestamp
-        if prev_timestamp is not None:
-            between_chunks_gap = timestamps[0] - prev_timestamp - self.expected_interval
-            if abs(between_chunks_gap) >= self.gap_threshold:
-                has_gap = True
-                max_gap = between_chunks_gap
-                gap_start_idx = -1  # -1 indicates gap is between chunks
-                gap_end_idx = 0
-
-        # Check gaps within the chunk
-        for i in range(1, len(timestamps)):
-            interval_deviation = timestamps[i] - timestamps[i-1] - self.expected_interval
-            if abs(interval_deviation) >= self.gap_threshold:
-                has_gap = True
-                if abs(interval_deviation) > abs(max_gap):
-                    max_gap = interval_deviation
-                    gap_start_idx = i-1
-                    gap_end_idx = i
-
-        return has_gap, max_gap, gap_start_idx, gap_end_idx
+        # Convert timestamps to numpy array if not already
+        timestamps = np.array(timestamps)
+        return self.gap_handler.detect_gap(timestamps=timestamps, prev_timestamp=prev_timestamp)
+        
+        # OLD IMPLEMENTATION:
+        # """
+        # has_gap = False
+        # max_gap = 0
+        # gap_start_idx = None
+        # gap_end_idx = None
+        # 
+        # # Check gap between chunks if we have a previous timestamp
+        # if prev_timestamp is not None:
+        #     between_chunks_gap = timestamps[0] - prev_timestamp - self.expected_interval
+        #     if abs(between_chunks_gap) >= self.gap_threshold:
+        #         has_gap = True
+        #         max_gap = between_chunks_gap
+        #         gap_start_idx = -1  # -1 indicates gap is between chunks
+        #         gap_end_idx = 0
+        # 
+        # # Check gaps within the chunk
+        # for i in range(1, len(timestamps)):
+        #     interval_deviation = timestamps[i] - timestamps[i-1] - self.expected_interval
+        #     if abs(interval_deviation) >= self.gap_threshold:
+        #         has_gap = True
+        #         if abs(interval_deviation) > abs(max_gap):
+        #             max_gap = interval_deviation
+        #             gap_start_idx = i-1
+        #             gap_end_idx = i
+        # 
+        # return has_gap, max_gap, gap_start_idx, gap_end_idx
+        # """
+        
+        # Use GapHandler to detect gaps
 
     def handle_gap(self, prev_timestamp, gap_size, buffer_id):
         """
@@ -492,6 +522,10 @@ class DataManager:
                 [torch.zeros(10, 1, 256) for _ in range(7)]  # 7 hidden states for 7 combinations
                 for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
             ]
+            
+            # Clean up GapHandler
+            if hasattr(self, 'gap_handler'):
+                self.gap_handler.cleanup()
             
             logging.info("DataManager cleanup completed successfully")
         except Exception as e:

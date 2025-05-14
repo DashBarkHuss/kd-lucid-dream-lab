@@ -1,4 +1,5 @@
 import multiprocessing
+from multiprocessing import connection
 import logging
 from typing import Optional, Tuple, Dict, Any
 import time
@@ -12,8 +13,8 @@ class StreamManager:
     def __init__(self, playback_file: str, board_id: int = BoardIds.CYTON_DAISY_BOARD):
         self.playback_file = playback_file
         self.board_id = board_id
-        self.parent_conn: Optional[multiprocessing.connection.Connection] = None
-        self.child_conn: Optional[multiprocessing.connection.Connection] = None
+        self.parent_conn: Optional[connection.Connection] = None
+        self.child_conn: Optional[connection.Connection] = None
         self.process: Optional[multiprocessing.Process] = None
         self.start_first_data_ts: Optional[float] = None
         
@@ -47,7 +48,7 @@ class StreamManager:
             return self.parent_conn.recv()
         return None
     
-    def _run_board_stream(self, playback_file: str, conn: multiprocessing.connection.Connection) -> None:
+    def _run_board_stream(self, playback_file: str, conn: connection.Connection) -> None:
         """Child process that handles data acquisition from the board."""
         try:
             # Receive initial timestamp from parent process

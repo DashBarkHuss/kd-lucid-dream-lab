@@ -97,7 +97,8 @@ def main():
     """Main function that manages the data acquisition and processing"""
     # Initialize playback file and timestamp tracking
     # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
-    original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
+    # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
+    original_data_file = os.path.join(workspace_root, "data/test_data/gapped_data_2_second_gap_at_4000.csv")
     playback_file = original_data_file
     
     # Verify input file exists
@@ -154,6 +155,7 @@ def main():
                 time.sleep(0.1)
                 
             # Clean up stream
+            start_first_data_ts = stream_manager.start_first_data_ts  # Store the timestamp before cleanup
             stream_manager.stop_stream()
             stream_manager = None  # Prevent double stop in finally
             
@@ -181,7 +183,7 @@ def main():
 
             # Create new trimmed file starting from the gap
             offset = int(next_rows.index[0])
-            elapsed_from_start = original_playback_data.iloc[offset, timestamp_channel] - stream_manager.start_first_data_ts
+            elapsed_from_start = original_playback_data.iloc[offset, timestamp_channel] - start_first_data_ts  # Use stored timestamp
             elapsed_from_last_good_ts = original_playback_data.iloc[offset, timestamp_channel] - last_good_ts
             logger.info(f"Restarting from: {offset} | Time from start: {format_elapsed_time(elapsed_from_start)} | Time from last good ts: {format_elapsed_time(elapsed_from_last_good_ts)}")
 
@@ -193,7 +195,8 @@ def main():
             logger.info(f"Updated playback file to: {playback_file}")
 
     except Exception as e:
-        logger.error(f"Error in main loop: {str(e)}")
+        import traceback
+        logger.error(f"Error in main loop: {str(e)}\n{traceback.format_exc()}")
     finally:
         # Clean up resources
         try:

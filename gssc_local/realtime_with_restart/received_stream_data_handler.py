@@ -35,11 +35,9 @@ class ReceivedStreamedDataHandler:
 
             if can_process:
                 # Only process when we have a complete epoch ready
-                sleep_stage = self.data_manager.manage_epoch(buffer_id=next_buffer_id, 
+                self.data_manager.manage_epoch(buffer_id=next_buffer_id, 
                                         epoch_start_idx=epoch_start_idx, 
                                         epoch_end_idx=epoch_end_idx)
-                # add the sleep stage to the csv at the epoch end idx and include the buffer id
-                self.data_manager.add_sleep_stage_to_csv(sleep_stage, next_buffer_id, epoch_end_idx)
         
         # Log processing statistics
         self.logger.info(f"Processed {self.sample_count} samples")        
