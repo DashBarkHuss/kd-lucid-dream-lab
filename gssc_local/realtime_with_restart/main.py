@@ -98,7 +98,7 @@ def main():
     # Initialize playback file and timestamp tracking
     # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
     # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
-    original_data_file = os.path.join(workspace_root, "data/test_data/gapped_data_2_second_gap_at_4000.csv")
+    original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     playback_file = original_data_file
     
     # Verify input file exists

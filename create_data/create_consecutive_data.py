@@ -75,4 +75,4 @@ def create_consecutive_data(output_file, duration=30):
 if __name__ == "__main__":
     # Create test data with 30 seconds of consecutive numbers
     output_file = "data/test_data/consecutive_data.csv"
-    create_consecutive_data(output_file, duration=60)
+    create_consecutive_data(output_file, duration=35)

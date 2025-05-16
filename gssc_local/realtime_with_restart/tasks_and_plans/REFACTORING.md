@@ -194,9 +194,8 @@ See detailed implementation plans for each module in the `tasks_and_plans/module
 - ✅ [`modules/csv_manager.md`](modules/csv_manager.md) - CSV Export/Management implementation
 - `modules/buffer_manager.md` (Coming soon)
 - `modules/epoch_processor.md` (Coming soon)
-- `modules/gap_handler.md` (Coming soon)
-- `modules/state_manager.md` (Coming soon)
-- `modules/channel_manager.md` (Coming soon)
+- ✅ [`modules/gap_handler.md`](modules/gap_handler.md)
+- `modules/state_manager.md` (Coming soon) -`modules/channel_manager.md` (Coming soon)
 
 Each module plan includes:
 

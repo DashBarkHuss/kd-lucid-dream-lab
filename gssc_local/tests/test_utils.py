@@ -89,6 +89,8 @@ def create_brainflow_test_data(duration_seconds=1.0, sampling_rate=None, add_noi
         'n_channels': n_channels
     }
     
+    data = np.round(data, 6)
+    
     return data, metadata
 
 def save_brainflow_data_to_csv(data, filepath):
@@ -100,7 +102,7 @@ def save_brainflow_data_to_csv(data, filepath):
         filepath: Path to save the CSV file
     """
     df = pd.DataFrame(data)
-    df.to_csv(filepath, sep='\t', index=False, header=False)
+    df.to_csv(filepath, sep='\t', index=False, header=False, float_format='%.6f')
 
 class TestBrainFlowDataGeneration(unittest.TestCase):
     def setUp(self):
@@ -212,30 +214,31 @@ class TestBrainFlowDataGeneration(unittest.TestCase):
                 os.remove(test_file)
                 
     def test_column_precision(self):
-        """Test that each column has exactly 6 decimal places."""
-        # Get channel information
-        timestamp_channel = self.metadata['timestamp_channel']
-        package_num_channel = self.metadata['package_num_channel']
-        eeg_channels = self.metadata['eeg_channels']
+        """Test that each column has exactly 6 decimal places in the saved CSV file."""
+        # Save test data to CSV
+        test_file = 'test_brainflow_data.csv'
+        save_brainflow_data_to_csv(self.data, test_file)
         
-        # Check each column's precision
-        for col in range(self.data.shape[1]):
-            # Get unique values in the column
-            unique_values = np.unique(self.data[:, col])
+        try:
+            # Read back the CSV as text
+            with open(test_file, 'r') as f:
+                lines = f.readlines()
             
-            # Check that all values have exactly 6 decimal places
-            for val in unique_values:
-                # Convert to string with 6 decimal places
-                str_val = f"{val:.6f}"
-                # Convert back to float
-                formatted_val = float(str_val)
-                # Use numpy's testing function for floating point comparison
-                np.testing.assert_almost_equal(
-                    val, formatted_val, 
-                    decimal=6,
-                    err_msg=f"Column {col} value {val} does not have exactly 6 decimal places"
-                )
-            
+            # Check each line (row) in the CSV
+            for row_idx, line in enumerate(lines):
+                values = line.strip().split('\t')
+                for col_idx, val in enumerate(values):
+                    if '.' in val:
+                        decimal_places = len(val.split('.')[1])
+                        self.assertEqual(
+                            decimal_places, 6,
+                            f"Row {row_idx}, Column {col_idx} value {val} has {decimal_places} decimal places, expected 6"
+                        )
+        finally:
+            # Clean up
+            if os.path.exists(test_file):
+                os.remove(test_file)
+                
 if __name__ == '__main__':
     print("\nRunning tests directly...")
     pytest.main([__file__, '-v']) 

@@ -60,7 +60,7 @@ class BoardManager:
             self.board_shim.config_board("old_timestamps")
 
             # Load the entire file data at initialization
-            self.file_data = pd.read_csv(self.file_path, sep='\t', dtype=float)
+            self.file_data = pd.read_csv(self.file_path, sep='\t', header=None, dtype=float)
             print(f"Loaded file with {len(self.file_data)} samples")
             
             return self.board_shim
