@@ -166,3 +166,60 @@ has_gap, gap_size = gap_handler.validate_epoch_gaps(epoch_timestamps, epoch_star
 # Clean up resources when done
 gap_handler.cleanup()
 ```
+
+## Speed-Controlled Board Implementation
+
+The system provides a speed-controlled board implementation through the `SpeedControlledBoardManager` class in the `realtime_with_restart` package which simulates data streaming from a CSV file at configurable speeds. This is particularly useful for testing and development, allowing you to run your entire pipeline (including visualizations) at accelerated speeds - hours of recorded data can be played back in minutes.
+
+### Features
+
+- Configurable playback speed (e.g., 100x faster than real-time)
+
+### Usage
+
+```python
+from gssc_local.realtime_with_restart.speed_controlled_board_manager import SpeedControlledBoardManager
+
+# Initialize speed-controlled board with 100x speed for fast testing
+board_manager = SpeedControlledBoardManager("path/to/data.csv", speed_multiplier=100.0)
+board_manager.setup_board()
+
+# Start streaming
+board_manager.start_stream()
+
+# Process data in chunks
+while True:
+    new_data = board_manager.get_new_data()
+    if new_data.size == 0:
+        break
+    # Process your data here
+```
+
+## Complete Implementation Example
+
+For a complete working example of using the speed-controlled board, see `gssc_local/realtime_with_restart/main_speed_controlled_stream.py`. This script demonstrates:
+
+1. A simpler, single-process implementation (unlike the real board which requires StreamManager)
+2. How to integrate the speed-controlled board with the full data processing pipeline
+3. How to handle visualization updates during playback
+4. How to use the speed-controlled board for testing and development
+
+Key differences from the real board implementation:
+
+- No need for multiprocessing or StreamManager
+- Direct data processing in the main process
+- Simpler gap handling (if needed)
+- Easier debugging and development
+
+The script can be run directly:
+
+```bash
+python gssc_local/realtime_with_restart/main_speed_controlled_stream.py
+```
+
+This makes it ideal for:
+
+- Testing the full pipeline without hardware
+- Development and debugging
+- Running long recordings at accelerated speeds
+- Testing visualization updates

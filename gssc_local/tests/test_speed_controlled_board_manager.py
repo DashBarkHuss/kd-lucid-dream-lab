@@ -11,11 +11,11 @@ import pytest
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-from gssc_local.realtime_with_restart.mock_board_manager import MockBoardManager
 from gssc_local.tests.test_utils import create_brainflow_test_data, save_brainflow_data_to_csv
 from gssc_local.realtime_with_restart.data_manager import DataManager
+from gssc_local.realtime_with_restart.speed_controlled_board_manager import SpeedControlledBoardManager
 
-class TestMockBoardManager(unittest.TestCase):
+class TestSpeedControlledBoardManager(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures before each test method."""
         # Ensure all board sessions are released before starting a new test
@@ -33,7 +33,7 @@ class TestMockBoardManager(unittest.TestCase):
         print(f"[DEBUG] test_data.csv line count after save: {line_count}")
         
         # Initialize the mock with test data
-        self.mock = MockBoardManager(csv_file_path=self.csv_path, speed_multiplier=1.0)
+        self.mock = SpeedControlledBoardManager(csv_file_path=self.csv_path, speed_multiplier=1.0)
         
         # Store metadata for assertions
         self.sampling_rate = metadata['sampling_rate']
@@ -214,7 +214,7 @@ class TestMockBoardManager(unittest.TestCase):
         for speed_mult in speed_multipliers:
             print(f"\nTesting speed multiplier: {speed_mult}")
             # Create new mock with current speed multiplier
-            mock = MockBoardManager(csv_file_path=self.csv_path, speed_multiplier=speed_mult)
+            mock = SpeedControlledBoardManager(csv_file_path=self.csv_path, speed_multiplier=speed_mult)
             
             try:
                 # Setup and start stream
@@ -466,7 +466,7 @@ class TestMockBoardManager(unittest.TestCase):
         print(f"[DEBUG] test_data_shape_through_flow: np.loadtxt loaded shape: {loaded_data.shape}")
         
         # Initialize mock and check shape after setup_board
-        mock = MockBoardManager(csv_file_path=self.csv_path, speed_multiplier=1.0)
+        mock = SpeedControlledBoardManager(csv_file_path=self.csv_path, speed_multiplier=1.0)
         mock.setup_board()
         print(f"[DEBUG] test_data_shape_through_flow: shape after setup_board: {mock.file_data.shape}")
         
@@ -530,6 +530,10 @@ class TestMockBoardManager(unittest.TestCase):
                 self.mock.board_shim.release_session()
             except Exception as e:
                 print(f"Warning: Error releasing board session: {e}")
+
+class TestSpeedControlledBoardManager:
+    def setup_method(self):
+        self.board_manager = SpeedControlledBoardManager()
 
 if __name__ == '__main__':
     print("\nRunning tests directly...")
