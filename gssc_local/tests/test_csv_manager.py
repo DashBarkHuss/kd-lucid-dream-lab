@@ -96,7 +96,7 @@ def test_validate_data_shape_invalid(csv_manager, csv_manager_large_index):
 
 def test_save_new_data_initial(csv_manager, sample_data):
     """Test saving initial data."""
-    result = csv_manager.save_new_data(sample_data, is_initial=True)
+    result = csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
     assert result is True
     assert len(csv_manager.saved_data) == sample_data.shape[1]
     assert csv_manager.last_saved_timestamp == sample_data[0, -1]
@@ -104,11 +104,11 @@ def test_save_new_data_initial(csv_manager, sample_data):
 def test_save_new_data_subsequent(csv_manager, sample_data):
     """Test saving subsequent data."""
     # Save initial data
-    csv_manager.save_new_data(sample_data, is_initial=True)
+    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
     initial_length = len(csv_manager.saved_data)
     # Create new data with some overlap (last 5 samples)
     new_data = sample_data[:, -5:]
-    result = csv_manager.save_new_data(new_data)
+    result = csv_manager.save_new_data_to_csv_buffer(new_data)
     assert result is True
     # Should add new rows since they have different timestamps
     assert len(csv_manager.saved_data) > initial_length
@@ -116,7 +116,7 @@ def test_save_new_data_subsequent(csv_manager, sample_data):
 def test_save_to_csv(csv_manager, sample_data, temp_csv_path):
     """Test saving data to CSV file."""
     # Save some data first
-    csv_manager.save_new_data(sample_data, is_initial=True)
+    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
     # Save to CSV
     result = csv_manager.save_to_csv(temp_csv_path)
     assert result is True
@@ -126,12 +126,10 @@ def test_save_to_csv(csv_manager, sample_data, temp_csv_path):
     # Compare only the first 3 columns (original data) with higher tolerance
     assert np.allclose(saved_data[:, :3], sample_data.T, rtol=1e-5, atol=1e-5)
 
-
-
 def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, temp_csv_path):
     """Test validation against original source."""
     # Save data to CSV
-    csv_manager.save_new_data(sample_data, is_initial=True)
+    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
     csv_manager.save_to_csv(temp_csv_path)
     # Create a reference CSV
     ref_path = temp_csv_path + '.ref'
@@ -142,15 +140,15 @@ def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, te
     # Clean up
     os.remove(ref_path)
 
-def test_add_sleep_stage_to_csv(csv_manager, sample_data):
+def test_add_sleep_stage_to_csv_buffer(csv_manager, sample_data):
     """Test adding sleep stage data."""
     # Save initial data
-    csv_manager.save_new_data(sample_data, is_initial=True)
+    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
     # Add sleep stage data
     sleep_stage = 2.0
     buffer_id = 1.0
     epoch_idx = 0
-    csv_manager.add_sleep_stage_to_csv(sleep_stage, buffer_id, epoch_idx)
+    csv_manager.add_sleep_stage_to_csv_buffer(sleep_stage, buffer_id, epoch_idx)
     # Verify the data was added correctly
     assert csv_manager.saved_data[epoch_idx][-2] == sleep_stage
     assert csv_manager.saved_data[epoch_idx][-1] == buffer_id
@@ -158,19 +156,19 @@ def test_add_sleep_stage_to_csv(csv_manager, sample_data):
 def test_add_sleep_stage_invalid(csv_manager, sample_data):
     """Test adding invalid sleep stage data."""
     # Save initial data
-    csv_manager.save_new_data(sample_data, is_initial=True)
+    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
     
     # Test invalid epoch index (out of bounds)
     with pytest.raises(CSVDataError):
-        csv_manager.add_sleep_stage_to_csv(2.0, 1.0, len(csv_manager.saved_data) + 1)
+        csv_manager.add_sleep_stage_to_csv_buffer(2.0, 1.0, len(csv_manager.saved_data) + 1)
     
     # Test invalid sleep stage type
     with pytest.raises(CSVDataError):
-        csv_manager.add_sleep_stage_to_csv("invalid", 1.0, 0)
+        csv_manager.add_sleep_stage_to_csv_buffer("invalid", 1.0, 0)
     
     # Test invalid buffer ID type
     with pytest.raises(CSVDataError):
-        csv_manager.add_sleep_stage_to_csv(2.0, "invalid", 0)
+        csv_manager.add_sleep_stage_to_csv_buffer(2.0, "invalid", 0)
 
 def test_validate_timestamp_continuity(csv_manager):
     """Test timestamp continuity validation."""

@@ -73,7 +73,6 @@ class DataManager:
         self.validate_consecutive_values = False  # Set to True to enable consecutive value validation
         self.validation_channel = 0  # Channel to validate (default to first channel)
         self.last_validated_value = None  # Track last validated value
-        self.saved_data = []
         self.output_csv_path = None
         self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
         
@@ -173,12 +172,12 @@ class DataManager:
     def save_new_data(self, new_data, is_initial=False):
         self.csv_manager.save_new_data(new_data, is_initial)
 
-    def add_sleep_stage_to_csv(self, sleep_stage, next_buffer_id, epoch_end_idx):
+    def add_sleep_stage_to_csv_buffer(self, sleep_stage, next_buffer_id, epoch_end_idx):
         """Add the sleep stage and buffer ID to the end of the row at epoch_end_idx"""
         #  logged the current length of the saved_data and epoch_end_idx
         print(f"Current length of saved_data: {len(self.csv_manager.saved_data)}")
         print(f"Epoch end index: {epoch_end_idx}")
-        self.csv_manager.add_sleep_stage_to_csv(float(sleep_stage[0]), float(next_buffer_id), epoch_end_idx)
+        self.csv_manager.add_sleep_stage_to_csv_buffer(float(sleep_stage[0]), float(next_buffer_id), epoch_end_idx)
 
     def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
         """Validate the epoch has no gaps
@@ -509,7 +508,6 @@ class DataManager:
             self.last_processed_buffer = -1
             self.current_epoch_start_time = None
             self.last_validated_value = None
-            self.saved_data = []
             self.output_csv_path = None
             self.last_saved_timestamp = None
             

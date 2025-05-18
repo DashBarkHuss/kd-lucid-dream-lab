@@ -202,7 +202,7 @@ class CSVManager:
             self.logger.error(f"Failed to validate CSV against original source: {e}")
             raise CSVValidationError(f"CSV source validation failed: {e}")
     
-    def save_new_data(self, new_data: np.ndarray, is_initial: bool = False) -> bool:
+    def save_new_data_to_csv_buffer(self, new_data: np.ndarray, is_initial: bool = False) -> bool: 
         """Save new data to the buffer for later CSV export.
         
         Args:
@@ -343,7 +343,7 @@ class CSVManager:
         
         return True
     
-    def add_sleep_stage_to_csv(self, sleep_stage: float, next_buffer_id: float, epoch_end_idx: int) -> None:
+    def add_sleep_stage_to_csv_buffer(self, sleep_stage: float, next_buffer_id: float, epoch_end_idx: int) -> None: 
         """Add sleep stage and buffer ID to saved data at the last sample of the epoch. 
         The sleep stage and buffer ID reflect the score of the previous 30 seconds of data.
         
