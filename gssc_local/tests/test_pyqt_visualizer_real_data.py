@@ -12,6 +12,9 @@ from pyqt_visualizer import PyQtVisualizer
 
 def test_pyqt_visualizer_with_real_data():
     """Test the PyQtVisualizer with a 30-second chunk of real data from a BrainFlow recording"""
+    # Check if running in CI environment
+    is_ci = os.environ.get('CI') == 'true'
+    
     # Path to the test data file
     test_data_path = os.path.join(workspace_root, 'data', 'realtime_inference_test', 'BrainFlow-RAW_2025-03-29_23-14-54_0.csv')
     
@@ -40,11 +43,12 @@ def test_pyqt_visualizer_with_real_data():
     # Get the epoch data
     epoch_data = df.iloc[start_idx:end_idx, selected_columns].values.T
     
-    # Create visualizer
+    # Create visualizer with headless mode in CI
     visualizer = PyQtVisualizer(
         seconds_per_epoch=30,
         board_shim=None,
-        montage=montage
+        montage=montage,
+        headless=is_ci
     )
     
     # Plot the data
@@ -67,8 +71,12 @@ def test_pyqt_visualizer_with_real_data():
         assert len(curve.xData) == points_per_epoch, \
             "Each curve should have the correct number of data points"
     
-    # Keep the window open
-    visualizer.app.exec()
+    # Only show window if not in CI
+    if not is_ci:
+        visualizer.app.exec()
+    else:
+        # In CI, just close immediately
+        visualizer.close()
 
 if __name__ == '__main__':
     test_pyqt_visualizer_with_real_data() 

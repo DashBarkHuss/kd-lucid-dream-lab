@@ -41,12 +41,13 @@ class PyQtVisualizer:
     SLEEP_STAGE_N3 = 3
     SLEEP_STAGE_REM = 4
     
-    def __init__(self, seconds_per_epoch=30, board_shim=None, montage: Montage = None):
+    def __init__(self, seconds_per_epoch=30, board_shim=None, montage: Montage = None, headless=False):
         self.recording_start_time = None
         self.seconds_per_epoch = seconds_per_epoch
         self.board_shim = board_shim
         self.countdown_remaining = seconds_per_epoch  # Add countdown counter
         self.is_counting_down = True  # Flag to track if we're still counting down
+        self.headless = headless
         
         # Use provided montage or create default
         self.montage = montage if montage is not None else Montage.default_sleep_montage()
@@ -68,38 +69,46 @@ class PyQtVisualizer:
         # Initialize PyQtGraph components
         self.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
         
-        # Create main window
-        self.win = QtWidgets.QMainWindow()
-        self.win.setWindowTitle('Polysomnograph')
-        # Increase height to ensure all channels have enough space
-        # 16 channels * 100px per channel + some margin for title and spacing
-        self.win.resize(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
-        
-        # Create central widget and layout
-        self.central_widget = QtWidgets.QWidget()
-        self.win.setCentralWidget(self.central_widget)
-        self.layout = QtWidgets.QVBoxLayout()
-        self.layout.setContentsMargins(self.LAYOUT_MARGINS, self.LAYOUT_MARGINS, self.LAYOUT_MARGINS, self.LAYOUT_MARGINS)  # Reduce margins
-        self.layout.setSpacing(self.LAYOUT_SPACING)  # Minimize spacing between widgets
-        self.central_widget.setLayout(self.layout)
-        
-        # Create title label
-        title_font = QtGui.QFont()
-        title_font.setPointSize(self.TITLE_FONT_SIZE)
-        self.title_label = QtWidgets.QLabel("")
-        self.title_label.setFont(title_font)
-        self.title_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.title_label.setMaximumHeight(self.TITLE_LABEL_HEIGHT)  # Limit title height
-        self.layout.addWidget(self.title_label)
-        
-        # Set initial loading message
-        self.title_label.setText(f"Waiting {self.seconds_per_epoch} seconds for initial data...")
-        
-        # Create GraphicsLayoutWidget for plots
-        self.plot_widget = pg.GraphicsLayoutWidget()
-        self.plot_widget.setContentsMargins(self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS)  # Remove internal margins
-        self.plot_widget.ci.layout.setVerticalSpacing(self.PLOT_VERTICAL_SPACING)  # Set a small vertical gap between plots
-        self.layout.addWidget(self.plot_widget)
+        if not self.headless:
+            # Create main window
+            self.win = QtWidgets.QMainWindow()
+            self.win.setWindowTitle('Polysomnograph')
+            # Increase height to ensure all channels have enough space
+            # 16 channels * 100px per channel + some margin for title and spacing
+            self.win.resize(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
+            
+            # Create central widget and layout
+            self.central_widget = QtWidgets.QWidget()
+            self.win.setCentralWidget(self.central_widget)
+            self.layout = QtWidgets.QVBoxLayout()
+            self.layout.setContentsMargins(self.LAYOUT_MARGINS, self.LAYOUT_MARGINS, self.LAYOUT_MARGINS, self.LAYOUT_MARGINS)  # Reduce margins
+            self.layout.setSpacing(self.LAYOUT_SPACING)  # Minimize spacing between widgets
+            self.central_widget.setLayout(self.layout)
+            
+            # Create title label
+            title_font = QtGui.QFont()
+            title_font.setPointSize(self.TITLE_FONT_SIZE)
+            self.title_label = QtWidgets.QLabel("")
+            self.title_label.setFont(title_font)
+            self.title_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            self.title_label.setMaximumHeight(self.TITLE_LABEL_HEIGHT)  # Limit title height
+            self.layout.addWidget(self.title_label)
+            
+            # Set initial loading message
+            self.title_label.setText(f"Waiting {self.seconds_per_epoch} seconds for initial data...")
+            
+            # Create GraphicsLayoutWidget for plots
+            self.plot_widget = pg.GraphicsLayoutWidget()
+            self.plot_widget.setContentsMargins(self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS, self.PLOT_WIDGET_MARGINS)  # Remove internal margins
+            self.plot_widget.ci.layout.setVerticalSpacing(self.PLOT_VERTICAL_SPACING)  # Set a small vertical gap between plots
+            self.layout.addWidget(self.plot_widget)
+            
+            # Show the window
+            self.win.show()
+        else:
+            # In headless mode, create a hidden GraphicsLayoutWidget
+            self.plot_widget = pg.GraphicsLayoutWidget()
+            self.title_label = None
         
         # Initialize plots and curves
         self.plots = []
@@ -107,9 +116,6 @@ class PyQtVisualizer:
         
         # Initialize the visualization
         self._init_polysomnograph()
-        
-        # Show the window
-        self.win.show()
         
         # Set up update timer
         self.timer = QtCore.QTimer()
@@ -199,7 +205,8 @@ class PyQtVisualizer:
         """Update the countdown timer and title"""
         if self.is_counting_down and self.countdown_remaining > 0:
             self.countdown_remaining -= 1
-            self.title_label.setText(f"Waiting {self.countdown_remaining} seconds for initial data...")
+            if not self.headless and self.title_label:
+                self.title_label.setText(f"Waiting {self.countdown_remaining} seconds for initial data...")
         elif self.countdown_remaining == 0:
             self.is_counting_down = False
             self.countdown_timer.stop()
@@ -224,7 +231,8 @@ class PyQtVisualizer:
         
         # Update title with proper styling
         title_text = f'Sleep Stage: {self.get_sleep_stage_text(sleep_stage)} | Time from Start: {relative_time_str}'
-        self.title_label.setText(title_text)
+        if not self.headless and self.title_label:
+            self.title_label.setText(title_text)
         
         # Create time axis
         time_axis = np.arange(epoch_data.shape[1]) / sampling_rate + time_offset
@@ -278,9 +286,12 @@ class PyQtVisualizer:
     
     def update(self):
         """Update the visualization (called by timer)"""
-        self.app.processEvents()
+        if not self.headless:
+            self.app.processEvents()
         
     def close(self):
         """Close the visualization window"""
-        self.win.close()
-        self.timer.stop() 
+        if not self.headless:
+            self.win.close()
+        self.timer.stop()
+        self.countdown_timer.stop() 

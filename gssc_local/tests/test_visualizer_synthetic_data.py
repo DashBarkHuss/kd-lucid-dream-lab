@@ -31,6 +31,12 @@ def generate_sample_data(num_channels=16, num_points=3750, sampling_rate=125):
     return np.array(data)
 
 def test_visualizer():
+    # Check if running in CI environment
+    is_ci = os.environ.get('CI') == 'true'
+    if is_ci:
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend in CI
+    
     # Create montage
     montage = Montage.default_sleep_montage()
     
@@ -49,8 +55,9 @@ def test_visualizer():
         epoch_start_time=0
     )
     
-    # Keep the plot window open
-    plt.show(block=True)
+    # Only show the plot if not in CI
+    if not is_ci:
+        plt.show(block=True)
 
 if __name__ == "__main__":
     test_visualizer() 
