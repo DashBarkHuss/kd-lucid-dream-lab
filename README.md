@@ -1,5 +1,8 @@
 # kd-lucid-dream-lab
 
+> **⚠️ Pre-Release Notice**  
+> This project is in pre-release development. The first stable version has not been released yet, and the current codebase may contain incomplete features or breaking changes. For questions or feedback, please [open an issue](https://github.com/dashbarkhuss/kd-lucid-dream-lab/issues) on GitHub.
+
 A Python-based toolkit for working with OpenBCI and Brainflow for EEG data processing and analysis, with a focus on sleep stage classification using the Greifswald Sleep Stage Classifier (GSSC).
 
 ## Table of Contents

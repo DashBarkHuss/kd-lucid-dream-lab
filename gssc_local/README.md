@@ -84,43 +84,60 @@ Then verify the installation by checking for the latest code patterns identified
 
 The system provides robust CSV export capabilities through the `CSVManager` class in the `realtime_with_restart` package which helps manage brainflow data.
 
-### Breaking Changes
-
-The following methods have been updated with new buffer management logic and their behavior has changed:
-
-- `save_new_data_to_csv_buffer()` -> `add_data_to_buffer()`
-- `add_sleep_stage_to_csv_buffer()` -> `add_sleep_stage_to_sleep_stage_csv()`
-- `save_to_csv()` -> `save_all_and_cleanup()`
-
-These methods now use the new buffer management system and may behave differently from previous versions.
-Please update your code to use the new methods directly.
-
 ### Features
 
-- Exact format preservation for compatibility
-- Comprehensive data validation
-- Sleep stage data integration
-- Detailed error reporting
+- Handles real-time BrainFlow data streaming with automatic file saving
+- Manages sleep stage data alongside EEG data
+- Preserves exact BrainFlow CSV format
 
 ### Usage
 
 ```python
 from gssc_local.realtime_with_restart.export import CSVManager
+from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
 
-# Initialize
-csv_manager = CSVManager(board_shim)
+# Initialize with buffer sizes
+input_params = BrainFlowInputParams()
+board_shim = BoardShim(BoardIds.CYTON_DAISY_BOARD, input_params)
+csv_manager = CSVManager(
+    board_shim=board_shim,
+    main_buffer_size=10_000,  # Store up to 10,000 samples in memory
+    sleep_stage_buffer_size=100  # Store up to 100 sleep stage entries
+)
 
-# Save data
-csv_manager.save_new_data(new_data, is_initial=True)
-csv_manager.save_to_csv("output.csv")
+# Set output paths
+csv_manager.main_csv_path = "output.csv"
+csv_manager.sleep_stage_csv_path = "output.sleep.csv"
 
-# Add sleep stage data
-csv_manager.add_sleep_stage_to_csv(sleep_stage=1.0,
-                                 next_buffer_id=2.0,
-                                 epoch_end_idx=100)
 
-# Validate
-csv_manager.validate_saved_csv_matches_original_source("original.csv")
+
+# In the loop where data is collected and processed, you do the following:
+
+# Add data to buffer (will automatically save if buffer is full)
+csv_manager.add_data_to_buffer(new_data)
+
+# Optional: Add sleep stage data when available
+if sleep_stage_available:
+    csv_manager.add_sleep_stage_to_sleep_stage_csv(
+        sleep_stage=sleep_stage,
+        buffer_id=buffer_id,
+        timestamp_start=epoch_start_time,
+        timestamp_end=epoch_end_time
+    )
+
+# Add sleep stage data with timestamps
+csv_manager.add_sleep_stage_to_sleep_stage_csv(
+    sleep_stage=1.0,
+    buffer_id=2.0,
+    timestamp_start=100.0,  # Start time of epoch
+    timestamp_end=130.0     # End time of epoch
+)
+
+# Save all remaining data and cleanup at the end of the stream
+csv_manager.save_all_and_cleanup(
+    merge_files=True,  # Merge main and sleep stage files
+    merge_output_path="merged_output.csv"  # Optional: specify merged output path
+)
 ```
 
 ## Gap Detection
