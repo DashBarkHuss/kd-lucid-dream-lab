@@ -13,8 +13,6 @@ import multiprocessing
 from brainflow.board_shim import BoardShim, BoardIds
 import time
 import logging
-from gssc.infer import ArrayInfer
-print(ArrayInfer)
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -211,7 +209,8 @@ class TestRealtimeStream(unittest.TestCase):
         
         # Mock DataManager
         self.mock_data_manager = Mock(spec=DataManager)
-        self.mock_data_manager.add_data.return_value = True
+        self.mock_data_manager.add_data_to_buffer = Mock()
+        self.mock_data_manager.accumulate_data_for_epoch_processing.return_value = True
         self.mock_data_manager.save_new_data = Mock()
         self.mock_data_manager._calculate_next_buffer_id_to_process.return_value = 0
         self.mock_data_manager.next_available_epoch_on_buffer.return_value = (True, None, 0, 1250)  # 10 seconds at 125 Hz
@@ -250,10 +249,9 @@ class TestRealtimeStream(unittest.TestCase):
     @patch('gssc_local.realtime_with_restart.main.os.path.isfile')
     @patch('gssc_local.realtime_with_restart.main.create_trimmed_csv')
     @patch('gssc_local.realtime_with_restart.main.BoardManager')
-    @patch('gssc_local.realtime_with_restart.main.ReceivedStreamedDataHandler')
     @patch('gssc_local.realtime_with_restart.main.StreamManager')
     @patch('gssc_local.realtime_with_restart.main.logger')
-    def test_stream_restart_and_trim_flow(self, mock_logger, mock_stream_manager_class, mock_handler_class, 
+    def test_stream_restart_and_trim_flow(self, mock_logger, mock_stream_manager_class, 
                                         mock_board_manager_class, mock_create_trimmed, mock_isfile):
         """Test the complete flow of streaming, gap detection, and restart."""
         print("\nTesting stream restart and trim flow...")
@@ -276,7 +274,10 @@ class TestRealtimeStream(unittest.TestCase):
         
         def mock_get_next_message():
             if message_sequence:
-                return message_sequence.pop(0)
+                msg = message_sequence.pop(0)
+                print(f"mock_get_next_message: returning {msg}")
+                return msg
+            print("mock_get_next_message: returning None")
             return None
         
         mock_stream_manager.get_next_message.side_effect = mock_get_next_message
@@ -285,8 +286,14 @@ class TestRealtimeStream(unittest.TestCase):
         # Setup mock board manager
         mock_board_manager_class.return_value = self.mock_board_manager
         
-        # Setup mock handler
-        mock_handler_class.return_value = self.mock_data_handler
+        # Create a mock handler class and instance
+        mock_handler = Mock(spec=ReceivedStreamedDataHandler)
+        process_calls = []
+        def track_process_calls(*args, **kwargs):
+            process_calls.append((args, kwargs))
+        mock_handler.process_board_data.side_effect = track_process_calls
+        mock_handler.data_manager = self.mock_data_manager
+        mock_handler_class = Mock(return_value=mock_handler)
         
         # Mock DataFrame for file reading
         mock_df = pd.DataFrame(np.zeros((1000, 32)))
@@ -295,19 +302,21 @@ class TestRealtimeStream(unittest.TestCase):
         # Run the pipeline
         with patch('gssc_local.realtime_with_restart.main.pd.read_csv') as mock_read_csv:
             mock_read_csv.return_value = mock_df
-            main()
+            main(handler_class=mock_handler_class)
+        print(f"process_board_data call count: {mock_handler.process_board_data.call_count}")
         
         # Verify stream manager was used correctly
         mock_stream_manager_class.assert_called_once()
         mock_stream_manager.start_stream.assert_called_once()
         mock_stream_manager.stop_stream.assert_called_once()
         
-        # Verify data was processed
-        self.mock_data_handler.process_board_data.assert_called()
+        # Verify data was processed using the mock instance that was created
+        mock_handler_class.assert_called_once()  # Verify the class was instantiated
+        self.assertTrue(len(process_calls) > 0, "Expected process_board_data to have been called")
         
         # Verify the number of data processing calls
         expected_calls = 2  # We sent 2 data chunks
-        actual_calls = self.mock_data_handler.process_board_data.call_count
+        actual_calls = len(process_calls)
         self.assertEqual(actual_calls, expected_calls, 
                         f"Expected {expected_calls} process_board_data calls, got {actual_calls}")
         
@@ -329,7 +338,8 @@ class TestRealtimeStream(unittest.TestCase):
         print("✓ BoardManager mock configured correctly")
         
         # Test DataManager mock
-        self.assertTrue(self.mock_data_manager.add_data.return_value)
+        self.assertTrue(self.mock_data_manager.add_data_to_buffer.return_value)
+        self.assertTrue(self.mock_data_manager.accumulate_data_for_epoch_processing.return_value)
         self.mock_data_manager.save_new_data.assert_not_called()
         self.assertEqual(self.mock_data_manager._calculate_next_buffer_id_to_process(), 0)
         can_process, reason, start_idx, end_idx = self.mock_data_manager.next_available_epoch_on_buffer(0)

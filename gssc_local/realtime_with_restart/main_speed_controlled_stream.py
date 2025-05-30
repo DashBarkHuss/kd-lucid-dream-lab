@@ -150,8 +150,8 @@ def main():
     - An error occurs
     """
     # Initialize playback file and timestamp tracking
-    original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
-    # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
+    # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
+    original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     playback_file = original_data_file
     
@@ -167,11 +167,12 @@ def main():
     # Initialize board and handler
     board_id = BoardIds.CYTON_DAISY_BOARD
     # Use SpeedControlledBoardManager with 100x speed for fast testing
-    board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=100.0)
+    board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=1000.0)
     board_manager.setup_board()
     timestamp_channel = board_manager.timestamp_channel
     received_streamed_data_handler = ReceivedStreamedDataHandler(board_manager, logger)
 
+    # Configure buffer sizes and file paths for periodic saving
     # Get the PyQt application instance from the visualizer
     # This is needed to process GUI events during streaming
     qt_app = received_streamed_data_handler.data_manager.visualizer.app
@@ -208,6 +209,7 @@ def main():
                     
                     # Log progress
                     logger.info(f"Processed {received_streamed_data_handler.sample_count} samples")
+                    logger.info(f"Current buffer size: {len(received_streamed_data_handler.data_manager.csv_manager.main_csv_buffer)}")
                 else:
                     # No more data
                     logger.info("No more data to process")
@@ -231,6 +233,11 @@ def main():
             
             if len(next_rows) == 0:
                 logger.info("No more data after gap. Exiting.")
+                # Validate the saved csv
+                logger.info(f"Main csv buffer path before final save: {received_streamed_data_handler.data_manager.csv_manager.main_csv_path}")        
+                output_csv_path = received_streamed_data_handler.data_manager.csv_manager.main_csv_path
+                received_streamed_data_handler.data_manager.csv_manager.save_all_and_cleanup(merge_files=True, merge_output_path="merged_data.csv")
+                received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file, output_csv_path)
                 break
                 
             # Create a new file for the remaining data
@@ -264,6 +271,7 @@ def main():
         # Clean up resources
         try:
             if 'received_streamed_data_handler' in locals():
+                # Only cleanup, save_all_and_cleanup was already called
                 received_streamed_data_handler.data_manager.cleanup()
             if 'board_manager' in locals():
                 board_manager.release()

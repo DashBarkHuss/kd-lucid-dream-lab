@@ -1,3 +1,9 @@
+# ⚠️ HISTORICAL DOCUMENT - OUTDATED IMPLEMENTATION PLAN ⚠️
+
+This document describes the original implementation plan for the CSV memory management feature. The actual implementation has been completed and may differ from this plan. This document is kept for historical reference only.
+
+---
+
 # CSV Memory Management Feature Implementation Plan
 
 ## Overview
@@ -31,11 +37,12 @@ This means:
 
 ### CSVManager
 
-- Stores all data in `self.saved_data` list
-- Only writes to disk at end of stream via `save_to_csv()`
-- No memory management or incremental saving
-- Sleep stage data is stored in the main buffer
-- Note: `saved_data` is NOT used for visualization or processing - it's purely for CSV export
+- Stores data in `self.main_csv_buffer` list (renamed from `saved_data`)
+- Writes to disk incrementally when buffer is full via `save_incremental_to_csv()`
+- Implements memory management with incremental saving
+- Sleep stage data is stored in a separate buffer
+- Note: `main_csv_buffer` is NOT used for visualization or processing - it's purely for CSV export
+- Final cleanup at end of stream via `save_all_data()` followed by `cleanup()`
 
 ## Proposed Changes
 
@@ -44,7 +51,8 @@ This means:
 - `buffer_size`: Maximum rows to keep in memory (default: 10,000)
 - `current_buffer_size`: Current number of rows in memory
 - `is_first_write`: Flag for first write vs append operations
-- `sleep_stage_csv_path`: Path for separate sleep stage CSV file
+- `main_csv_path`: Path for the single main EEG data file (set during initialization)
+- `sleep_stage_csv_path`: Path for the single sleep stage file (set during initialization)
 - `sleep_stage_buffer`: List holding current sleep stage data
 - `sleep_stage_buffer_size`: Maximum sleep stage entries to keep in memory (default: 100)
 
@@ -52,14 +60,16 @@ This means:
 
 - `save_incremental_to_csv()`: Write current buffer to disk and clear it
 
+  - Always appends to the same file at `self.main_csv_path`
   - Handles both first write (create new file) and subsequent writes (append)
   - Preserves exact CSV format
   - Clears buffer after successful write
 
 - `merge_files()`: Combine main CSV and sleep stage CSV at end of recording
-  - Matches timestamps between files
-  - Creates final merged output
+  - Reads from the two persistent files at `self.main_csv_path` and `self.sleep_stage_csv_path`
+  - Creates final merged output at the specified output path
   - Validates merged data integrity
+  - Only creates a new file for the final merged output
 
 ### Modified Methods
 
@@ -78,7 +88,7 @@ This means:
 
 - `save_sleep_stages_to_csv()`:
 
-  - Write current sleep stage buffer to CSV file
+  - Always appends to the same file at `self.sleep_stage_csv_path`
   - Clear buffer after successful write
   - Handle both first write and append operations
 
@@ -173,6 +183,36 @@ This means:
 - No need for complex file updates
 - Separate sleep stage handling for better memory management
 
+### File Path Management
+
+The CSVManager uses exactly two persistent files throughout the recording:
+
+1. Main EEG Data File:
+
+   - Single file path stored in `self.main_csv_path`
+   - Set during class initialization
+   - All EEG data is appended to this same file
+   - Never creates new files during recording
+
+2. Sleep Stage File:
+   - Single file path stored in `self.sleep_stage_csv_path`
+   - Set during class initialization
+   - All sleep stage data is appended to this same file
+   - Never creates new files during recording
+
+This single-file-per-data-type approach was chosen because:
+
+- Simplifies file management during recording
+- Reduces risk of file path errors
+- Makes error recovery straightforward
+- Ensures data continuity
+- Simplifies the final merge process
+
+The only time new files are created is:
+
+1. When the class is first initialized (creating the two main files)
+2. At the end of recording when merging the two files into a final output
+
 ### Implementation Details
 
 - Buffer Size:
@@ -262,12 +302,12 @@ def save_new_data_to_csv_buffer(self, new_data: np.ndarray, is_initial: bool = F
 #### save_to_main_csv()
 
 ```python
-def save_to_main_csv(self, output_path: Union[str, Path]) -> bool:
+def save_to_main_csv(self) -> bool:
     # If first write:
-    #   - Create new file
+    #   - Create new file at self.main_csv_path
     #   - Set is_first_write = False
     # Else:
-    #   - Append to existing file
+    #   - Append to existing file at self.main_csv_path
     # Clear buffer after successful save
 ```
 
@@ -287,22 +327,20 @@ def add_sleep_stage_to_csv_buffer(self, sleep_stage: float, buffer_id: float,
 ```python
 def save_sleep_stages_to_csv(self) -> bool:
     # If first write:
-    #   - Create new file
+    #   - Create new file at self.sleep_stage_csv_path
     #   - Set is_first_write = False
     # Else:
-    #   - Append to existing file
+    #   - Append to existing file at self.sleep_stage_csv_path
     # Clear buffer after successful save
 ```
 
 #### merge_files()
 
 ```python
-def merge_files(self, main_csv_path: Union[str, Path],
-               sleep_stage_csv_path: Union[str, Path],
-               output_path: Union[str, Path]) -> bool:
-    # Read both CSV files
+def merge_files(self, output_path: Union[str, Path]) -> bool:
+    # Read both CSV files from self.main_csv_path and self.sleep_stage_csv_path
     # Match timestamps
-    # Create merged file with all data
+    # Create merged file at output_path
     # Validate merged data
     # Clean up temporary files
 ```

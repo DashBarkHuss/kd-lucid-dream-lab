@@ -77,10 +77,21 @@ class DataManager:
         self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
         
         # Initialize CSVManager
-        self.csv_manager = CSVManager(self.board_shim)
+        self.csv_manager = CSVManager(
+            self.board_shim,
+            main_buffer_size=1000,  # Increased from 500
+            sleep_stage_buffer_size=200,  # Kept the same
+            main_csv_path='memory_manager_test.csv',
+            sleep_stage_csv_path='memory_manager_test_sleep_stages.csv'
+        )
         
         # Initialize gap handler
         self.gap_handler = GapHandler(sampling_rate=sampling_rate, gap_threshold=2.0)
+        
+        # Add epoch scoring counter
+        self.epochs_scored = 0
+    
+
 
     def _init_channels(self):
         """Initialize channel information"""
@@ -142,8 +153,9 @@ class DataManager:
         self.last_validated_value = channel_data[-1]
         return True, "Data validated successfully"
 
-    def add_data(self, new_data, is_initial=False):
-        """Add new data to the buffer"""
+    def accumulate_data_for_epoch_processing(self, new_data, is_initial=False):
+        
+        """Add new data to the buffer for epoch processing"""
         # Validate data values
         if np.any(np.isnan(new_data)) or np.any(np.isinf(new_data)):
             logging.warning("Data contains NaN or infinite values!")
@@ -160,24 +172,42 @@ class DataManager:
         self.points_collected += len(new_data[0])
         
         # Update all_previous_data
-        if not is_initial:
+        if not is_initial: # TODO: do we check if the data is duplicated when processing in the epoch?
             for i, channel in enumerate(self.all_channels_with_timestamp):
-                self.all_previous_relevant_column_data[i].extend(new_data[channel].tolist())
+                self.all_previous_relevant_column_data[i].extend(new_data[channel].tolist()) # TODO: what is this buffer used for specifically- it should be better named. 
+                # TODO: we need to manage the memory of this buffer. 
         else:
             for i, channel in enumerate(self.all_channels_with_timestamp):
                 self.all_previous_relevant_column_data[i] = new_data[channel].tolist()
                 
         return True
 
-    def save_new_data(self, new_data, is_initial=False):
-        self.csv_manager.save_new_data(new_data, is_initial)
+    def add_data_to_buffer(self, new_data, is_initial=False):
+        """Add new data to the buffer and handle buffer management."""
+        self.csv_manager.add_data_to_buffer(new_data, is_initial)
 
     def add_sleep_stage_to_csv_buffer(self, sleep_stage, next_buffer_id, epoch_end_idx):
-        """Add the sleep stage and buffer ID to the end of the row at epoch_end_idx"""
-        #  logged the current length of the saved_data and epoch_end_idx
-        print(f"Current length of saved_data: {len(self.csv_manager.saved_data)}")
+        """Add the sleep stage and buffer ID with timestamps to the sleep stage CSV"""
+        # Calculate timestamps for this epoch
+        epoch_start_idx = epoch_end_idx - self.points_per_epoch
+        
+        # Get timestamps from the data
+        timestamp_data = self.all_previous_relevant_column_data[self.buffer_timestamp_index]
+        timestamp_start = timestamp_data[epoch_start_idx]
+        timestamp_end = timestamp_data[epoch_end_idx - 1]  # epoch_end_idx is exclusive, so use -1
+        
+        # Log current state
+        print(f"Current length of main_csv_buffer: {len(self.csv_manager.main_csv_buffer)}")
         print(f"Epoch end index: {epoch_end_idx}")
-        self.csv_manager.add_sleep_stage_to_csv_buffer(float(sleep_stage[0]), float(next_buffer_id), epoch_end_idx)
+        print(f"Timestamp range: {timestamp_start} to {timestamp_end}")
+        
+        # Use the new method signature with timestamps
+        self.csv_manager.add_sleep_stage_to_sleep_stage_csv(
+            float(sleep_stage[0]), 
+            float(next_buffer_id), 
+            float(timestamp_start), 
+            float(timestamp_end)
+        )
 
     def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
         """Validate the epoch has no gaps
@@ -303,7 +333,7 @@ class DataManager:
         sleep_stage = self._process_epoch(start_idx=epoch_start_idx, end_idx=epoch_end_idx, buffer_id=buffer_id)
         
         # Add sleep stage to CSV
-        self.add_sleep_stage_to_csv(sleep_stage, buffer_id, epoch_end_idx)
+        self.add_sleep_stage_to_csv_buffer(sleep_stage, buffer_id, epoch_end_idx)
 
     def _process_epoch(self, start_idx, end_idx, buffer_id):
         """Handle the data for a specified epoch on a specified buffer which has valid data."""        
@@ -337,7 +367,10 @@ class DataManager:
             self.buffer_hidden_states[buffer_id]
         )
         
+        # Increment epochs scored counter
+        self.epochs_scored += 1
         print(f"Sleep stage: {self.visualizer.get_sleep_stage_text(predicted_class)}")
+        print(f"Total epochs scored: {self.epochs_scored}")
         
         # Update visualization using Visualizer
         time_offset = start_idx / self.sampling_rate
@@ -353,13 +386,30 @@ class DataManager:
         return np.array([predicted_class])  # Keep return format consistent
 
     def save_to_csv(self, output_path):
-        """Save raw data to CSV file"""
+        """Save all remaining data to sleep stage CSV file and main CSV file"""
         self.output_csv_path = output_path
-        return self.csv_manager.save_to_csv(output_path)
+        # Set the CSV paths before saving
+        self.csv_manager.main_csv_path = output_path
+        if self.csv_manager.sleep_stage_csv_path is None:
+            # Use default convention for sleep stage path
+            self.csv_manager.sleep_stage_csv_path = self.csv_manager._get_default_sleep_stage_path(output_path)
+        
+        # Debug logging
+        print(f"\n=== Debug: DataManager.save_to_csv ===")
+        print(f"Total points collected: {self.points_collected}")
+        print(f"Length of all_previous_relevant_column_data[0]: {len(self.all_previous_relevant_column_data[0])}")
+        print(f"CSVManager main_buffer_size: {self.csv_manager.main_buffer_size}")
+        print(f"CSVManager main_csv_buffer length: {len(self.csv_manager.main_csv_buffer)}")
+        
+        # Save all data but don't cleanup yet (for validation)
+        result = self.csv_manager.save_all_data()
+        
+        # Keep the path for validation, cleanup will be done in DataManager.cleanup()
+        return result
 
-    def validate_saved_csv(self, original_csv_path):
+    def validate_saved_csv(self, original_csv_path, output_csv_path):
         """Validate that the saved CSV matches the original format exactly, ignoring sleep stage and buffer ID columns"""
-        return self.csv_manager.validate_saved_csv_matches_original_source(original_csv_path)
+        return self.csv_manager.validate_saved_csv_matches_original_source(original_csv_path, output_csv_path)
 
     def _get_affected_buffer(self, timestamp):
         """
@@ -499,9 +549,12 @@ class DataManager:
     def cleanup(self):
         """Clean up resources and reset state"""
         try:
-            # Clean up CSVManager
+            # Log final epoch count before cleanup
+            print(f"\nFinal epoch count: {self.epochs_scored} epochs were scored")
+            
+            # Clean up CSVManager - reset paths since we're done
             if hasattr(self, 'csv_manager'):
-                self.csv_manager.cleanup()
+                self.csv_manager.cleanup(reset_paths=True)
             
             # Reset state variables
             self.points_collected = 0

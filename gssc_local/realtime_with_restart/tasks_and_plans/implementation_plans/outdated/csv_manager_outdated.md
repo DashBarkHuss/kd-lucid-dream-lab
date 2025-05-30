@@ -1,5 +1,7 @@
 # CSV Manager Implementation Plan
 
+> **HISTORICAL NOTE**: This is the original implementation plan for the csv manager. The actual implementation has evolved since then. This document is outdated. Consider deleting to avoid confusion with new engineers and llms.
+
 ## Overview
 
 Extracts CSV management functionality from DataManager into a dedicated CSVManager class.

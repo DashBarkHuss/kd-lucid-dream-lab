@@ -1,5 +1,7 @@
 # DataManager Refactoring Plan
 
+> **HISTORICAL NOTE**: This is the original refactoring plan for the data manager. The actual implementation has partialy evolved. Mainly the csv_manager.py file was updated to be more memory efficient. Some of the other modules have not been implemented yet, so this plan is still current.
+
 ## Architectural Principles
 
 1. **Scoped Validation**: Validation should be scoped to the thing it protects
@@ -67,7 +69,7 @@
 ### 4. CSV Export/Management
 
 - **Purpose**: Manages data export and validation
-- **Key Functions**:
+- **Key Functions** (This was implemented in csv_manager.py but is not outdated):
   - `save_to_csv()`: Exports data to CSV
   - `save_new_data()`: Saves new data chunks
   - `add_sleep_stage_to_csv()`: Adds sleep stage data

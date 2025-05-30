@@ -93,7 +93,8 @@ def create_trimmed_csv(input_file, output_file, skip_samples):
             if idx >= skip_samples:
                 outfile.write(line)
 
-def main():
+def main(handler_class=ReceivedStreamedDataHandler): #TODO: LLM said we needed to add this handler_class 
+    # argument to the main function for a test to pass, but we didn't add this to main_speed_controlled_stream.py... should we?
     """Main function that manages the data acquisition and processing"""
     # Initialize playback file and timestamp tracking
     # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
@@ -113,7 +114,7 @@ def main():
     board_manager = BoardManager(playback_file, board_id)
     board_manager.setup_board()
     timestamp_channel = board_manager.board_shim.get_timestamp_channel(board_id)
-    received_streamed_data_handler = ReceivedStreamedDataHandler(board_manager, logger)
+    received_streamed_data_handler = handler_class(board_manager, logger)
 
     # Get the PyQt application instance from the visualizer
     qt_app = received_streamed_data_handler.data_manager.visualizer.app
@@ -147,8 +148,14 @@ def main():
                         break
                         
                     elif msg_type == 'data':
-                        # Process incoming data
+
                         received_streamed_data_handler.process_board_data(received['board_data'])
+
+                    elif msg_type == 'error':
+                        # Handle error from child process
+                        logger.error(f"Child process reported error: {received}")
+                        child_exited_normally = False
+                        break
                         
                 # Process Qt events to update the GUI
                 qt_app.processEvents()
@@ -174,11 +181,11 @@ def main():
 
             if next_rows.empty:
                 logger.info("No more data after last timestamp. Saving csv and exiting.")
-                output_csv_path = os.path.join(workspace_root, "data/test_data/reconstructed_data.csv")
-                received_streamed_data_handler.data_manager.output_csv_path = output_csv_path
-                received_streamed_data_handler.data_manager.save_to_csv(output_csv_path)
                 # validate the saved csv
-                received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file)
+                logger.info(f"Main csv buffer path before final save: {received_streamed_data_handler.data_manager.csv_manager.main_csv_path}")        
+                output_csv_path = received_streamed_data_handler.data_manager.csv_manager.main_csv_path
+                received_streamed_data_handler.data_manager.csv_manager.save_all_and_cleanup(merge_files=True, merge_output_path="merged_data.csv")
+                received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file, output_csv_path)
                 break
 
             # Create new trimmed file starting from the gap

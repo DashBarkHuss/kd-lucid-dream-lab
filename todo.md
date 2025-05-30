@@ -156,6 +156,7 @@ Starting/stopping the stream
     - ✅ test gap handling when the gap is in the middle of the stream and hidden states already exist
     - replace the old processor with the new processor_improved.py
   - do we need to add filtering? i believe so. i think set sinclude filtering in them and csv raws do not.
+  - add brainflow specific format validations to the csv manager
   - warn if bad channel isbeing used for inference- like all the same value
   - ✅ remove harded coded combinations from gssc_array_with_fif
   - need to test a 35 second exact consecutive data- bug

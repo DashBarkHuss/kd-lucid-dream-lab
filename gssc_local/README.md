@@ -84,6 +84,17 @@ Then verify the installation by checking for the latest code patterns identified
 
 The system provides robust CSV export capabilities through the `CSVManager` class in the `realtime_with_restart` package which helps manage brainflow data.
 
+### Breaking Changes
+
+The following methods have been updated with new buffer management logic and their behavior has changed:
+
+- `save_new_data_to_csv_buffer()` -> `add_data_to_buffer()`
+- `add_sleep_stage_to_csv_buffer()` -> `add_sleep_stage_to_sleep_stage_csv()`
+- `save_to_csv()` -> `save_all_and_cleanup()`
+
+These methods now use the new buffer management system and may behave differently from previous versions.
+Please update your code to use the new methods directly.
+
 ### Features
 
 - Exact format preservation for compatibility

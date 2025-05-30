@@ -6,38 +6,43 @@ from gssc_local.montage import Montage
 class ReceivedStreamedDataHandler: 
     """Handles processing and storage of incoming EEG data"""
     def __init__(self, board_manager: BoardManager, logger: Logger):
-        # Initialize buffers to store data chunks and their timestamps
-        self.data_buffer = []  # Stores raw EEG data chunks
-        self.timestamp_buffer = []  # Stores corresponding timestamps
         self.sample_count = 0  # Total number of samples processed
         self.board_manager = board_manager
         self.data_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, Montage.minimal_sleep_montage())
         self.logger = logger
-    def process_board_data(self, board_data):
-        """Process incoming data chunk and store it"""
-        # Store the new data chunk and its timestamps
-        self.data_buffer.append(board_data)
-        timestamps = board_data[self.board_manager.timestamp_channel]
-        self.timestamp_buffer.append(timestamps)
+        self.is_initial = True
 
+    def process_board_data(self, board_data):
+        """Process incoming data chunk"""
+        self.logger.info("\n=== ReceivedStreamedDataHandler.process_board_data ===")
+        self.logger.info(f"Received data shape: {board_data.shape}")
+        
         self.sample_count += board_data.shape[1]  # Increment total sample count
 
-        # Successfully got data
-        if self.data_manager.add_data(board_data): # add data to the full buffer. this only saves the relevant data to the buffer and it validates the data
-            # First just save the raw data
-            self.data_manager.save_new_data(board_data)
-            
-            # Calculate which buffer should be processed next
-            next_buffer_id = self.data_manager._calculate_next_buffer_id_to_process()
+        # add data to the buffer
+        self.data_manager.add_data_to_buffer(board_data, self.is_initial)
+        # add data to memory for epoch processing
+        self.data_manager.accumulate_data_for_epoch_processing(board_data, self.is_initial)
 
-            # Check if we CAN process an epoch (have enough data + right timing)
-            can_process, reason, epoch_start_idx, epoch_end_idx = self.data_manager.next_available_epoch_on_buffer(next_buffer_id)
+        self.is_initial = False
+        
+        # Calculate which buffer should be processed next
+        next_buffer_id = self.data_manager._calculate_next_buffer_id_to_process()
+        self.logger.info(f"Next buffer ID to process: {next_buffer_id}")
 
-            if can_process:
-                # Only process when we have a complete epoch ready
-                self.data_manager.manage_epoch(buffer_id=next_buffer_id, 
-                                        epoch_start_idx=epoch_start_idx, 
-                                        epoch_end_idx=epoch_end_idx)
+        # Check if we CAN process an epoch (have enough data + right timing)
+        can_process, reason, epoch_start_idx, epoch_end_idx = self.data_manager.next_available_epoch_on_buffer(next_buffer_id)
+        self.logger.info(f"Can process epoch: {can_process}")
+        if not can_process:
+            self.logger.info(f"Reason: {reason}")
+
+        if can_process:
+            # Only process when we have a complete epoch ready
+            self.logger.info(f"Processing epoch on buffer {next_buffer_id}")
+            self.logger.info(f"Epoch indices: {epoch_start_idx} to {epoch_end_idx}")
+            self.data_manager.manage_epoch(buffer_id=next_buffer_id, 
+                                    epoch_start_idx=epoch_start_idx, 
+                                    epoch_end_idx=epoch_end_idx)
         
         # Log processing statistics
         self.logger.info(f"Processed {self.sample_count} samples")        

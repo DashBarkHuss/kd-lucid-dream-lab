@@ -10,7 +10,7 @@ import pytest
 from brainflow.board_shim import BoardShim, BoardIds
 import os
 
-def create_brainflow_test_data(duration_seconds=1.0, sampling_rate=None, add_noise=False, board_id=None):
+def create_brainflow_test_data(duration_seconds=1.0, sampling_rate=None, add_noise=False, board_id=None, start_time=1700000000.1, random_seed=42):
     """
     Create BrainFlow-compatible test data.
     
@@ -19,12 +19,17 @@ def create_brainflow_test_data(duration_seconds=1.0, sampling_rate=None, add_noi
         sampling_rate: Sampling rate in Hz (defaults to board's rate)
         add_noise: Whether to add noise to EEG channels
         board_id: Board ID from BoardIds enum (defaults to CYTON_DAISY_BOARD)
+        start_time: Fixed start time for timestamps (default: 1700000000.1)
+        random_seed: Seed for random number generation (default: 42)
         
     Returns:
         tuple: (data_array, metadata_dict)
             - data_array: numpy array of shape (n_samples, n_channels)
             - metadata_dict: dict containing sampling_rate, timestamp_channel, start_time
     """
+    # Set random seed for reproducibility
+    np.random.seed(random_seed)
+    
     # Get board configuration
     if board_id is None:
         board_id = BoardIds.CYTON_DAISY_BOARD
@@ -66,11 +71,7 @@ def create_brainflow_test_data(duration_seconds=1.0, sampling_rate=None, add_noi
             
         data[:, channel] = signal
     
-    # Set fixed values for specific channels
-
-    
-    # Set timestamps
-    start_time = time.time()
+    # Set timestamps with fixed start time
     expected_interval = 1.0 / sampling_rate
     timestamps = start_time + np.arange(n_samples) * expected_interval
     data[:, timestamp_channel] = timestamps
@@ -86,7 +87,8 @@ def create_brainflow_test_data(duration_seconds=1.0, sampling_rate=None, add_noi
         'n_samples': n_samples,
         'duration_seconds': duration_seconds,
         'board_id': board_id,
-        'n_channels': n_channels
+        'n_channels': n_channels,
+        'random_seed': random_seed  # Include seed in metadata for reference
     }
     
     data = np.round(data, 6)
