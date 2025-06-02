@@ -5,6 +5,38 @@
 
 A Python-based toolkit for working with OpenBCI and Brainflow for EEG data processing and analysis, with a focus on sleep stage classification using the Greifswald Sleep Stage Classifier (GSSC).
 
+## System Dependencies (macOS ARM)
+
+This project requires the Qt6 framework for GUI features.
+
+On Mac via Homebrew:
+
+```bash
+brew install qt@6
+```
+
+## Installation
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/dashbarkhuss/kd-lucid-dream-lab.git
+cd kd-lucid-dream-lab
+```
+
+2. Create and activate a virtual environment (recommended):
+
+```bash
+python -m venv kd-lucid-env
+source kd-lucid-env/bin/activate  # On Windows, use: kd-lucid-env\Scripts\activate
+```
+
+3. Install the required packages:
+
+```bash
+pip install -r requirements.txt
+```
+
 ## Table of Contents
 
 - [Usage](#usage)

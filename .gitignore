@@ -1,6 +1,7 @@
 myenv/
 .venv/
-
+gssc_venv/
+kd-lucid-env/
 sandbox/
 **/sandbox/
 

@@ -1,0 +1,32 @@
+# Core scientific stack
+numpy==2.0.2
+pandas==2.2.3
+scipy==1.13.1
+matplotlib==3.9.4
+h5py==3.11.0
+
+# Deep learning
+torch==2.6.0
+
+# EEG & neuroscience
+mne==1.8.0
+brainflow==5.16.0
+
+# GUI and plotting
+PyQt6==6.7.1
+PyQt6-Qt6==6.7.3
+PyQt6-sip==13.10.2
+pyqtgraph==0.13.7
+qt-material==2.14  # For modern Qt styling
+
+# Sleep model (GSSC)
+git+https://github.com/jshanna100/gssc.git@477fdd558d049a603c5b962e04b256bf10d30cd0
+
+# Utilities
+tqdm==4.67.1
+requests==2.32.3
+scikit-learn==1.6.1
+psutil==5.9.8
+
+# Optional/dev/test tools
+pytest==8.3.4
