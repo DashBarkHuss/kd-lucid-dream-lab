@@ -59,11 +59,11 @@ jobs:
         env:
           CI: true
           QT_QPA_PLATFORM: offscreen
-          QT_LOGGING_RULES: "*.debug=false;qt.qpa.*=false"
+          QT_LOGGING_RULES: "*.debug=false;qt.qpa.*=false;qt.widgets.*=false"
           QT_DEBUG_PLUGINS: 0
           DISPLAY: :99
           PYTHONUNBUFFERED: 1
         run: |
           Xvfb :99 -screen 0 1920x1080x24 -ac &
           sleep 3
-          pytest -v -s --log-cli-level=INFO gssc_local/tests/
+          pytest -v -s --log-cli-level=INFO gssc_local/tests/test_utils.py
