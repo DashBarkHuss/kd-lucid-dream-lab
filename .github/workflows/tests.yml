@@ -19,6 +19,11 @@ jobs:
           python-version: "3.10"
           cache: "pip"
 
+      - name: Check available Qt6 packages
+        run: |
+          sudo apt-get update
+          apt-cache search qt6 | grep -i "qt6" | sort
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
