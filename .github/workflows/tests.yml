@@ -25,6 +25,9 @@ jobs:
           sudo apt-get install -y \
             qt6-base-dev \
             qt6-declarative-dev \
+            qt6-gui-dev \
+            qt6-widgets-dev \
+            qt6-opengl-dev \
             libqt6gui6 \
             libqt6widgets6 \
             libqt6core6 \
@@ -33,7 +36,8 @@ jobs:
             libopenblas-dev \
             liblapack-dev \
             libffi-dev \
-            libssl-dev
+            libssl-dev \
+            xvfb
 
       - name: Install dependencies
         run: |
@@ -44,5 +48,15 @@ jobs:
       - name: Run tests
         env:
           CI: true
+          QT_QPA_PLATFORM: offscreen
+          QT_LOGGING_RULES: "*.debug=false;qt.qpa.*=false"
+          QT_DEBUG_PLUGINS: 0
+          DISPLAY: :99
+          PYTHONUNBUFFERED: 1
         run: |
-          pytest gssc_local/tests/
+          # Start Xvfb with a larger screen size and more color depth
+          Xvfb :99 -screen 0 1920x1080x24 -ac &
+          sleep 3  # Give Xvfb time to start
+
+          # Run tests with increased verbosity
+          pytest -v gssc_local/tests/
