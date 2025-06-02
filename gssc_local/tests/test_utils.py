@@ -124,25 +124,42 @@ class TestBrainFlowDataGeneration(unittest.TestCase):
         n_channels = BoardShim.get_num_rows(self.board_id)
         self.assertEqual(self.data.shape, (n_samples, n_channels))
         
-
-        
     def test_timestamps(self):
         """Test that timestamps are correctly spaced and formatted."""
+        print("\n=== Starting test_timestamps ===")
+        print(f"Data shape: {self.data.shape}")
+        print(f"Timestamp channel: {self.metadata['timestamp_channel']}")
+        
         timestamps = self.data[:, self.metadata['timestamp_channel']]
+        print(f"First timestamp: {timestamps[0]}")
+        print(f"Last timestamp: {timestamps[-1]}")
+        
         expected_interval = 1.0 / self.metadata['sampling_rate']
+        print(f"Expected interval: {expected_interval}")
+        
         actual_intervals = np.diff(timestamps)
+        print(f"First few actual intervals: {actual_intervals[:5]}")
         
         # Check that intervals are approximately correct
-        np.testing.assert_allclose( #TODO: Sometimes we want gaps in the data, so the correct interval is not always necessary. How do we handle this?
+        print("Checking intervals...")
+        np.testing.assert_allclose(
             actual_intervals,
             expected_interval,
             rtol=1e-3  # Allow 0.1% tolerance
         )
+        print("Intervals check passed")
         
         # Check timestamp format (should be Unix timestamp with microseconds)
-        for ts in timestamps:
+        print("Checking timestamp format...")
+        for i, ts in enumerate(timestamps):
             self.assertGreater(ts, 1700000000)  # Should be after 2023
             self.assertLess(ts, 2000000000)     # Should be before 2033
+            if i < 5:  # Print first few timestamps
+                print(f"Timestamp {i}: {ts}")
+        
+        print("Timestamp format check passed")
+        print("=== test_timestamps completed successfully ===\n")
+        
     def test_eeg_channels(self):
         """Test that EEG channels contain realistic values."""
         # Get board-specific ADC specifications
