@@ -25,25 +25,20 @@ jobs:
           echo "=== Available Qt6 packages ==="
           apt-cache search qt6 | grep -i "qt6" | sort
           echo -e "\n=== Package versions ==="
-          apt-cache policy qt6-base-dev qt6-declarative-dev qt6-gui-dev qt6-widgets-dev qt6-opengl-dev qt6-tools-dev qt6-base-dev-tools
+          apt-cache policy qt6-base-dev qt6-declarative-dev
           echo -e "\n=== Package details ==="
-          apt-cache show qt6-base-dev qt6-declarative-dev qt6-gui-dev qt6-widgets-dev qt6-opengl-dev qt6-tools-dev qt6-base-dev-tools
+          apt-cache show qt6-base-dev qt6-declarative-dev
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          # Enable universe repository for Qt6 packages
           sudo add-apt-repository universe -y
           sudo apt-get update
-          echo "=== Installing packages with verbose output ==="
           sudo apt-get install -y -V \
             qt6-base-dev \
             qt6-declarative-dev \
-            qt6-gui-dev \
-            qt6-widgets-dev \
-            qt6-opengl-dev \
             qt6-tools-dev \
-            qt6-base-dev-tools \
+            qt6-tools-dev-tools \
             libqt6gui6 \
             libqt6widgets6 \
             libqt6core6 \
@@ -55,10 +50,9 @@ jobs:
             libssl-dev \
             xvfb
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
           pip install -r requirements.txt
 
       - name: Run tests
@@ -70,9 +64,6 @@ jobs:
           DISPLAY: :99
           PYTHONUNBUFFERED: 1
         run: |
-          # Start Xvfb with a larger screen size and more color depth
           Xvfb :99 -screen 0 1920x1080x24 -ac &
-          sleep 3  # Give Xvfb time to start
-
-          # Run tests with increased verbosity
+          sleep 3
           pytest -v gssc_local/tests/
