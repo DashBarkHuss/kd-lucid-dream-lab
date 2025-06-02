@@ -290,8 +290,42 @@ class PyQtVisualizer:
             self.app.processEvents()
         
     def close(self):
-        """Close the visualization window"""
-        if not self.headless:
-            self.win.close()
-        self.timer.stop()
-        self.countdown_timer.stop() 
+        """Close the visualization window and clean up Qt resources"""
+        try:
+            # Stop timers first
+            if hasattr(self, 'timer'):
+                self.timer.stop()
+            if hasattr(self, 'countdown_timer'):
+                self.countdown_timer.stop()
+            
+            # Clean up plots and curves first
+            if hasattr(self, 'curves'):
+                self.curves.clear()
+            if hasattr(self, 'plots'):
+                for plot in self.plots:
+                    if plot is not None:
+                        plot.clear()  # Clear plot contents before closing
+                self.plots.clear()
+            
+            # Close window if not in headless mode
+            if not self.headless and hasattr(self, 'win'):
+                self.win.close()
+            
+            # Clean up plot widget last
+            if hasattr(self, 'plot_widget'):
+                self.plot_widget.clear()  # Clear widget contents before closing
+                self.plot_widget.close()
+            
+            # Process any pending events
+            if hasattr(self, 'app'):
+                self.app.processEvents()
+                
+            # Quit the application if we're in CI
+            if os.environ.get('CI') == 'true' and hasattr(self, 'app'):
+                self.app.quit()
+                
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+            # Try to process events one last time
+            if hasattr(self, 'app'):
+                self.app.processEvents() 

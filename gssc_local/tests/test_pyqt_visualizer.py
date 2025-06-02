@@ -41,6 +41,7 @@ def test_synthetic_data():
     
     # Create QApplication instance if one doesn't exist
     app = QApplication.instance() or QApplication([])
+    visualizer = None
     
     try:
         # Create montage
@@ -79,16 +80,14 @@ def test_synthetic_data():
         if not is_ci:
             visualizer.app.exec()
         else:
-            # In CI, process events once more and close
+            # In CI, process events once more
             app.processEvents()
-            visualizer.close()
             
     finally:
         # Ensure proper cleanup
         if visualizer:
             visualizer.close()
-        if is_ci:
-            app.quit()
+            app.processEvents()  # Process any pending events after cleanup
 
 def test_real_data():
     """Test the PyQtVisualizer with real data"""
