@@ -16,7 +16,7 @@ def test_predict_sleep_stage():
     """Test the predict_sleep_stage functionality of SignalProcessor using real data"""
     # Setup paths - using paths relative to workspace root
     workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    csv_file_path = os.path.join(workspace_root, 'data', 'realtime_inference_test', 'BrainFlow-RAW_2025-03-29_23-14-54_0.csv')
+    csv_file_path = os.path.join(workspace_root, 'gssc_local', 'tests', 'test_data', 'BrainFlow-RAW_test.csv')
     mat_file_path = os.path.join(workspace_root, 'data', 'realtime_inference_test', 'scoring.mat')
     
     # Test parameters

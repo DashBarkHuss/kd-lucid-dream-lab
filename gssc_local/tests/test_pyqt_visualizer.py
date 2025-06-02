@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from montage import Montage
 from pyqt_visualizer import PyQtVisualizer
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer
 
 def generate_sample_data(num_channels=16, num_points=3750, sampling_rate=125):
     """Generate sample data for testing
@@ -37,41 +39,56 @@ def test_synthetic_data():
     # Check if running in CI environment
     is_ci = os.environ.get('CI') == 'true'
     
-    # Create montage
-    montage = Montage.default_sleep_montage()
+    # Create QApplication instance if one doesn't exist
+    app = QApplication.instance() or QApplication([])
     
-    # Create visualizer with headless mode in CI
-    visualizer = PyQtVisualizer(seconds_per_epoch=30, montage=montage, headless=is_ci)
-    
-    # Generate sample data
-    data = generate_sample_data()
-    
-    # Test visualization
-    visualizer.plot_polysomnograph(
-        epoch_data=data,
-        sampling_rate=125,
-        sleep_stage=2,  # N2 sleep stage
-        time_offset=0,
-        epoch_start_time=0
-    )
-    
-    # Verify the visualization was created correctly
-    assert len(visualizer.plots) == len(montage.get_channel_labels()), \
-        "Number of plots should match number of channels"
-    
-    # Check that each plot has data
-    for curve in visualizer.curves:
-        assert curve.xData is not None and curve.yData is not None, \
-            "Each curve should have data points"
-        assert len(curve.xData) == len(data[0]), \
-            "Each curve should have the correct number of data points"
-    
-    # Only show window if not in CI
-    if not is_ci:
-        visualizer.app.exec()
-    else:
-        # In CI, just close immediately
-        visualizer.close()
+    try:
+        # Create montage
+        montage = Montage.default_sleep_montage()
+        
+        # Create visualizer with headless mode in CI
+        visualizer = PyQtVisualizer(seconds_per_epoch=30, montage=montage, headless=is_ci)
+        
+        # Generate sample data
+        data = generate_sample_data()
+        
+        # Test visualization
+        visualizer.plot_polysomnograph(
+            epoch_data=data,
+            sampling_rate=125,
+            sleep_stage=2,  # N2 sleep stage
+            time_offset=0,
+            epoch_start_time=0
+        )
+        
+        # Verify the visualization was created correctly
+        assert len(visualizer.plots) == len(montage.get_channel_labels()), \
+            "Number of plots should match number of channels"
+        
+        # Check that each plot has data
+        for curve in visualizer.curves:
+            assert curve.xData is not None and curve.yData is not None, \
+                "Each curve should have data points"
+            assert len(curve.xData) == len(data[0]), \
+                "Each curve should have the correct number of data points"
+        
+        # Process events to ensure everything is drawn
+        app.processEvents()
+        
+        # Only show window if not in CI
+        if not is_ci:
+            visualizer.app.exec()
+        else:
+            # In CI, process events once more and close
+            app.processEvents()
+            visualizer.close()
+            
+    finally:
+        # Ensure proper cleanup
+        if visualizer:
+            visualizer.close()
+        if is_ci:
+            app.quit()
 
 def test_real_data():
     """Test the PyQtVisualizer with real data"""
@@ -79,7 +96,7 @@ def test_real_data():
     is_ci = os.environ.get('CI') == 'true'
     
     # Path to the test data file
-    test_data_path = os.path.join(workspace_root, 'data', 'realtime_inference_test', 'BrainFlow-RAW_2025-03-29_23-14-54_0.csv')
+    test_data_path = os.path.join(workspace_root, 'gssc_local', 'tests', 'test_data', 'BrainFlow-RAW_test.csv')
     
     # Read the data
     df = pd.read_csv(test_data_path, sep='\t', header=None)

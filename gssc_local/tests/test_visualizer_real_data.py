@@ -14,7 +14,7 @@ from cyton_realtime_round_robin_accurate_time_buffer import Visualizer
 def test_visualizer_with_real_data():
     """Test the Visualizer with a 30-second chunk of real data"""
     # Path to the test data file
-    test_data_path = os.path.join(workspace_root, 'data', 'realtime_inference_test', 'BrainFlow-RAW_2025-03-29_23-14-54_0.csv')
+    test_data_path = os.path.join(workspace_root, 'gssc_local', 'tests', 'test_data', 'BrainFlow-RAW_test.csv')
     
     # Read the data
     df = pd.read_csv(test_data_path, sep='\t', header=None)
@@ -71,7 +71,6 @@ def test_visualizer_with_real_data():
     for ax in visualizer.axes:
         assert len(ax.lines) > 0, "Each axis should have at least one line"
         
-
 
 if __name__ == '__main__':
     test_visualizer_with_real_data() 

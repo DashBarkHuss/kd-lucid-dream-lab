@@ -16,7 +16,7 @@ def test_pyqt_visualizer_with_real_data():
     is_ci = os.environ.get('CI') == 'true'
     
     # Path to the test data file
-    test_data_path = os.path.join(workspace_root, 'data', 'realtime_inference_test', 'BrainFlow-RAW_2025-03-29_23-14-54_0.csv')
+    test_data_path = os.path.join(workspace_root, 'gssc_local', 'tests', 'test_data', 'BrainFlow-RAW_test.csv')
     
     # Read the data
     df = pd.read_csv(test_data_path, sep='\t', header=None)
