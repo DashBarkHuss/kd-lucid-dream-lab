@@ -9,6 +9,10 @@ import unittest
 import pytest
 from brainflow.board_shim import BoardShim, BoardIds
 import os
+import logging
+
+# Configure logging at module level
+logger = logging.getLogger(__name__)
 
 def create_brainflow_test_data(duration_seconds=1.0, sampling_rate=None, add_noise=False, board_id=None, start_time=1700000000.1, random_seed=42):
     """
@@ -126,39 +130,39 @@ class TestBrainFlowDataGeneration(unittest.TestCase):
         
     def test_timestamps(self):
         """Test that timestamps are correctly spaced and formatted."""
-        print("\n=== Starting test_timestamps ===")
-        print(f"Data shape: {self.data.shape}")
-        print(f"Timestamp channel: {self.metadata['timestamp_channel']}")
+        logger.info("\n=== Starting test_timestamps ===")
+        logger.info(f"Data shape: {self.data.shape}")
+        logger.info(f"Timestamp channel: {self.metadata['timestamp_channel']}")
         
         timestamps = self.data[:, self.metadata['timestamp_channel']]
-        print(f"First timestamp: {timestamps[0]}")
-        print(f"Last timestamp: {timestamps[-1]}")
+        logger.info(f"First timestamp: {timestamps[0]}")
+        logger.info(f"Last timestamp: {timestamps[-1]}")
         
         expected_interval = 1.0 / self.metadata['sampling_rate']
-        print(f"Expected interval: {expected_interval}")
+        logger.info(f"Expected interval: {expected_interval}")
         
         actual_intervals = np.diff(timestamps)
-        print(f"First few actual intervals: {actual_intervals[:5]}")
+        logger.info(f"First few actual intervals: {actual_intervals[:5]}")
         
         # Check that intervals are approximately correct
-        print("Checking intervals...")
+        logger.info("Checking intervals...")
         np.testing.assert_allclose(
             actual_intervals,
             expected_interval,
             rtol=1e-3  # Allow 0.1% tolerance
         )
-        print("Intervals check passed")
+        logger.info("Intervals check passed")
         
         # Check timestamp format (should be Unix timestamp with microseconds)
-        print("Checking timestamp format...")
+        logger.info("Checking timestamp format...")
         for i, ts in enumerate(timestamps):
             self.assertGreater(ts, 1700000000)  # Should be after 2023
             self.assertLess(ts, 2000000000)     # Should be before 2033
-            if i < 5:  # Print first few timestamps
-                print(f"Timestamp {i}: {ts}")
+            if i < 5:  # Log first few timestamps
+                logger.info(f"Timestamp {i}: {ts}")
         
-        print("Timestamp format check passed")
-        print("=== test_timestamps completed successfully ===\n")
+        logger.info("Timestamp format check passed")
+        logger.info("=== test_timestamps completed successfully ===\n")
         
     def test_eeg_channels(self):
         """Test that EEG channels contain realistic values."""
