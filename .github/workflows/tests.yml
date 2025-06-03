@@ -66,15 +66,4 @@ jobs:
         run: |
           Xvfb :99 -screen 0 1920x1080x24 -ac &
           sleep 3
-          pytest -v -s --log-cli-level=INFO \
-            gssc_local/tests/test_utils.py \
-            gssc_local/tests/test_pyqt_visualizer.py \
-            gssc_local/tests/test_pyqt_visualizer_real_data.py \
-            gssc_local/tests/test_visualizer_real_data.py \
-            gssc_local/tests/test_processor_improved.py \
-            gssc_local/tests/test_visualizer_synthetic_data.py \
-            gssc_local/tests/test_implementation_plans.py \
-            gssc_local/tests/test_gap_handler.py \
-            gssc_local/tests/test_realtime_stream.py \
-            gssc_local/tests/test_csv_manager.py \
-            gssc_local/tests/test_speed_controlled_board_manager.py
+          pytest -v -s --log-cli-level=INFO gssc_local/tests/ -k "not pyqt"
