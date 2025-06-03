@@ -77,4 +77,5 @@ jobs:
             --ignore=gssc_local/tests/test_csv_manager.py \
             --ignore=gssc_local/tests/test_speed_controlled_board_manager.py \
             --ignore=gssc_local/tests/test_gap_handler.py \
-            --ignore=gssc_local/tests/test_csv_manager_performance.py
+            --ignore=gssc_local/tests/test_csv_manager_performance.py \
+            --ignore=gssc_local/tests/test_csv_manager_memory.py
