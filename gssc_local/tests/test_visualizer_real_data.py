@@ -7,6 +7,10 @@ sys.path.append(workspace_root)
 
 import numpy as np
 import pandas as pd
+# Set matplotlib backend to 'Agg' in CI to prevent GUI
+if os.environ.get('CI'):
+    import matplotlib
+    matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from montage import Montage
 from cyton_realtime_round_robin_accurate_time_buffer import Visualizer
@@ -60,8 +64,12 @@ def test_visualizer_with_real_data():
         epoch_start_time=0
     )
     
-    # Show the plot
-    plt.show(block=True)
+    # Only show the plot in non-CI environments
+    if not os.environ.get('CI'):
+        plt.show(block=True)
+    else:
+        # In CI, just verify the plot was created correctly
+        plt.close('all')  # Clean up
     
     # Verify the data was plotted correctly
     assert len(visualizer.axes) == len(montage.get_channel_labels()), \
@@ -71,6 +79,8 @@ def test_visualizer_with_real_data():
     for ax in visualizer.axes:
         assert len(ax.lines) > 0, "Each axis should have at least one line"
         
+    # Clean up
+    plt.close('all')
 
 if __name__ == '__main__':
     test_visualizer_with_real_data() 
