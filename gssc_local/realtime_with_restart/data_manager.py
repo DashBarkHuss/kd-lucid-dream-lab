@@ -7,7 +7,7 @@ from gssc_local.realtime_with_restart.processor_improved import SignalProcessor 
 from gssc_local.realtime_with_restart.visualizer import Visualizer
 from gssc_local.pyqt_visualizer import PyQtVisualizer
 from gssc_local.montage import Montage
-from gssc_local.realtime_with_restart.export.csv_manager import CSVManager
+from gssc_local.realtime_with_restart.export.csv.manager import CSVManager
 import pandas as pd
 import time
 import os

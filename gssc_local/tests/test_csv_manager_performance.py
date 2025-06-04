@@ -24,7 +24,7 @@ import os
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from gssc_local.realtime_with_restart.export.csv_manager import CSVManager
+from gssc_local.realtime_with_restart.export.csv.manager import CSVManager
 from gssc_local.tests.test_utils import create_brainflow_test_data
 
 # Configure logging

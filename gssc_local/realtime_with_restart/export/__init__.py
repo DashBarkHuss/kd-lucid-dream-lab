@@ -11,6 +11,6 @@ This module provides CSV export functionality specifically for brainflow data, i
 For detailed usage examples and validation rules, see the README.md and individual module docstrings.
 """
 
-from .csv_manager import CSVManager
+from .csv.manager import CSVManager
 
 __all__ = ['CSVManager'] 

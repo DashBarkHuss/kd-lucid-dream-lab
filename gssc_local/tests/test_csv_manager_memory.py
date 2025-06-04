@@ -18,7 +18,7 @@ import logging
 from brainflow.board_shim import BoardShim, BoardIds
 from brainflow.board_shim import BrainFlowInputParams
 
-from gssc_local.realtime_with_restart.export.csv_manager import CSVManager
+from gssc_local.realtime_with_restart.export.csv.manager import CSVManager
 from gssc_local.tests.test_utils import create_brainflow_test_data
 
 # Configure logging
