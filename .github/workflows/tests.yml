@@ -67,5 +67,4 @@ jobs:
           Xvfb :99 -screen 0 1920x1080x24 -ac &
           sleep 3
           pytest -v gssc_local/tests/ \
-            --ignore=gssc_local/tests/test_pyqt_visualizer_real_data.py \
             --ignore=gssc_local/tests/test_visualizer_real_data.py
