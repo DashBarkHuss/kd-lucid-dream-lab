@@ -71,5 +71,4 @@ jobs:
             --ignore=gssc_local/tests/test_pyqt_visualizer_real_data.py \
             --ignore=gssc_local/tests/test_visualizer_real_data.py \
             --ignore=gssc_local/tests/test_visualizer_synthetic_data.py \
-            --ignore=gssc_local/tests/test_csv_manager.py \
             --ignore=gssc_local/tests/test_speed_controlled_board_manager.py
