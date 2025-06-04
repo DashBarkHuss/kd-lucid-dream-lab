@@ -69,4 +69,3 @@ jobs:
           pytest -v gssc_local/tests/ -k "not pyqt" \
             --ignore=gssc_local/tests/test_pyqt_visualizer.py \
             --ignore=gssc_local/tests/test_pyqt_visualizer_real_data.py \
-            --ignore=gssc_local/tests/test_visualizer_real_data.py \
