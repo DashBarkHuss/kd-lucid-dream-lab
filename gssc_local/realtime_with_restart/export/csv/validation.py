@@ -4,7 +4,6 @@ Validation module for CSV data export and validation of brainflow data.
 This module provides validation functions for:
 - Data shape and content validation
 - File path validation
-- Sleep stage data validation
 - CSV format validation
 - Buffer state validation
 - Timestamp continuity validation
@@ -79,39 +78,6 @@ def validate_file_path(file_path: Union[str, Path]) -> Path:
         return path
     except Exception as e:
         raise CSVExportError(f"Invalid file path: {e}")
-
-def validate_sleep_stage_data(self, sleep_stage: float, next_buffer_id: float, epoch_end_idx: int) -> None:
-    """Validate sleep stage data before adding to CSV.
-    
-    Validation rules:
-    - Sleep stage must be numeric
-    - Buffer ID must be numeric
-    - Epoch index must be valid integer
-    - Epoch index must be in bounds
-    
-    Args:
-        sleep_stage (float): Sleep stage classification
-        next_buffer_id (float): ID of the next buffer
-        epoch_end_idx (int): Index where to add the data
-        
-    Raises:
-        CSVDataError: If validation fails
-    """
-    if not isinstance(sleep_stage, (int, float)):
-        raise CSVDataError(f"Sleep stage must be numeric, got {type(sleep_stage)}")
-        
-    if not isinstance(next_buffer_id, (int, float)):
-        raise CSVDataError(f"Buffer ID must be numeric, got {type(next_buffer_id)}")
-        
-    if not isinstance(epoch_end_idx, int):
-        raise CSVDataError(f"Epoch index must be integer, got {type(epoch_end_idx)}")
-        
-    if epoch_end_idx < 0:
-        raise CSVDataError(f"Epoch index {epoch_end_idx} is negative")
-        
-    if epoch_end_idx >= len(self.main_csv_buffer):
-        self.logger.warning(f"Epoch index {epoch_end_idx} out of bounds for saved data length {len(self.main_csv_buffer)}")
-        epoch_end_idx = len(self.main_csv_buffer) - 1
 
 def validate_timestamp_continuity(self, timestamps: pd.Series) -> bool:
     """Validate basic timestamp integrity.
