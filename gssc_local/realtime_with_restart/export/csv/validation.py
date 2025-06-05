@@ -79,45 +79,7 @@ def validate_file_path(file_path: Union[str, Path]) -> Path:
     except Exception as e:
         raise CSVExportError(f"Invalid file path: {e}")
 
-def validate_buffer_data(self, data: List[List[float]]) -> None:
-    """Validate general buffer data integrity.
-    
-    This is a general-purpose validation that checks:
-    - Data structure (list of lists)
-    - Consistent row lengths
-    - Numeric values
-    - No NaN or infinite values
-    
-    Note: This is not BrainFlow-specific validation. For BrainFlow data,
-    additional validation should be performed using BrainFlow utilities.
-    
-    Args:
-        data (List[List[float]]): Data to validate
-        
-    Raises:
-        BufferValidationError: If data validation fails
-    """
-    if not isinstance(data, list):
-        raise BufferValidationError(f"Data must be a list, got {type(data)}")
-        
-    if not data:
-        return  # Empty data is valid
-        
-    # Check if all rows have the same length
-    row_length = len(data[0])
-    for i, row in enumerate(data):
-        if not isinstance(row, list):
-            raise BufferValidationError(f"Row {i} must be a list, got {type(row)}")
-        if len(row) != row_length:
-            raise BufferValidationError(f"Row {i} has length {len(row)}, expected {row_length}")
-            
-    # Check if all values are numeric
-    for i, row in enumerate(data):
-        for j, value in enumerate(row):
-            if not isinstance(value, (int, float)):
-                raise BufferValidationError(f"Value at row {i}, column {j} must be numeric, got {type(value)}")
-            if np.isnan(value) or np.isinf(value):
-                raise BufferValidationError(f"Value at row {i}, column {j} is NaN or infinite")
+
 
 def validate_file_contents(self, file_path: str) -> Dict:
     """Validate file contents and track duplicates.

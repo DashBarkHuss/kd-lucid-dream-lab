@@ -37,7 +37,6 @@ from .exceptions import (
 from .validation import (
     validate_data_shape,
     validate_file_path,
-    validate_buffer_data,
     validate_saved_csv_matches_original_source
 )
 
@@ -94,7 +93,6 @@ class CSVManager:
         # Create bound validation methods # TODO: some of these methods are never used outside of the tests
         self._validate_data_shape = lambda data: validate_data_shape(data)
         self._validate_file_path = lambda path: validate_file_path(path)
-        self._validate_buffer_data = lambda data: validate_buffer_data(data)
         self.validate_saved_csv_matches_original_source = lambda original_csv_path, output_path=None: validate_saved_csv_matches_original_source(self, original_csv_path, output_path)
     
    
