@@ -79,30 +79,6 @@ def validate_file_path(file_path: Union[str, Path]) -> Path:
     except Exception as e:
         raise CSVExportError(f"Invalid file path: {e}")
 
-def validate_buffer_state(self) -> None:
-    """Validate current buffer state.
-    
-    Checks if buffer is in a valid state for operations.
-    
-    Raises:
-        BufferStateError: If buffer is in an invalid state
-    """
-    # Check if main buffer exists
-    if not hasattr(self, 'main_csv_buffer'):
-        raise BufferStateError("Main buffer not initialized")
-        
-    # Check if sleep stage buffer exists
-    if not hasattr(self, 'sleep_stage_buffer'):
-        raise BufferStateError("Sleep stage buffer not initialized")
-        
-    # Check if buffer size is set
-    if not hasattr(self, 'main_buffer_size'):
-        raise BufferStateError("Main buffer size not configured")
-        
-    # Check if sleep stage buffer size is set
-    if not hasattr(self, 'sleep_stage_buffer_size'):
-        raise BufferStateError("Sleep stage buffer size not configured")
-    
 def validate_buffer_data(self, data: List[List[float]]) -> None:
     """Validate general buffer data integrity.
     
