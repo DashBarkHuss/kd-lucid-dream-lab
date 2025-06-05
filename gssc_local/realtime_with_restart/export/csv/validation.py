@@ -79,9 +79,6 @@ def validate_file_path(file_path: Union[str, Path]) -> Path:
     except Exception as e:
         raise CSVExportError(f"Invalid file path: {e}")
 
-
-
-
 def validate_saved_csv_matches_original_source(self, original_csv_path: Union[str, Path], output_path: Union[str, Path] = None) -> bool:
     """Validate that the saved CSV matches the original format exactly.
     
@@ -159,4 +156,65 @@ def validate_saved_csv_matches_original_source(self, original_csv_path: Union[st
         
     except Exception as e:
         self.logger.error(f"Failed to validate CSV against original source: {e}")
-        raise CSVValidationError(f"CSV source validation failed: {e}") 
+        raise CSVValidationError(f"CSV source validation failed: {e}")
+
+def validate_sleep_stage_data(sleep_stage: float, buffer_id: float, timestamp_start: float, timestamp_end: float) -> None:
+    """Validate sleep stage data inputs.
+    
+    Validation rules:
+    - All inputs must be numeric (int or float)
+    - Timestamps must be valid numbers
+    
+    Args:
+        sleep_stage (float): Sleep stage classification
+        buffer_id (float): ID of the buffer
+        timestamp_start (float): Start timestamp for the sleep stage
+        timestamp_end (float): End timestamp for the sleep stage
+        
+    Raises:
+        CSVDataError: If any input validation fails
+    """
+    if not isinstance(sleep_stage, (int, float)):
+        raise CSVDataError(f"Sleep stage must be numeric, got {type(sleep_stage)}")
+    if not isinstance(buffer_id, (int, float)):
+        raise CSVDataError(f"Buffer ID must be numeric, got {type(buffer_id)}")
+    if not isinstance(timestamp_start, (int, float)):
+        raise CSVDataError(f"Timestamp start must be numeric, got {type(timestamp_start)}")
+    if not isinstance(timestamp_end, (int, float)):
+        raise CSVDataError(f"Timestamp end must be numeric, got {type(timestamp_end)}")
+
+def validate_sleep_stage_csv_format(header: str, first_line: Optional[str] = None) -> None:
+    """Validate sleep stage CSV format.
+    
+    Validation rules:
+    - Header must contain all required columns
+    - First data line must match header column count
+    - Timestamp must have 6 decimal places
+    
+    Args:
+        header (str): CSV header line
+        first_line (Optional[str]): First data line to validate
+        
+    Raises:
+        CSVFormatError: If format validation fails
+    """
+    # Validate header format
+    header_cols = header.split('\t')
+    required_sleep_cols = ['timestamp_start', 'timestamp_end', 'sleep_stage', 'buffer_id']
+    if not all(col in header_cols for col in required_sleep_cols):
+        raise CSVFormatError(f"Sleep stage CSV missing required columns: {required_sleep_cols}")
+    
+    # Validate first data line if provided
+    if first_line:
+        first_line_cols = first_line.split('\t')
+        if len(first_line_cols) != len(header_cols):
+            raise CSVFormatError(f"Data line has {len(first_line_cols)} columns but header has {len(header_cols)} columns")
+        
+        # Validate timestamp format
+        timestamp_end_str = first_line_cols[1]  # timestamp_end is second column
+        try:
+            float(timestamp_end_str)  # Try to convert to float
+            if '.' not in timestamp_end_str or len(timestamp_end_str.split('.')[-1]) != 6:
+                raise CSVFormatError(f"Timestamp end {timestamp_end_str} does not have six decimal places")
+        except ValueError:
+            raise CSVFormatError(f"Invalid timestamp format: {timestamp_end_str}") 

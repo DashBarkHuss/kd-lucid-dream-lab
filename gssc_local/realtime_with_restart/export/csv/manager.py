@@ -37,7 +37,9 @@ from .exceptions import (
 from .validation import (
     validate_data_shape,
     validate_file_path,
-    validate_saved_csv_matches_original_source
+    validate_saved_csv_matches_original_source,
+    validate_sleep_stage_data,
+    validate_sleep_stage_csv_format
 )
 
 class CSVManager:
@@ -448,15 +450,8 @@ class CSVManager:
             self.logger.info(f"Timestamp range: {timestamp_start:.2f} to {timestamp_end:.2f}")
             self.logger.info(f"Current buffer size: {len(self.sleep_stage_buffer)}")
             
-            # Validate inputs
-            if not isinstance(sleep_stage, (int, float)):
-                raise CSVDataError(f"Sleep stage must be numeric, got {type(sleep_stage)}")
-            if not isinstance(buffer_id, (int, float)):
-                raise CSVDataError(f"Buffer ID must be numeric, got {type(buffer_id)}")
-            if not isinstance(timestamp_start, (int, float)):
-                raise CSVDataError(f"Timestamp start must be numeric, got {type(timestamp_start)}")
-            if not isinstance(timestamp_end, (int, float)):
-                raise CSVDataError(f"Timestamp end must be numeric, got {type(timestamp_end)}")
+            # Validate inputs using the new validation function
+            validate_sleep_stage_data(sleep_stage, buffer_id, timestamp_start, timestamp_end)
             
             # Check if adding this entry would exceed buffer size
             if len(self.sleep_stage_buffer) >= self.sleep_stage_buffer_size:
@@ -854,27 +849,9 @@ class CSVManager:
                     if not header:
                         raise CSVFormatError("Sleep stage CSV file is empty")
                     
-                    # Validate header format
-                    header_cols = header.split('\t')
-                    required_sleep_cols = ['timestamp_start', 'timestamp_end', 'sleep_stage', 'buffer_id']
-                    if not all(col in header_cols for col in required_sleep_cols):
-                        raise CSVFormatError(f"Sleep stage CSV missing required columns: {required_sleep_cols}")
-                    
-                    # Validate first data line format
+                    # Validate header and first line using the new validation function
                     first_line = f.readline().strip()
-                    if first_line:  # Only validate if there's data
-                        first_line_cols = first_line.split('\t')
-                        if len(first_line_cols) != len(header_cols):
-                            raise CSVFormatError(f"Data line has {len(first_line_cols)} columns but header has {len(header_cols)} columns")
-                        
-                        # Validate timestamp format
-                        timestamp_end_str = first_line_cols[1]  # timestamp_end is second column
-                        try:
-                            float(timestamp_end_str)  # Try to convert to float
-                            if '.' not in timestamp_end_str or len(timestamp_end_str.split('.')[-1]) != 6:
-                                raise CSVFormatError(f"Timestamp end {timestamp_end_str} does not have six decimal places")
-                        except ValueError:
-                            raise CSVFormatError(f"Invalid timestamp format: {timestamp_end_str}")
+                    validate_sleep_stage_csv_format(header, first_line if first_line else None)
 
                 # Read sleep stage CSV
                 sleep_stage_df = pd.read_csv(sleep_stage_path, delimiter='\t')
