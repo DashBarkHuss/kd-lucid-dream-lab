@@ -93,7 +93,7 @@ The system provides robust CSV export capabilities through the `CSVManager` clas
 ### Usage
 
 ```python
-from gssc_local.realtime_with_restart.export import CSVManager
+from gssc_local.realtime_with_restart.export.csv.manager import CSVManager
 from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
 
 # Initialize with buffer sizes

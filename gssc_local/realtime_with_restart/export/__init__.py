@@ -9,8 +9,9 @@ This module provides CSV export functionality specifically for brainflow data, i
 - Comprehensive validation and error handling
 
 For detailed usage examples and validation rules, see the README.md and individual module docstrings.
+
+Note: CSVManager should be imported directly from the csv submodule:
+    from gssc_local.realtime_with_restart.export.csv.manager import CSVManager
 """
 
-from .csv.manager import CSVManager
-
-__all__ = ['CSVManager'] 
+__all__ = [] 
