@@ -79,32 +79,6 @@ def validate_file_path(file_path: Union[str, Path]) -> Path:
     except Exception as e:
         raise CSVExportError(f"Invalid file path: {e}")
 
-def validate_timestamp_continuity(self, timestamps: pd.Series) -> bool:
-    """Validate basic timestamp integrity.
-    
-    Only checks for:
-    1. No NaN values
-    2. Monotonic increasing timestamps
-    
-    Does not check for gaps since gaps are expected in the real data stream.
-    The actual gap detection and handling is done during real-time processing and epoch processing.
-    
-    Args:
-        timestamps (pd.Series): Series of timestamps to validate
-        
-    Returns:
-        bool: True if timestamps pass basic integrity checks
-    """
-    # Check for NaN values
-    if timestamps.isna().any():
-        return False
-    
-    # Check for monotonic increase
-    if not timestamps.is_monotonic_increasing:
-        return False
-    
-    return True
-
 def validate_buffer_state(self) -> None:
     """Validate current buffer state.
     

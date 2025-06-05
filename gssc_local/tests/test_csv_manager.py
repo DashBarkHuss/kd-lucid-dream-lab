@@ -231,20 +231,6 @@ def test_add_sleep_stage_invalid(csv_manager, sample_data):
     with pytest.raises(CSVDataError):
         csv_manager.add_sleep_stage_to_sleep_stage_csv(2.0, 1.0, 0.0, "invalid")
 
-def test_validate_timestamp_continuity(csv_manager):
-    """Test timestamp continuity validation."""
-    # Test valid timestamps
-    valid_timestamps = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
-    assert csv_manager._validate_timestamp_continuity(valid_timestamps) is True
-    
-    # Test non-monotonic timestamps
-    non_monotonic = pd.Series([1.0, 3.0, 2.0, 4.0, 5.0])
-    assert csv_manager._validate_timestamp_continuity(non_monotonic) is False
-    
-    # Test timestamps with NaN
-    with_nan = pd.Series([1.0, 2.0, np.nan, 4.0, 5.0])
-    assert csv_manager._validate_timestamp_continuity(with_nan) is False
-
 def test_validate_file_path(csv_manager):
     """Test file path validation."""
     # Test valid path
