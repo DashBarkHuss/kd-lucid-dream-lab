@@ -254,19 +254,9 @@ class CSVManager:
             CSVDataError: If data validation fails
         """
         try:
-            self.logger.info("\n=== CSVManager.save_all_data() ===")
-            self.logger.info(f"Main buffer size: {len(self.main_csv_buffer)}")
-            self.logger.info(f"Sleep stage buffer size: {len(self.sleep_stage_buffer)}")
-            
-            # Debug logging
-            print(f"\n=== Debug: CSVManager.save_all_data ===")
-            print(f"Main buffer size: {self.main_buffer_size}")
-            print(f"Main buffer length: {len(self.main_csv_buffer)}")
-            print(f"Sleep stage buffer length: {len(self.sleep_stage_buffer)}")
-            
+
             # If no data to save, just return success
             if not self.main_csv_buffer and not self.sleep_stage_buffer:
-                self.logger.info("No data in buffers to save")
                 return True
             
             # Only check paths if we have data to save
@@ -275,20 +265,15 @@ class CSVManager:
             if not self.sleep_stage_csv_path:
                 raise CSVExportError("Sleep stage CSV path not configured")
             
-            self.logger.info(f"Main CSV path: {self.main_csv_path}")
-            self.logger.info(f"Sleep stage CSV path: {self.sleep_stage_csv_path}")
-            
+
             # Save any remaining data in the main buffer
             if self.main_csv_buffer:
-                self.logger.info(f"Saving {len(self.main_csv_buffer)} remaining rows")
                 self.save_incremental_to_csv()
                 
             # Save any remaining sleep stage data
             if self.sleep_stage_buffer:
-                self.logger.info(f"Saving {len(self.sleep_stage_buffer)} remaining sleep stage entries")
                 self.save_sleep_stages_to_csv()
                 
-            self.logger.info("=== End save_all_data() ===\n")
             return True
             
         except Exception as e:
@@ -383,12 +368,7 @@ class CSVManager:
             MissingOutputPathError: If adding data would exceed buffer size limit
         """
         try:
-            self.logger.info(f"\n=== Adding sleep stage ===")
-            self.logger.info(f"Sleep stage: {sleep_stage}")
-            self.logger.info(f"Buffer ID: {buffer_id}")
-            self.logger.info(f"Timestamp range: {timestamp_start:.2f} to {timestamp_end:.2f}")
-            self.logger.info(f"Current buffer size: {len(self.sleep_stage_buffer)}")
-            
+
             # Validate inputs using the new validation function
             validate_sleep_stage_data(sleep_stage, buffer_id, timestamp_start, timestamp_end)
             
@@ -415,18 +395,15 @@ class CSVManager:
                             if not has_content:
                                 f.write("timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id\n")
                             np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
-                        self.logger.debug(f"Saved {len(entries_to_save)} entries to {self.sleep_stage_csv_path}")
                     # Clear buffer
                     self.sleep_stage_buffer.clear()
-                    self.logger.debug("Buffer cleared")
                 else:
                     raise MissingOutputPathError(f"Sleep stage buffer is full (size: {self.sleep_stage_buffer_size}) and no output path is set")
             
             # Prepare and add the new entry
             sleep_stage_entry = (float(timestamp_start), float(timestamp_end), float(sleep_stage), float(buffer_id))
             self.sleep_stage_buffer.append(sleep_stage_entry)
-            self.logger.debug(f"Added sleep stage entry: {sleep_stage_entry}")
-            self.logger.debug(f"Current buffer size: {len(self.sleep_stage_buffer)}")
+
             
             return True
             
@@ -450,10 +427,8 @@ class CSVManager:
             CSVExportError: If cleanup fails
         """
         try:
-            self.logger.info("Cleaning up CSVManager resources")
             
             # Clear data buffers
-            self.logger.info(f"[L747] Buffer before clear: size={len(self.main_csv_buffer)}")
             self.main_csv_buffer.clear()
             self.sleep_stage_buffer.clear()
             
@@ -465,7 +440,6 @@ class CSVManager:
                 self.main_csv_path = None
                 self.sleep_stage_csv_path = None
             
-            self.logger.info("CSVManager cleanup completed successfully")
             
         except Exception as e:
             self.logger.error(f"Error during CSVManager cleanup: {e}")
@@ -503,7 +477,6 @@ class CSVManager:
                 
             # return early if buffer is empty
             if not self.main_csv_buffer:
-                self.logger.debug("Buffer is empty, returning without file operations because save_incremental_to_csv cannot save empty buffers to the CSV file.")
                 return True
             
             # Get timestamp channel index
@@ -518,7 +491,6 @@ class CSVManager:
             
             # Convert to numpy array
             data_array = np.array(self.main_csv_buffer, dtype=float)
-            self.logger.info(f"[L888] Data array shape before format specifiers: {data_array.shape}")
             
             # Create format specifiers - all columns use float format
             fmt = ['%.6f'] * data_array.shape[1]
@@ -528,7 +500,6 @@ class CSVManager:
                 # Log before appending
                 with open(self.main_csv_path, 'r') as f:
                     samples_before = sum(1 for _ in f)
-                self.logger.info(f"Appending to file. Samples before append: {samples_before}")
                 
                 # Append to existing file
                 with open(self.main_csv_path, 'a') as f:
@@ -537,10 +508,9 @@ class CSVManager:
                 # Log after appending
                 with open(self.main_csv_path, 'r') as f:
                     samples_after = sum(1 for _ in f)
-                self.logger.info(f"Append complete. Samples after append: {samples_after}")
             else:
                 # Log before creating new file
-                self.logger.info("Creating new file") # TODO: this is too coupled. WE should be creating the file in the add_data_to_buffer method on the initial data chunk.
+                 # TODO: this is too coupled. WE should be creating the file in the add_data_to_buffer method on the initial data chunk.
                 
                 # Create a new file
                 np.savetxt(self.main_csv_path, data_array, delimiter='\t', fmt=fmt)
@@ -548,21 +518,17 @@ class CSVManager:
                 # Log after creating new file
                 with open(self.main_csv_path, 'r') as f:
                     samples_after = sum(1 for _ in f)
-                self.logger.info(f"New file created. Samples in new file: {samples_after}")
             
             # Clear buffer after saving
             if self.main_csv_buffer:
                 self.last_saved_timestamp = self.main_csv_buffer[-1][timestamp_channel]
-            self.logger.info(f"[L948] Buffer before clear: size={len(self.main_csv_buffer)}")
             self.main_csv_buffer.clear()
-            self.logger.info(f"L951 Buffer size after clearing: {len(self.main_csv_buffer)}")
-            self.logger.info("=== End save_incremental_to_csv ===\n")
+
             
             # Log file state after save
             if os.path.exists(self.main_csv_path):
                 with open(self.main_csv_path, 'r') as f:
                     total_samples = sum(1 for _ in f)
-                self.logger.info(f"Total samples in CSV after save: {total_samples}")
             
             return True
             
@@ -596,8 +562,7 @@ class CSVManager:
                     # - sleep stage and buffer ID: use integer format since they're discrete values
                     fmt = ['%.6f', '%.6f', '%.0f', '%.0f']
                     np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
-            else:
-                self.logger.debug("No data provided to _create_sleep_stage_file, skipping file creation")
+
         except (IOError, OSError) as e:
             self.logger.error(f"Failed to create sleep stage file: {e}")
             raise CSVExportError(f"Failed to create sleep stage file: {e}")
@@ -622,20 +587,14 @@ class CSVManager:
         try:
             # First check if we have any data to save
             if not self.sleep_stage_buffer:
-                self.logger.debug("Sleep stage buffer is empty")
                 # If file exists and is empty (no content or just header), delete it
                 if os.path.exists(self.sleep_stage_csv_path):
-                    self.logger.debug(f"File exists at {self.sleep_stage_csv_path}")
                     with open(self.sleep_stage_csv_path, 'r') as f:
                         content = f.read().strip()
-                        self.logger.debug(f"File content: '{content}'")
                         # Delete if file is completely empty or contains only the header
                         if content == "" or content == "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id":
-                            self.logger.debug("File is empty or contains only header, deleting")
                             os.remove(self.sleep_stage_csv_path)
-                            self.logger.debug("File deleted")
-                        else:
-                            self.logger.debug("File contains actual data, keeping it")
+
                 return True
             
             # Then check if we have a path to save to
@@ -643,11 +602,8 @@ class CSVManager:
                 raise CSVExportError("No sleep stage CSV path set")
             
             # Convert buffer to numpy array
-            self.logger.debug(f"Sleep stage buffer before conversion: {self.sleep_stage_buffer}")
             data_array = np.array(self.sleep_stage_buffer, dtype=float)
-            self.logger.debug(f"Data array shape: {data_array.shape}")
-            self.logger.debug(f"Data array content: {data_array}")
-            
+
             # Create format specifiers:
             # - timestamps: match BrainFlow's 6 decimal places for exact matching
             # - sleep stage and buffer ID: use integer format since they're discrete values
@@ -753,10 +709,7 @@ class CSVManager:
             
             # Store original string timestamps before converting to numeric
             main_df['timestamp_str'] = main_df['timestamp'].astype(str)
-            
-            logging.info(f"Read main CSV file with {len(main_df)} rows")
-            logging.info(f"Main CSV columns: {main_df.columns.tolist()}")
-            
+
             # Create a copy of the main dataframe
             merged_df = main_df.copy()
             
@@ -790,10 +743,7 @@ class CSVManager:
                         sleep_stage_df['timestamp_end'] = pd.to_numeric(sleep_stage_df['timestamp_end'], errors='raise')
                     except ValueError as e:
                         raise CSVFormatError(f"Invalid timestamp format: {e}")
-                    
-                    logging.info(f"Read sleep stage CSV file with {len(sleep_stage_df)} rows")
-                    logging.info(f"Sleep stage data:\n{sleep_stage_df}")
-                    
+
                     # Sort sleep stage dataframe by timestamp
                     sleep_stage_df = sleep_stage_df.sort_values('timestamp_start')
                     
@@ -805,9 +755,6 @@ class CSVManager:
                         # 2. Each sleep stage must be assigned to its exact end timestamp
                         # 3. Using string comparison avoids floating point precision issues
                         # 4. This ensures data integrity by preventing sleep stages from being assigned to nearby timestamps
-                        self.logger.debug(f"\nDEBUG: Comparing timestamps:")
-                        self.logger.debug(f"Sleep stage end timestamp (str): {sleep_row.timestamp_end_str}")
-                        self.logger.debug(f"Available main timestamps (first 5): {merged_df['timestamp_str'].head().tolist()}")
                         end_mask = merged_df['timestamp_str'] == sleep_row.timestamp_end_str
                         matching_samples = merged_df[end_mask]
                         
@@ -832,7 +779,6 @@ class CSVManager:
                         # Assign the sleep stage and buffer ID to the matching samples
                         merged_df.loc[end_mask, 'sleep_stage'] = sleep_row.sleep_stage
                         merged_df.loc[end_mask, 'buffer_id'] = sleep_row.buffer_id
-                        self.logger.debug(f"Assigned sleep stage {sleep_row.sleep_stage} to timestamp {sleep_row.timestamp_end_str}")
             else:
                 self.logger.info(f"Sleep stage file not found at {sleep_stage_path}. Proceeding with merge using NaN values for sleep stage and buffer ID.")
             
@@ -847,7 +793,6 @@ class CSVManager:
             
             # Save merged data
             merged_df.to_csv(output_path, sep='\t', index=False, float_format='%.6f')
-            logging.info(f"Saved merged file to {output_path}")
             
             return True
             
@@ -859,7 +804,7 @@ class CSVManager:
             # Re-raise our custom exceptions as-is
             raise
         except Exception as e:
-            logging.error(f"Failed to merge files: {str(e)}")
+            self.logger.error(f"Failed to merge files: {str(e)}")
             raise CSVExportError(f"Failed to merge files: {e}")
 
     def _get_timestamp_channel_index(self) -> int:
