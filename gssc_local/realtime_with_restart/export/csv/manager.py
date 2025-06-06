@@ -32,7 +32,8 @@ from .validation import (
     validate_file_path,
     validate_saved_csv_matches_original_source,
     validate_sleep_stage_data,
-    validate_sleep_stage_csv_format
+    validate_sleep_stage_csv_format,
+    validate_buffer_size_and_path
 )
 
 class CSVManager:
@@ -91,16 +92,30 @@ class CSVManager:
         self.validate_saved_csv_matches_original_source = lambda original_csv_path, output_path=None: validate_saved_csv_matches_original_source(self, original_csv_path, output_path)
     
    
+    def _check_buffer_overflow(self, buffer: List[Tuple[float, float, float, float]], buffer_size: int) -> bool:
+        """Check if buffer would overflow with current size.
+
+        Returns:
+            bool: True if buffer would overflow, False otherwise
+        """
+        return len(buffer) >= buffer_size
+    
     def _check_main_buffer_overflow(self) -> bool:
         """Check if main buffer (BrainFlow data) would overflow with current size.
-        
-        This method specifically checks the main_csv_buffer which holds BrainFlow data.
-        For sleep stage buffer overflow checks, use _check_sleep_stage_buffer_overflow().
         
         Returns:
             bool: True if main buffer would overflow, False otherwise
         """
-        return len(self.main_csv_buffer) >= self.main_buffer_size
+        return self._check_buffer_overflow(self.main_csv_buffer, self.main_buffer_size)
+    
+    def _check_sleep_stage_buffer_overflow(self) -> bool:
+        """Check if sleep stage buffer would overflow with current size.
+        
+        Returns:
+            bool: True if sleep stage buffer would overflow, False otherwise
+        """
+        return self._check_buffer_overflow(self.sleep_stage_buffer, self.sleep_stage_buffer_size)
+
 
     def clear_output_file(self) -> None: # TODO: naming is confusing becuase it doens't except a file path.
         """Clear both the main CSV file and sleep stage CSV file if they exist."""
@@ -136,56 +151,32 @@ class CSVManager:
             BufferOverflowError: If adding data would exceed buffer size limit
         """
         try:
-            # Add start logging
-            self.logger.info("\n=== CSVManager.add_data_to_buffer [L317] ===")
-            self.logger.info(f"Received data shape: {new_data.shape}")
-            self.logger.info(f"Current buffer size: {len(self.main_csv_buffer)}")
-            self.logger.info(f"Buffer size limit: {self.main_buffer_size}")
-            self.logger.info(f"Is initial data: {is_initial}")
-
-            # Log the current CSV file and total samples
-            if self.main_csv_path and os.path.exists(self.main_csv_path):
-                with open(self.main_csv_path, 'r') as f:
-                    total_samples = sum(1 for _ in f)
-                self.logger.info(f"Current CSV file: {self.main_csv_path}")
-                self.logger.info(f"Total samples in CSV: {total_samples}")
-            else:
-                self.logger.info("No existing CSV file")
-
             self._validate_data_shape(new_data)
             
-            # Validate that we have an output path if data would exceed buffer size
-            if len(new_data.T) > self.main_buffer_size and not self.main_csv_path:
-                self.logger.error(f"Missing output path: Initial data size {len(new_data.T)} exceeds buffer size limit {self.main_buffer_size}")
-                raise MissingOutputPathError(f"Output path must be set before accepting data that exceeds buffer size limit {self.main_buffer_size}")
+            # Validate buffer size and output path requirements
+            validate_buffer_size_and_path(len(new_data.T), self.main_buffer_size, self.main_csv_path)
             
-            # Convert data to list of rows
+            # Convert data to list of rows, important to transpose the brainflow data first
             new_rows = new_data.T.tolist()
 
             # Get timestamp channel index
-            if self.board_shim is not None:
-                timestamp_channel = self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
-            else:
-                raise CSVExportError("board_shim is not set; cannot determine timestamp channel index")
+           
+            timestamp_channel = self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
 
             if is_initial:
-                self.logger.warning("[DEBUG] add_data_to_buffer: is_initial=True. Treating this as initial data chunk.")
                 # Clear the output file early for initial data
                 self.clear_output_file()
                 # Add all rows for initial data first
                 self.main_csv_buffer.extend(new_rows)
+
+                # save the last saved timestamp
                 if new_rows:
                     self.last_saved_timestamp = new_rows[-1][timestamp_channel]
                 
                 # Then check if buffer size exceeds limit
-                if len(self.main_csv_buffer) > self.main_buffer_size:
-                    # if the data is too large for the buffer, save data to the csv
-                    self.logger.info(f"Initial data size {len(new_rows)} exceeds buffer size limit {self.main_buffer_size}. This is expected behavior. Saving data to csv.")
-                    # Store the length before saving
-                    data_size = len(new_rows)
-                    self.logger.info(f"[L392] Buffer before save_incremental_to_csv: size={len(self.main_csv_buffer)}")
+                if self._check_main_buffer_overflow():
+                    # if the data is too large for the buffer, save data to the csv 
                     self.save_incremental_to_csv(is_initial=True)  # This will save and clear the buffer
-                    self.logger.info(f"[L394] Buffer after save_incremental_to_csv: size={len(self.main_csv_buffer)}")
                     self.last_saved_timestamp = None
             else:
                 # For subsequent data, filter out exact duplicates
@@ -205,12 +196,10 @@ class CSVManager:
                         self.last_saved_timestamp = rows_to_add[-1][timestamp_channel]
                     
                     # Then check if buffer size exceeds limit
-                    if len(self.main_csv_buffer) > self.main_buffer_size:
-                        self.logger.info(f"Saving current buffer due to buffer overflow. This is expected behavior. Current size: {len(self.main_csv_buffer)}, Adding: {len(rows_to_add)}, Limit: {self.main_buffer_size}.")
+                    if self._check_main_buffer_overflow():
                         # Save current buffer
-                        self.logger.info(f"[L378] Buffer before save_incremental_to_csv: size={len(self.main_csv_buffer)}")
                         self.save_incremental_to_csv()  # This clears the buffer
-                        self.logger.info(f"[L380] Buffer after save_incremental_to_csv: size={len(self.main_csv_buffer)}")
+
                 else: # if no last saved timestamp
                     # TODO: This seems like a duplicate of the code above in the block for if is_initial:
                     # TODO: continued... Isn't "If no last saved timestamp" the same as if is_initial?
@@ -220,20 +209,10 @@ class CSVManager:
                         self.last_saved_timestamp = new_rows[-1][timestamp_channel]
                     
                     # Then check if buffer size exceeds limit
-                    if len(self.main_csv_buffer) > self.main_buffer_size:
-                        self.logger.info(f"Saving current buffer due to buffer overflow. This is expected behavior. Current size: {len(self.main_csv_buffer)}, Adding: {len(new_rows)}, Limit: {self.main_buffer_size}")
+                    if self._check_main_buffer_overflow():
                         # Save current buffer
-                        self.logger.info(f"[L399] Buffer before save_incremental_to_csv: size={len(self.main_csv_buffer)}")
                         self.save_incremental_to_csv()  # This clears the buffer
-                        self.logger.info(f"[L401] Buffer after save_incremental_to_csv: size={len(self.main_csv_buffer)}")
             
-            # Add end logging
-            self.logger.info(f"Buffer size after adding data: {len(self.main_csv_buffer)}")
-            if self.main_csv_path and os.path.exists(self.main_csv_path):
-                with open(self.main_csv_path, 'r') as f:
-                    total_samples = sum(1 for _ in f)
-                self.logger.info(f"Total samples in CSV after save: {total_samples}")
-            self.logger.info("=== End add_data_to_buffer ===\n")
 
             return True
             
@@ -398,7 +377,7 @@ class CSVManager:
             validate_sleep_stage_data(sleep_stage, buffer_id, timestamp_start, timestamp_end)
             
             # Check if adding this entry would exceed buffer size
-            if len(self.sleep_stage_buffer) >= self.sleep_stage_buffer_size:
+            if self._check_sleep_stage_buffer_overflow():
                 if self.sleep_stage_csv_path:
                     # Save current buffer contents
                     entries_to_save = self.sleep_stage_buffer.copy()
@@ -857,13 +836,6 @@ class CSVManager:
             logging.error(f"Failed to merge files: {str(e)}")
             raise CSVExportError(f"Failed to merge files: {e}")
 
-    def _check_sleep_stage_buffer_overflow(self) -> bool:
-        """Check if sleep stage buffer would overflow with current size.
-        
-        Returns:
-            bool: True if buffer would overflow, False otherwise
-        """
-        return len(self.sleep_stage_buffer) >= self.sleep_stage_buffer_size
 
     def _handle_buffer_error(self, error: Exception) -> None:
         """Handle buffer-related errors.

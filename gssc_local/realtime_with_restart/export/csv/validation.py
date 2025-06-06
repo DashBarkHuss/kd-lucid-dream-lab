@@ -217,4 +217,22 @@ def validate_sleep_stage_csv_format(header: str, first_line: Optional[str] = Non
             if '.' not in timestamp_end_str or len(timestamp_end_str.split('.')[-1]) != 6:
                 raise CSVFormatError(f"Timestamp end {timestamp_end_str} does not have six decimal places")
         except ValueError:
-            raise CSVFormatError(f"Invalid timestamp format: {timestamp_end_str}") 
+            raise CSVFormatError(f"Invalid timestamp format: {timestamp_end_str}")
+
+def validate_buffer_size_and_path(data_size: int, buffer_size: int, output_path: Optional[str]) -> None:
+    """Validate that we have an output path if data would exceed buffer size.
+    
+    Validation rules:
+    - If data size would exceed buffer size, output path must be set
+    
+    Args:
+        data_size (int): Size of the data to be added
+        buffer_size (int): Maximum size of the buffer
+        output_path (Optional[str]): Path where data will be saved
+        
+    Raises:
+        MissingOutputPathError: If data would exceed buffer size and no output path is set
+    """
+    if data_size > buffer_size and not output_path:
+        logger.error(f"Missing output path: Initial data size {data_size} exceeds buffer size limit {buffer_size}")
+        raise MissingOutputPathError(f"Output path must be set before accepting data that exceeds buffer size limit {buffer_size}") 
