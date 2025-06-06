@@ -576,6 +576,32 @@ class CSVManager:
             self.logger.error(f"Failed to save CSV: {e}")
             raise CSVExportError(f"Failed to save CSV: {e}")
 
+    def _create_sleep_stage_file(self, data_array: Optional[np.ndarray] = None) -> None:
+        """Create a new sleep stage file with header and optionally write data.
+        
+        Args:
+            data_array (Optional[np.ndarray]): Data to write to the file. If None, only creates header.
+            
+        Raises:
+            CSVExportError: If file creation fails
+        """
+        try:
+            # Only create file if we have data to write
+            if data_array is not None:
+                header = "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id\n"
+                with open(self.sleep_stage_csv_path, 'w') as f:
+                    f.write(header)
+                    # Create format specifiers:
+                    # - timestamps: match BrainFlow's 6 decimal places for exact matching
+                    # - sleep stage and buffer ID: use integer format since they're discrete values
+                    fmt = ['%.6f', '%.6f', '%.0f', '%.0f']
+                    np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
+            else:
+                self.logger.debug("No data provided to _create_sleep_stage_file, skipping file creation")
+        except (IOError, OSError) as e:
+            self.logger.error(f"Failed to create sleep stage file: {e}")
+            raise CSVExportError(f"Failed to create sleep stage file: {e}")
+
     def save_sleep_stages_to_csv(self) -> bool:
         """Save current sleep stage buffer contents to CSV file and clear the buffer.
         
@@ -643,10 +669,7 @@ class CSVManager:
                     np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
             else:
                 # Create new file with header and data
-                header = "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id\n"
-                with open(self.sleep_stage_csv_path, 'w') as f:
-                    f.write(header)
-                    np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
+                self._create_sleep_stage_file(data_array)
             
             # Clear buffer
             self.sleep_stage_buffer.clear()
