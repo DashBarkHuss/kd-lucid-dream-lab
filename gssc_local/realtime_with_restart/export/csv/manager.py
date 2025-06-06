@@ -12,13 +12,6 @@ Key Features:
 - Exact format preservation for compatibility
 - Comprehensive validation and error handling
 
-BREAKING CHANGES:
-The following methods have been updated with new buffer management logic:
-# TODO: We should eventually remove the old methods and only use the new ones.
-- save_new_data_to_csv_buffer() -> add_data_to_buffer()
-- add_sleep_stage_to_csv_buffer() -> add_sleep_stage_to_sleep_stage_csv()
-- save_to_csv() -> save_all_and_cleanup()
-
 
 See individual method docstrings for detailed documentation.
 """
@@ -123,8 +116,7 @@ class CSVManager:
     def add_data_to_buffer(self, new_data: np.ndarray, is_initial: bool = False) -> bool:
         """Add new data to the buffer and handle buffer management.
         
-        This method is the new implementation of save_new_data_to_csv_buffer with
-        improved buffer management. It handles:
+        This method handles:
         - Data validation
         - Managing possible duplicate timestamps from stream
         - Buffer size checks
@@ -252,31 +244,6 @@ class CSVManager:
             self.logger.error(f"Buffer overflow: {e}")
             raise
 
-    def save_new_data_to_csv_buffer(self, new_data: np.ndarray, is_initial: bool = False) -> bool:
-        """Legacy method that now uses add_data_to_buffer.
-        TODO: This method is deprecated and should be deleted. Use add_data_to_buffer() instead.
-
-        BREAKING CHANGE: This method's behavior has changed to use the new buffer management system.
-        It no longer behaves exactly as it did in previous versions.
-        
-        This method is kept for backward compatibility and will be deprecated in a future version.
-        Please use add_data_to_buffer() instead.
-        
-        Args:
-            new_data (np.ndarray): New data to save (channels x samples)
-            is_initial (bool): Whether this is the initial data chunk
-            
-        Returns:
-            bool: True if data was saved successfully
-            
-        Raises:
-            CSVDataError: If data validation fails
-            BufferOverflowError: If adding data would exceed buffer size limit
-        """
-        import warnings
-        warnings.warn("save_new_data_to_csv_buffer() is deprecated. Please use add_data_to_buffer() instead.", DeprecationWarning)
-        return self.add_data_to_buffer(new_data, is_initial)
-
     def save_all_data(self) -> bool:
         """Save all remaining data in both main and sleep stage buffers to their respective CSV files.
         
@@ -396,30 +363,7 @@ class CSVManager:
             self.logger.error(f"Failed to save all data and cleanup: {e}")
             raise CSVExportError(f"Failed to save all data and cleanup: {e}")
 
-    def save_to_csv(self) -> bool:
-        """Legacy method that now uses save_all_data and cleanup.
-        TODO: This method is deprecated and should be deleted. Use save_all_and_cleanup() instead.
-        
-        BREAKING CHANGE: This method's behavior has changed to use the new buffer management system.
-        It no longer behaves exactly as it did in previous versions.
-        
-        This method is kept for backward compatibility and will be deprecated in a future version.
-        Please use save_all_data() followed by cleanup() instead.
-        
-        Returns:
-            bool: True if save was successful
-            
-        Raises:
-            CSVExportError: If save operation fails
-            CSVDataError: If data validation fails
-        """
-        import warnings
-        self.logger.warning("save_to_csv() is deprecated. Please use save_all_data() followed by cleanup() instead.")
-        warnings.warn("save_to_csv() is deprecated. Please use save_all_data() followed by cleanup() instead.", DeprecationWarning)
-        result = self.save_all_data()
-        self.cleanup(reset_paths=True)
-        return result
-    
+
 
     
     def add_sleep_stage_to_sleep_stage_csv(self, sleep_stage: float, buffer_id: float, timestamp_start: float, timestamp_end: float) -> bool:
@@ -497,32 +441,6 @@ class CSVManager:
                 raise
             raise CSVDataError(f"Failed to add sleep stage to buffer: {e}")
 
-    def add_sleep_stage_to_csv_buffer(self, sleep_stage: float, next_buffer_id: float, epoch_end_idx: int) -> bool:
-        """Legacy method that is no longer supported due to breaking changes.
-        TODO: This method is deprecated and should be deleted. Use add_sleep_stage_to_sleep_stage_csv() instead.
-        
-        BREAKING CHANGE: This method signature is incompatible with the new buffer management system.
-        The new method requires explicit timestamps instead of epoch indices.
-        
-        Please use add_sleep_stage_to_sleep_stage_csv(sleep_stage, buffer_id, timestamp_start, timestamp_end) instead.
-        
-        Args:
-            sleep_stage (float): Sleep stage classification
-            next_buffer_id (float): ID of the next buffer
-            epoch_end_idx (int): Index where to add the data
-            
-        Returns:
-            bool: Always raises NotImplementedError
-            
-        Raises:
-            NotImplementedError: This method is no longer supported
-        """
-        self.logger.warning(f"Deprecated method add_sleep_stage_to_csv_buffer called with sleep_stage={sleep_stage}, next_buffer_id={next_buffer_id}, epoch_end_idx={epoch_end_idx}")
-        raise NotImplementedError(
-            "add_sleep_stage_to_csv_buffer() is no longer supported due to breaking changes. "
-            "Use add_sleep_stage_to_sleep_stage_csv(sleep_stage, buffer_id, timestamp_start, timestamp_end) instead."
-        )
-    
     def cleanup(self, reset_paths: bool = True) -> None:
         """Clean up resources and reset state.
         
@@ -938,10 +856,6 @@ class CSVManager:
         except Exception as e:
             logging.error(f"Failed to merge files: {str(e)}")
             raise CSVExportError(f"Failed to merge files: {e}")
-
-
-
-
 
     def _check_sleep_stage_buffer_overflow(self) -> bool:
         """Check if sleep stage buffer would overflow with current size.

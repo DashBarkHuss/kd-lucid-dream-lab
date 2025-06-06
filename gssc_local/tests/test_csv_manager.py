@@ -111,43 +111,6 @@ def test_validate_data_shape_invalid(csv_manager, csv_manager_large_index):
     with pytest.raises(CSVDataError):
         csv_manager._validate_data_shape(data_with_nan)
 
-def test_save_new_data_initial(csv_manager, sample_data):
-    """Test saving initial data."""
-    result = csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
-    assert result is True
-    assert len(csv_manager.main_csv_buffer) == sample_data.shape[1]
-    # Get timestamp from the timestamp channel
-    timestamp_channel = BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)
-    assert csv_manager.last_saved_timestamp == sample_data[timestamp_channel, -1]
-
-def test_save_new_data_subsequent(csv_manager, sample_data):
-    """Test saving subsequent data."""
-    # Save initial data
-    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
-    initial_length = len(csv_manager.main_csv_buffer)
-    # Create new data with some overlap (last 5 samples)
-    new_data = sample_data[:, -5:]
-    result = csv_manager.save_new_data_to_csv_buffer(new_data)
-    assert result is True
-    # Should add new rows since they have different timestamps
-    assert len(csv_manager.main_csv_buffer) > initial_length
-
-def test_save_to_csv(csv_manager, sample_data, temp_csv_path):
-    """Test saving data to CSV file."""
-    # Save some data first
-    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
-    # Set both paths
-    csv_manager.main_csv_path = temp_csv_path
-    csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
-    # Save to CSV
-    result = csv_manager.save_to_csv()
-    assert result is True
-    # Verify file exists and has correct content
-    assert os.path.exists(temp_csv_path)
-    saved_data = np.loadtxt(temp_csv_path, delimiter='\t')
-    # Compare all channels with exact equality
-    np.testing.assert_array_equal(saved_data, sample_data.T)
-
 def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, temp_csv_path):
     """Test validation against original source."""
     print(f"\nDEBUG: sample_data shape: {sample_data.shape}")
@@ -196,7 +159,7 @@ def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, te
 def test_add_sleep_stage_to_csv_buffer(csv_manager, sample_data):
     """Test adding sleep stage data."""
     # Save initial data
-    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
+    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
     # Add sleep stage data
     sleep_stage = 2.0
     buffer_id = 1.0
@@ -214,7 +177,7 @@ def test_add_sleep_stage_to_csv_buffer(csv_manager, sample_data):
 def test_add_sleep_stage_invalid(csv_manager, sample_data):
     """Test adding invalid sleep stage data."""
     # Save initial data
-    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
+    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
     
     # Test invalid sleep stage type
     with pytest.raises(CSVDataError):
@@ -321,65 +284,6 @@ def test_buffer_management_empty_data(csv_manager, temp_csv_path):
     empty_data = np.array([[]])
     with pytest.raises(CSVDataError):
         csv_manager.add_data_to_buffer(empty_data, is_initial=True)
-
-
-def test_backward_compatibility_save_new_data(csv_manager, sample_data):
-    """Test backward compatibility of save_new_data_to_csv_buffer.
-    
-    Note: This test verifies that the deprecated method still works,
-    but its behavior has changed to use the new buffer management system.
-    """
-    # Test that old method still works and issues deprecation warning
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        result = csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
-        assert result is True
-        assert len(csv_manager.main_csv_buffer) == sample_data.shape[1]
-        # Check for deprecation warning
-        assert any("deprecated" in str(warning.message) for warning in w)
-
-def test_backward_compatibility_save_to_csv(csv_manager, sample_data, temp_csv_path):
-    """Test backward compatibility of save_to_csv.
-    
-    Note: This test verifies that the deprecated method still works,
-    but its behavior has changed to use the new buffer management system.
-    """
-    # Save some data first
-    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
-
-    # Test that old method still works and issues deprecation warning
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        # Set both paths
-        csv_manager.main_csv_path = temp_csv_path
-        csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'  # Add sleep stage path
-        result = csv_manager.save_to_csv()
-        assert result is True
-        # Verify deprecation warning was issued
-        assert any("save_to_csv() is deprecated" in str(warning.message) for warning in w)
-
-    # Verify file exists and has correct content
-    assert os.path.exists(temp_csv_path)
-    saved_data = np.loadtxt(temp_csv_path, delimiter='\t')
-    # Compare all channels with exact equality
-    np.testing.assert_array_equal(saved_data, sample_data.T)
-
-def test_backward_compatibility_add_sleep_stage(csv_manager, sample_data):
-    """Test that the old add_sleep_stage_to_csv_buffer method properly fails with breaking change notice.
-    
-    This method is no longer supported due to incompatible signature changes.
-    The new method requires explicit timestamps instead of epoch indices.
-    """
-    # Save initial data
-    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
-    
-    # Test that old method raises NotImplementedError with helpful message
-    with pytest.raises(NotImplementedError) as exc_info:
-        csv_manager.add_sleep_stage_to_csv_buffer(2.0, 1.0, 0)
-    
-    # Verify the error message is helpful
-    assert "no longer supported due to breaking changes" in str(exc_info.value)
-    assert "add_sleep_stage_to_sleep_stage_csv" in str(exc_info.value)
 
 def test_add_sleep_stage_to_sleep_stage_csv(csv_manager, sample_data, temp_csv_path):
     """Test adding sleep stage data to sleep stage buffer."""
@@ -505,19 +409,18 @@ def test_save_all_and_cleanup_proper_cleanup(csv_manager, sample_data, temp_csv_
     assert csv_manager.main_csv_path is None
     assert csv_manager.sleep_stage_csv_path is None
 
-def test_backward_compatibility_save_all_and_cleanup(csv_manager, sample_data, temp_csv_path):
+def test_save_all_and_cleanup_method(csv_manager, sample_data, temp_csv_path):
     """Test the save_all_and_cleanup convenience method.
     
-    Note: save_all_and_cleanup() is not a deprecated method, but a new convenience method
-    that combines save_all_data() and cleanup(). This test ensures it works correctly.
+    This method combines save_all_data() and cleanup() into a single operation.
     """
     # Set main path
     csv_manager.main_csv_path = temp_csv_path
     
     # Save some data
-    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
+    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
     
-    # Add sleep stage data with new method signature
+    # Add sleep stage data
     csv_manager.add_sleep_stage_to_sleep_stage_csv(2.0, 1.0, 0.0, 30.0)
     
     # Test that the method works correctly
@@ -536,7 +439,7 @@ def test_save_all_data(csv_manager, sample_data, temp_csv_path):
     Run pytest with -s to see debug output.
     """
     # Add some data to the main buffer
-    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
+    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
 
     # Add some sleep stage data
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
@@ -601,10 +504,26 @@ def test_cleanup_without_path_reset(csv_manager, sample_data, temp_csv_path):
     assert csv_manager.main_csv_path == temp_csv_path
     assert csv_manager.sleep_stage_csv_path == temp_csv_path + '.sleep'
 
+def test_save_to_csv(csv_manager, sample_data, temp_csv_path):
+    """Test saving data to CSV file."""
+    # Save some data first
+    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    # Set both paths
+    csv_manager.main_csv_path = temp_csv_path
+    csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
+    # Save to CSV
+    result = csv_manager.save_incremental_to_csv()
+    assert result is True
+    # Verify file exists and has correct content
+    assert os.path.exists(temp_csv_path)
+    saved_data = np.loadtxt(temp_csv_path, delimiter='\t')
+    # Compare all channels with exact equality
+    np.testing.assert_array_equal(saved_data, sample_data.T)
+
 def test_save_to_csv_uses_new_methods(csv_manager, sample_data, temp_csv_path):
     """Test that save_to_csv uses the new methods correctly."""
     # Save initial data
-    csv_manager.save_new_data_to_csv_buffer(sample_data, is_initial=True)
+    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
 
     # Add some sleep stage data
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
@@ -613,8 +532,12 @@ def test_save_to_csv_uses_new_methods(csv_manager, sample_data, temp_csv_path):
     # Set the main path
     csv_manager.main_csv_path = temp_csv_path
 
-    # Call save_to_csv
-    result = csv_manager.save_to_csv()
+    # Call save_incremental_to_csv for main data
+    result = csv_manager.save_incremental_to_csv()
+    assert result is True
+
+    # Call save_sleep_stages_to_csv for sleep stage data
+    result = csv_manager.save_sleep_stages_to_csv()
     assert result is True
 
     # Verify files exist and have correct content
@@ -628,7 +551,8 @@ def test_save_to_csv_uses_new_methods(csv_manager, sample_data, temp_csv_path):
     np.testing.assert_array_equal(saved_data, sample_data.T)
 
     # Verify sleep stage CSV content using pandas
-    sleep_stage_data = pd.read_csv(temp_csv_path + '.sleep', delimiter='\t')
+    sleep_stage_data = pd.read_csv(temp_csv_path + '.sleep', delimiter='\t', header=None, skiprows=1,
+                                 names=['timestamp_start', 'timestamp_end', 'sleep_stage', 'buffer_id'])
     assert len(sleep_stage_data) == 1
     assert sleep_stage_data['sleep_stage'].iloc[0] == 2.0
     assert sleep_stage_data['buffer_id'].iloc[0] == 1.0
@@ -723,7 +647,6 @@ def test_save_incremental_to_csv_empty_data(csv_manager, temp_csv_path):
     assert os.path.exists(temp_csv_path)  # File should be created
     assert os.path.getsize(temp_csv_path) == 0  # File should be empty
     print("=== End test ===\n")
-
 
 def test_save_sleep_stages_to_csv_first_write(csv_manager, sample_data, temp_csv_path):
     """Test first write operation of save_sleep_stages_to_csv."""
@@ -923,8 +846,6 @@ def test_merge_files_successful(csv_manager, sample_data, temp_csv_path):
     # Verify exactly 2 rows total have non-NaN values
     assert merged_data['sleep_stage'].notna().sum() == 2, "Should have exactly 2 rows with sleep stage values"
     assert merged_data['buffer_id'].notna().sum() == 2, "Should have exactly 2 rows with buffer ID values"
-
-
 
 def test_merge_files_missing_sleep_stage_file(csv_manager, sample_data, temp_csv_path):
     """Test merge_files with missing sleep stage file.
@@ -1316,9 +1237,6 @@ def test_csv_memory_management_full_flow():
         
         print("\n=== Test completed successfully ===\n")
 
-
-
-
 def test_buffer_management_add_then_check(csv_manager, temp_csv_path):
     """Test that data is added first, then buffer size is checked."""
     # Set main path
@@ -1494,6 +1412,88 @@ def test_save_all_data_with_empty_buffers(csv_manager, sample_data, temp_csv_pat
     result = csv_manager.save_all_data()
     assert result is True  # Should succeed even with empty buffers
 
+def test_save_new_data_initial(csv_manager, sample_data):
+    """Test saving initial data."""
+    result = csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    assert result is True
+    assert len(csv_manager.main_csv_buffer) == sample_data.shape[1]
+    # Get timestamp from the timestamp channel
+    timestamp_channel = BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)
+    assert csv_manager.last_saved_timestamp == sample_data[timestamp_channel, -1]
+
+def test_save_new_data_subsequent(csv_manager, sample_data):
+    """Test saving subsequent data."""
+    # Save initial data
+    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    initial_length = len(csv_manager.main_csv_buffer)
+    # Create new data with some overlap (last 5 samples)
+    new_data = sample_data[:, -5:]
+    result = csv_manager.add_data_to_buffer(new_data)
+    assert result is True
+    # Should add new rows since they have different timestamps
+    assert len(csv_manager.main_csv_buffer) > initial_length
+
+def test_backward_compatibility_save_all_and_cleanup(csv_manager, sample_data, temp_csv_path):
+    """Test the save_all_and_cleanup convenience method.
+    
+    Note: save_all_and_cleanup() is not a deprecated method, but a new convenience method
+    that combines save_all_data() and cleanup(). This test ensures it works correctly.
+    """
+    # Set main path
+    csv_manager.main_csv_path = temp_csv_path
+    
+    # Save some data
+    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    
+    # Add sleep stage data with new method signature
+    csv_manager.add_sleep_stage_to_sleep_stage_csv(2.0, 1.0, 0.0, 30.0)
+    
+    # Test that the method works correctly
+    result = csv_manager.save_all_and_cleanup()
+    assert result is True
+    
+    # Verify cleanup was performed
+    assert len(csv_manager.main_csv_buffer) == 0
+    assert len(csv_manager.sleep_stage_buffer) == 0
+    assert csv_manager.last_saved_timestamp is None
+    assert csv_manager.main_csv_path is None
+    assert csv_manager.sleep_stage_csv_path is None
+
+def test_save_all_data(csv_manager, sample_data, temp_csv_path):
+    """Test saving all data without cleanup.
+    Run pytest with -s to see debug output.
+    """
+    # Add some data to the main buffer
+    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+
+    # Add some sleep stage data
+    csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
+    timestamp_start = 100.0
+    timestamp_end = 130.0
+    csv_manager.add_sleep_stage_to_sleep_stage_csv(2.0, 1.0, timestamp_start, timestamp_end)
+
+    # Set the main path
+    csv_manager.main_csv_path = temp_csv_path
+
+    # Call save_all_data
+    result = csv_manager.save_all_data()
+    assert result is True
+
+    # Verify files exist and have correct content
+    assert os.path.exists(temp_csv_path)
+    assert os.path.exists(temp_csv_path + '.sleep')
+
+    # Verify main CSV content
+    saved_data = np.loadtxt(temp_csv_path, delimiter='\t')
+    assert len(saved_data) > 0
+
+    # Verify sleep stage CSV content using pandas
+    sleep_stage_data = pd.read_csv(temp_csv_path + '.sleep', delimiter='\t')
+    assert len(sleep_stage_data) == 1
+    assert sleep_stage_data['sleep_stage'].iloc[0] == 2.0
+    assert sleep_stage_data['buffer_id'].iloc[0] == 1.0
+    assert sleep_stage_data['timestamp_start'].iloc[0] == timestamp_start
+    assert sleep_stage_data['timestamp_end'].iloc[0] == timestamp_end
 
 if __name__ == '__main__':
     print("\nRunning tests directly...")
