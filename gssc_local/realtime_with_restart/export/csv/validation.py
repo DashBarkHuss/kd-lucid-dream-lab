@@ -268,4 +268,46 @@ def validate_buffer_size_and_path(data_size: int, buffer_size: int, output_path:
     """
     if data_size > buffer_size and not output_path:
         logger.error(f"Missing output path: Initial data size {data_size} exceeds buffer size limit {buffer_size}")
-        raise MissingOutputPathError(f"Output path must be set before accepting data that exceeds buffer size limit {buffer_size}") 
+        raise MissingOutputPathError(f"Output path must be set before accepting data that exceeds buffer size limit {buffer_size}")
+
+def validate_data_not_empty(data: np.ndarray) -> None:
+    """Validate that the data array is not empty.
+    
+    Args:
+        data (np.ndarray): Data array to validate
+        
+    Raises:
+        CSVDataError: If data array is empty
+    """
+    if not data.size:
+        raise CSVDataError("Received empty data array")
+
+def validate_transformed_rows_not_empty(rows: list, logger=None) -> None:
+    """Validate that the transformed data rows are not empty.
+    
+    Args:
+        rows (list): List of data rows after transformation
+        logger (Optional[logging.Logger]): Logger instance for error reporting
+        
+    Raises:
+        CSVDataError: If transformed rows are empty
+    """
+    if not rows:
+        if logger:
+            logger.error("Data transformation resulted in empty rows")
+        raise CSVDataError("Data transformation resulted in empty rows")
+
+def validate_timestamp_state(is_initial: bool, last_saved_timestamp: float, logger) -> None:
+    """Validate that the timestamp state is correct for initial/non-initial data.
+    
+    Args:
+        is_initial (bool): Whether this is initial data
+        last_saved_timestamp (float): The last saved timestamp
+        logger: Logger instance for debug messages
+        
+    Raises:
+        BufferStateError: If timestamp state is invalid
+    """
+    if not is_initial and last_saved_timestamp is None:
+        logger.error("last_saved_timestamp is None for non-initial data")
+        raise BufferStateError("last_saved_timestamp is None for non-initial data. This indicates improper usage or a corrupted state. The timestamp should have been set during initial data processing.") 

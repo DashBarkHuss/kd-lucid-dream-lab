@@ -34,7 +34,10 @@ from .validation import (
     validate_sleep_stage_data,
     validate_sleep_stage_csv_format,
     validate_buffer_size_and_path,
-    validate_timestamps_unique
+    validate_timestamps_unique,
+    validate_data_not_empty,
+    validate_transformed_rows_not_empty,
+    validate_timestamp_state
 )
 
 class CSVManager:
@@ -129,6 +132,31 @@ class CSVManager:
             with open(self.sleep_stage_csv_path, 'w') as f:
                 pass
 
+    def _filter_duplicate_timestamps(self, new_rows: List[List[float]], timestamp_channel: int) -> Tuple[List[List[float]], int]:
+        """Filter out rows with timestamps less than or equal to the last saved timestamp.
+        
+        Args:
+            new_rows (List[List[float]]): List of data rows to filter
+            timestamp_channel (int): Index of the timestamp channel in each row
+            
+        Returns:
+            Tuple[List[List[float]], int]: Tuple containing:
+                - Filtered rows (only rows with timestamps greater than last_saved_timestamp)
+                - Number of duplicate rows that were filtered out
+        """
+        start_idx = 0
+        duplicate_count = 0
+        
+        for i, row in enumerate(new_rows):
+            if row[timestamp_channel] <= self.last_saved_timestamp:
+                duplicate_count += 1
+            else:
+                start_idx = i
+                break
+        
+        rows_to_add = new_rows[start_idx:]
+        return rows_to_add, duplicate_count
+
     def add_data_to_buffer(self, new_data: np.ndarray, is_initial: bool = False) -> bool:
         """Add new data to the buffer and handle buffer management.
         
@@ -152,6 +180,10 @@ class CSVManager:
             BufferOverflowError: If adding data would exceed buffer size limit
         """
         try:
+            # Validate input data first
+            validate_data_not_empty(new_data)
+                
+            # Validate data shape matches expected BrainFlow format
             self._validate_data_shape(new_data)
             
             # Validate buffer size and output path requirements
@@ -159,61 +191,44 @@ class CSVManager:
             
             # Convert data to list of rows, important to transpose the brainflow data first
             new_rows = new_data.T.tolist()
+            validate_transformed_rows_not_empty(new_rows, self.logger)
 
             # Get timestamp channel index
-           
-            timestamp_channel = self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
+            timestamp_channel = self._get_timestamp_channel_index()
+
+            # Validate timestamp state
+            validate_timestamp_state(is_initial, self.last_saved_timestamp, self.logger)
 
             if is_initial:
                 # Clear the output file early for initial data
                 self.clear_output_file()
                 # Add all rows for initial data first
                 self.main_csv_buffer.extend(new_rows)
-
-                # save the last saved timestamp
-                if new_rows:
-                    self.last_saved_timestamp = new_rows[-1][timestamp_channel]
+                # Save the last saved timestamp
+                self.last_saved_timestamp = new_rows[-1][timestamp_channel]
                 
                 # Then check if buffer size exceeds limit
                 if self._check_main_buffer_overflow():
                     # if the data is too large for the buffer, save data to the csv 
                     self.save_incremental_to_csv(is_initial=True)  # This will save and clear the buffer
-                    self.last_saved_timestamp = None
             else:
-                # For subsequent data, filter out exact duplicates
-                if self.last_saved_timestamp is not None:
-                    # Find the first row with a timestamp greater than the last saved timestamp
-                    start_idx = 0
-                    for i, row in enumerate(new_rows):
-                        if row[timestamp_channel] > self.last_saved_timestamp:
-                            start_idx = i
-                            break
-                    
-                    rows_to_add = new_rows[start_idx:]
-                    
-                    # Add rows first
+                # For subsequent data, handle duplicates by finding the first new timestamp
+                rows_to_add, duplicate_count = self._filter_duplicate_timestamps(new_rows, timestamp_channel)
+                
+                if duplicate_count > 0:
+                    self.logger.debug(f"Skipped {duplicate_count} duplicate/overlapping samples from streaming")
+                
+                # Add filtered rows to buffer
+                if rows_to_add:
                     self.main_csv_buffer.extend(rows_to_add)
-                    if rows_to_add:
-                        self.last_saved_timestamp = rows_to_add[-1][timestamp_channel]
-                    
-                    # Then check if buffer size exceeds limit
-                    if self._check_main_buffer_overflow():
-                        # Save current buffer
-                        self.save_incremental_to_csv()  # This clears the buffer
-
-                else: # if no last saved timestamp
-                    # TODO: This seems like a duplicate of the code above in the block for if is_initial:
-                    # TODO: continued... Isn't "If no last saved timestamp" the same as if is_initial?
-                    # If no last saved timestamp, add all rows first
-                    self.main_csv_buffer.extend(new_rows)
-                    if new_rows:
-                        self.last_saved_timestamp = new_rows[-1][timestamp_channel]
-                    
-                    # Then check if buffer size exceeds limit
-                    if self._check_main_buffer_overflow():
-                        # Save current buffer
-                        self.save_incremental_to_csv()  # This clears the buffer
-            
+                    self.last_saved_timestamp = rows_to_add[-1][timestamp_channel]
+                else:
+                    self.logger.debug("No new samples to add after filtering duplicates")
+                
+                # Then check if buffer size exceeds limit
+                if self._check_main_buffer_overflow():
+                    # Save current buffer
+                    self.save_incremental_to_csv()  # This clears the buffer
 
             return True
             
@@ -493,7 +508,7 @@ class CSVManager:
             
             # Get timestamp channel index
             if self.board_shim is not None:
-                timestamp_channel = self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
+                timestamp_channel = self._get_timestamp_channel_index()
             else:
                 raise CSVExportError("board_shim is not set; cannot determine timestamp channel index")
 
@@ -700,7 +715,7 @@ class CSVManager:
                 num_columns = len(first_line.split('\t'))
             
             # Get timestamp channel index from BrainFlow
-            timestamp_channel = self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
+            timestamp_channel = self._get_timestamp_channel_index()
             if timestamp_channel >= num_columns:
                 raise CSVFormatError(f"Timestamp channel index {timestamp_channel} exceeds number of columns {num_columns}")
             
@@ -824,6 +839,18 @@ class CSVManager:
             logging.error(f"Failed to merge files: {str(e)}")
             raise CSVExportError(f"Failed to merge files: {e}")
 
+    def _get_timestamp_channel_index(self) -> int:
+        """Get the timestamp channel index for the current board.
+        
+        Returns:
+            int: Index of the timestamp channel
+            
+        Raises:
+            CSVExportError: If board_shim is not set
+        """
+        if self.board_shim is None:
+            raise CSVExportError("board_shim is not set; cannot determine timestamp channel index")
+        return self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
 
     def _handle_buffer_error(self, error: Exception) -> None:
         """Handle buffer-related errors.

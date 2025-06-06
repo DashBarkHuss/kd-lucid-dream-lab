@@ -1328,17 +1328,21 @@ def test_buffer_management_subsequent_data(csv_manager, temp_csv_path):
         duration_seconds=0.1,  # Short duration for small test
         sampling_rate=125,     # 125 Hz (Cyton Daisy standard)
         add_noise=False,       # Clean data for easier verification
-        board_id=BoardIds.CYTON_DAISY_BOARD
+        board_id=BoardIds.CYTON_DAISY_BOARD,
+        start_time=1700000000.1  # Explicit start time
     )
     csv_manager.add_data_to_buffer(initial_data.T, is_initial=True)  # Transpose to match expected shape
     
     # Add subsequent data that would exceed buffer size
     # For 0.2 seconds at 125 Hz: 25 samples
+    # Start time should be after the initial data's last timestamp
+    subsequent_start_time = 1700000000.1 + 0.1  # Initial start time + initial duration
     subsequent_data, _ = create_brainflow_test_data(
         duration_seconds=0.2,  # Longer duration for larger test
         sampling_rate=125,     # 125 Hz (Cyton Daisy standard)
         add_noise=False,       # Clean data for easier verification
-        board_id=BoardIds.CYTON_DAISY_BOARD
+        board_id=BoardIds.CYTON_DAISY_BOARD,
+        start_time=subsequent_start_time  # Start after initial data ends
     )
     
     # This should trigger a save since total size would exceed buffer_size

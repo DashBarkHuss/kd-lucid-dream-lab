@@ -92,20 +92,23 @@ def test_memory_leak_detection(csv_manager):
         csv_manager.main_csv_path = main_csv_path
         csv_manager.sleep_stage_csv_path = sleep_stage_csv_path
 
-        # Generate 1 minute of test data
-        data, _ = create_brainflow_test_data(
-            duration_seconds=60,  # 1 minute
-            sampling_rate=125,    # 125 Hz
-            add_noise=False,
-            board_id=BoardIds.CYTON_DAISY_BOARD
-        )
-
+        # Generate different chunks of test data for each iteration
+        # This better simulates real usage where we process different data each time
         for i in range(5):  # Process 5 times
             gc.collect()
             before = get_process_memory()
             
-            # Process data
-            csv_manager.add_data_to_buffer(data.T, is_initial=(i == 0))
+            # Generate new data for each iteration with sequential timestamps
+            data, _ = create_brainflow_test_data(
+                duration_seconds=60,  # 1 minute
+                sampling_rate=125,    # 125 Hz
+                add_noise=False,
+                board_id=BoardIds.CYTON_DAISY_BOARD,
+                start_time=1700000000.1 + (i * 60)  # Each chunk starts 60 seconds after the previous
+            )
+            
+            # Process data - each chunk is treated as initial since it's new data
+            csv_manager.add_data_to_buffer(data.T, is_initial=True)
             csv_manager.save_incremental_to_csv()
             
             # Add sleep stage data
@@ -113,9 +116,6 @@ def test_memory_leak_detection(csv_manager):
             end_time = data[-1, BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)]
             csv_manager.add_sleep_stage_to_sleep_stage_csv(2.0, i, start_time, end_time)
             csv_manager.save_sleep_stages_to_csv()
-            
-            # Cleanup, but preserve output paths
-            csv_manager.cleanup(reset_paths=False)
             
             gc.collect()
             after = get_process_memory()
