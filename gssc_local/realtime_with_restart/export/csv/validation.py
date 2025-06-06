@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Union, Optional, Tuple
 import logging
 import os
+from collections import Counter
 from .exceptions import (
     CSVExportError, CSVValidationError, CSVDataError, CSVFormatError,
     MissingOutputPathError, BufferError, BufferOverflowError,
@@ -218,6 +219,38 @@ def validate_sleep_stage_csv_format(header: str, first_line: Optional[str] = Non
                 raise CSVFormatError(f"Timestamp end {timestamp_end_str} does not have six decimal places")
         except ValueError:
             raise CSVFormatError(f"Invalid timestamp format: {timestamp_end_str}")
+
+def validate_timestamps_unique(timestamps: List[float], logger: Optional[logging.Logger] = None) -> None:
+    """Validate that all timestamps in a list are unique.
+    
+    This function checks for duplicate timestamps in a list and raises an error if any are found.
+    It also logs detailed information about any duplicates found.
+    
+    Validation rules:
+    - All timestamps must be unique
+    - No duplicate timestamps allowed
+    
+    Args:
+        timestamps (List[float]): List of timestamps to validate
+        logger (Optional[logging.Logger]): Logger instance for error reporting
+        
+    Raises:
+        CSVDataError: If duplicate timestamps are found
+    """
+    unique_timestamps = set(timestamps)
+    if len(timestamps) != len(unique_timestamps):
+        duplicate_count = len(timestamps) - len(unique_timestamps)
+        error_msg = f"Found {duplicate_count} duplicate timestamps in buffer before saving"
+        
+        if logger:
+            logger.error(error_msg + "!")
+            # Find and log the duplicates
+            timestamp_counts = Counter(timestamps)
+            duplicates = {ts: count for ts, count in timestamp_counts.items() if count > 1}
+            for ts, count in duplicates.items():
+                logger.error(f"Timestamp {ts} appears {count} times")
+        
+        raise CSVDataError(error_msg)
 
 def validate_buffer_size_and_path(data_size: int, buffer_size: int, output_path: Optional[str]) -> None:
     """Validate that we have an output path if data would exceed buffer size.

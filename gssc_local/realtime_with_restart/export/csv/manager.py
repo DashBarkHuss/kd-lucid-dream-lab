@@ -33,7 +33,8 @@ from .validation import (
     validate_saved_csv_matches_original_source,
     validate_sleep_stage_data,
     validate_sleep_stage_csv_format,
-    validate_buffer_size_and_path
+    validate_buffer_size_and_path,
+    validate_timestamps_unique
 )
 
 class CSVManager:
@@ -469,10 +470,7 @@ class CSVManager:
             CSVDataError: If data validation fails
         """
         try:
-            self.logger.info("\n=== CSVManager.save_incremental_to_csv [L853] ===")
-            self.logger.info(f"[L854] Buffer size at start of save_incremental_to_csv: {len(self.main_csv_buffer)}")
-            self.logger.info(f"Is initial save: {is_initial}")
-            self.logger.info(f"CSV path: {self.main_csv_path}")
+
             
 
                 
@@ -501,17 +499,7 @@ class CSVManager:
 
             # Validate timestamps in buffer before saving
             buffer_timestamps = [row[timestamp_channel] for row in self.main_csv_buffer]
-            unique_timestamps = set(buffer_timestamps)
-            if len(buffer_timestamps) != len(unique_timestamps):
-                duplicate_count = len(buffer_timestamps) - len(unique_timestamps)
-                self.logger.error(f"Found {duplicate_count} duplicate timestamps in buffer before saving!")
-                # Find and log the duplicates
-                from collections import Counter
-                timestamp_counts = Counter(buffer_timestamps)
-                duplicates = {ts: count for ts, count in timestamp_counts.items() if count > 1}
-                for ts, count in duplicates.items():
-                    self.logger.error(f"Timestamp {ts} appears {count} times")
-                raise CSVDataError(f"Found {duplicate_count} duplicate timestamps in buffer before saving")
+            validate_timestamps_unique(buffer_timestamps, self.logger)
             
             # Convert to numpy array
             data_array = np.array(self.main_csv_buffer, dtype=float)
