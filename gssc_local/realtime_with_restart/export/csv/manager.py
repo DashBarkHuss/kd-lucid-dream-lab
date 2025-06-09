@@ -157,8 +157,19 @@ class CSVManager:
         rows_to_add = new_rows[start_idx:]
         return rows_to_add, duplicate_count
 
+    def _update_last_saved_timestamp(self, timestamp_channel: int) -> None:
+        """Update the last saved timestamp from the current buffer if it has data.
+        
+        Args:
+            timestamp_channel (int): Index of the timestamp channel in each row
+        """
+        if self.main_csv_buffer:
+            self.last_saved_timestamp = self.main_csv_buffer[-1][timestamp_channel]
+
     def add_data_to_buffer(self, new_data: np.ndarray, is_initial: bool = False) -> bool:
         """Add new data to the buffer and handle buffer management.
+
+        Handles continuous streaming data that needs careful timestamp management and duplicate prevention.
         
         This method handles:
         - Data validation
@@ -204,13 +215,6 @@ class CSVManager:
                 self.clear_output_file()
                 # Add all rows for initial data first
                 self.main_csv_buffer.extend(new_rows)
-                # Save the last saved timestamp
-                self.last_saved_timestamp = new_rows[-1][timestamp_channel]
-                
-                # Then check if buffer size exceeds limit
-                if self._check_main_buffer_overflow():
-                    # if the data is too large for the buffer, save data to the csv 
-                    self.save_incremental_to_csv(is_initial=True)  # This will save and clear the buffer
             else:
                 # For subsequent data, handle duplicates by finding the first new timestamp
                 rows_to_add, duplicate_count = self._filter_duplicate_timestamps(new_rows, timestamp_channel)
@@ -221,14 +225,16 @@ class CSVManager:
                 # Add filtered rows to buffer
                 if rows_to_add:
                     self.main_csv_buffer.extend(rows_to_add)
-                    self.last_saved_timestamp = rows_to_add[-1][timestamp_channel]
                 else:
                     self.logger.debug("No new samples to add after filtering duplicates")
+
+            # Update last saved timestamp if buffer has data
+            self._update_last_saved_timestamp(timestamp_channel)
                 
-                # Then check if buffer size exceeds limit
-                if self._check_main_buffer_overflow():
-                    # Save current buffer
-                    self.save_incremental_to_csv()  # This clears the buffer
+            # Then check if buffer size exceeds limit
+            if self._check_main_buffer_overflow():
+                # Save current buffer
+                self.save_incremental_to_csv(is_initial=is_initial)  # This clears the buffer
 
             return True
             
@@ -348,6 +354,8 @@ class CSVManager:
     
     def add_sleep_stage_to_sleep_stage_csv(self, sleep_stage: float, buffer_id: float, timestamp_start: float, timestamp_end: float) -> bool:
         """Add sleep stage data to the sleep stage buffer.
+
+        Handles discrete events (sleep stage classifications) that are inherently unique and don't need the same level of processing as continuous data, such as brainflow data.
         
         This method handles:
         - Adding sleep stage data to the sleep stage buffer
@@ -388,6 +396,10 @@ class CSVManager:
             self.logger.error(f"Failed to add sleep stage to buffer: {e}")
             raise CSVDataError(f"Failed to add sleep stage to buffer: {e}")
 
+    def _reset_last_saved_timestamp(self) -> None:
+        """Reset the last saved timestamp to None."""
+        self.last_saved_timestamp = None
+
     def cleanup(self, reset_paths: bool = True) -> None:
         """Clean up resources and reset state.
         
@@ -402,19 +414,17 @@ class CSVManager:
             CSVExportError: If cleanup fails
         """
         try:
-            
             # Clear data buffers
             self.main_csv_buffer.clear()
             self.sleep_stage_buffer.clear()
             
             # Reset state
-            self.last_saved_timestamp = None
+            self._reset_last_saved_timestamp()
             
             # Optionally reset paths
             if reset_paths:
                 self.main_csv_path = None
                 self.sleep_stage_csv_path = None
-            
             
         except Exception as e:
             self.logger.error(f"Error during CSVManager cleanup: {e}")
@@ -494,17 +504,12 @@ class CSVManager:
                 with open(self.main_csv_path, 'r') as f:
                     samples_after = sum(1 for _ in f)
             
+            # Update last saved timestamp before clearing buffer
+            self._update_last_saved_timestamp(timestamp_channel)
+            
             # Clear buffer after saving
-            if self.main_csv_buffer:
-                self.last_saved_timestamp = self.main_csv_buffer[-1][timestamp_channel]
             self.main_csv_buffer.clear()
 
-            
-            # Log file state after save
-            if os.path.exists(self.main_csv_path):
-                with open(self.main_csv_path, 'r') as f:
-                    total_samples = sum(1 for _ in f)
-            
             return True
             
         except (IOError, OSError) as e:
