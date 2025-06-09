@@ -336,7 +336,7 @@ def test_add_sleep_stage_buffer_overflow_no_path(csv_manager, sample_data):
     """Test buffer overflow handling when no output path is set."""
     # Set a small buffer size for testing
     csv_manager.sleep_stage_buffer_size = 2
-    
+
     # Add data until buffer is full
     for i in range(2):
         timestamp_start = i * 30.0

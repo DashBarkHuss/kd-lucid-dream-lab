@@ -365,52 +365,27 @@ class CSVManager:
             
         Raises:
             CSVDataError: If validation fails
-            MissingOutputPathError: If adding data would exceed buffer size limit
+            CSVExportError: If save operation fails
+            MissingOutputPathError: If buffer is full and no output path is set
         """
         try:
-
             # Validate inputs using the new validation function
             validate_sleep_stage_data(sleep_stage, buffer_id, timestamp_start, timestamp_end)
             
             # Check if adding this entry would exceed buffer size
             if self._check_sleep_stage_buffer_overflow():
-                if self.sleep_stage_csv_path:
-                    # Save current buffer contents
-                    entries_to_save = self.sleep_stage_buffer.copy()
-                    if entries_to_save:
-                        data_array = np.array(entries_to_save, dtype=float)
-                        fmt = ['%.6f', '%.6f', '%.0f', '%.0f']
-                        # Check if file exists and has content
-                        file_exists = os.path.exists(self.sleep_stage_csv_path)
-                        has_content = False
-                        if file_exists:
-                            with open(self.sleep_stage_csv_path, 'r') as f:
-                                content = f.read().strip()
-                                has_content = content and content != "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id"
-                        
-                        # Open file in appropriate mode
-                        mode = 'a' if has_content else 'w'
-                        with open(self.sleep_stage_csv_path, mode) as f:
-                            # Write header if this is the first write
-                            if not has_content:
-                                f.write("timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id\n")
-                            np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
-                    # Clear buffer
-                    self.sleep_stage_buffer.clear()
-                else:
-                    raise MissingOutputPathError(f"Sleep stage buffer is full (size: {self.sleep_stage_buffer_size}) and no output path is set")
+                self.save_sleep_stages_to_csv()  # This will handle path validation and errors
             
             # Prepare and add the new entry
             sleep_stage_entry = (float(timestamp_start), float(timestamp_end), float(sleep_stage), float(buffer_id))
             self.sleep_stage_buffer.append(sleep_stage_entry)
-
             
             return True
             
+        except MissingOutputPathError:
+            raise  # Re-raise MissingOutputPathError without wrapping
         except Exception as e:
             self.logger.error(f"Failed to add sleep stage to buffer: {e}")
-            if isinstance(e, MissingOutputPathError):
-                raise
             raise CSVDataError(f"Failed to add sleep stage to buffer: {e}")
 
     def cleanup(self, reset_paths: bool = True) -> None:
@@ -583,6 +558,7 @@ class CSVManager:
         Raises:
             CSVExportError: If save operation fails
             CSVDataError: If data validation fails
+            MissingOutputPathError: If no output path is set
         """
         try:
             # First check if we have any data to save
@@ -594,16 +570,15 @@ class CSVManager:
                         # Delete if file is completely empty or contains only the header
                         if content == "" or content == "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id":
                             os.remove(self.sleep_stage_csv_path)
-
                 return True
             
             # Then check if we have a path to save to
             if not self.sleep_stage_csv_path:
-                raise CSVExportError("No sleep stage CSV path set")
+                raise MissingOutputPathError(f"Sleep stage buffer is full (size: {self.sleep_stage_buffer_size}) and no output path is set")
             
             # Convert buffer to numpy array
             data_array = np.array(self.sleep_stage_buffer, dtype=float)
-
+            
             # Create format specifiers:
             # - timestamps: match BrainFlow's 6 decimal places for exact matching
             # - sleep stage and buffer ID: use integer format since they're discrete values
@@ -638,6 +613,8 @@ class CSVManager:
         except ValueError as e:
             self.logger.error(f"Failed to save sleep stage CSV due to invalid data: {e}")
             raise CSVDataError(f"Failed to save sleep stage CSV due to invalid data: {e}")
+        except MissingOutputPathError:
+            raise  # Re-raise MissingOutputPathError without wrapping
         except Exception as e:
             self.logger.error(f"Failed to save sleep stage CSV: {e}")
             raise CSVExportError(f"Failed to save sleep stage CSV: {e}")
