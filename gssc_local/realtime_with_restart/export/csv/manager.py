@@ -23,30 +23,25 @@ import os
 from pathlib import Path
 import pandas as pd
 from .exceptions import (
-    CSVExportError, CSVValidationError, CSVDataError, CSVFormatError,
-    MissingOutputPathError, BufferError, BufferOverflowError,
-    BufferStateError, BufferValidationError
+    CSVExportError, CSVDataError, CSVFormatError,
+    MissingOutputPathError, BufferOverflowError,
+
 )
 from .validation import (
-    validate_data_shape,
     validate_file_path,
     validate_sleep_stage_data,
-    validate_sleep_stage_csv_format,
-    validate_buffer_size_and_path,
     validate_timestamps_unique,
-    validate_data_not_empty,
     validate_transformed_rows_not_empty,
-    validate_timestamp_state,
-    validate_brainflow_data,
     validate_add_to_buffer_requirements,
     validate_output_path_set,
     find_duplicates,
     validate_main_csv_columns,
     validate_sleep_stage_timestamps,
-    validate_sleep_stage_format
+    validate_sleep_stage_format,
+    validate_board_shim_set,
+    validate_csv_not_empty
 )
 from .utils import check_file_exists
-from .test_utils import compare_csv_files
 
 class CSVManager:
     """Manages CSV data export and validation for BrainFlow data.
@@ -283,17 +278,13 @@ class CSVManager:
             CSVDataError: If data validation fails
         """
         try:
-
             # If no data to save, just return success
             if not self.main_csv_buffer and not self.sleep_stage_buffer:
                 return True
             
             # Only check paths if we have data to save
-            if not self.main_csv_path:
-                raise CSVExportError("Main CSV path not configured")
-            if not self.sleep_stage_csv_path:
-                raise CSVExportError("Sleep stage CSV path not configured")
-            
+            validate_output_path_set(self.main_csv_path, "main CSV")
+            validate_output_path_set(self.sleep_stage_csv_path, "sleep stage CSV")
 
             # Save any remaining data in the main buffer
             if self.main_csv_buffer:
@@ -349,8 +340,7 @@ class CSVManager:
             self.logger.info(f"\n=== CSVManager.save_all_and_cleanup() ===")
             # Use existing output path if none provided
             path_to_use = output_path if output_path is not None else self.main_csv_path
-            if path_to_use is None:
-                raise CSVExportError("No main CSV path provided and no existing main_csv_path set")
+            validate_output_path_set(path_to_use, "main CSV", "No main CSV path provided and no existing main_csv_path set")
             
             # Set main path
             self.main_csv_path = str(path_to_use)
@@ -689,8 +679,7 @@ class CSVManager:
         """
         with open(file_path, 'r') as f:
             first_line = f.readline().strip()
-            if not first_line:
-                raise CSVDataError("Main CSV file is empty")
+            validate_csv_not_empty(first_line, "Main CSV", self.logger)
             return len(first_line.split('\t'))
     
     def _create_column_names(self, num_columns: int, timestamp_channel: int) -> List[str]:
@@ -928,8 +917,7 @@ class CSVManager:
         Raises:
             CSVExportError: If board_shim is not set
         """
-        if self.board_shim is None:
-            raise CSVExportError("board_shim is not set; cannot determine timestamp channel index")
+        validate_board_shim_set(self.board_shim, self.logger)
         return self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
 
     def _handle_buffer_error(self, error: Exception) -> None:

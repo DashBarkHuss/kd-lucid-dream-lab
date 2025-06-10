@@ -366,7 +366,53 @@ def validate_sleep_stage_format(file_path: Path) -> None:
     """
     with open(file_path, 'r') as f:
         header = f.readline().strip()
-        if not header:
-            raise CSVFormatError("Sleep stage CSV file is empty")
+        validate_csv_not_empty(header, "Sleep stage CSV", logger)
         first_line = f.readline().strip()
         validate_sleep_stage_csv_format(header, first_line if first_line else None)
+
+def validate_board_shim_set(board_shim: Optional[object], logger: Optional[logging.Logger] = None) -> None:
+    """Validate that board_shim is set.
+    
+    Args:
+        board_shim (Optional[object]): Board shim instance to validate
+        logger (Optional[logging.Logger]): Logger for error reporting
+        
+    Raises:
+        CSVExportError: If board_shim is not set
+    """
+    if board_shim is None:
+        if logger:
+            logger.error("board_shim is not set; cannot determine timestamp channel index")
+        raise CSVExportError("board_shim is not set; cannot determine timestamp channel index")
+
+def validate_csv_not_empty(first_line: str, file_type: str = "CSV", logger: Optional[logging.Logger] = None) -> None:
+    """Validate that a CSV file is not empty.
+    
+    Args:
+        first_line (str): First line of the CSV file
+        file_type (str): Type of CSV file for error message (e.g., "Main CSV", "Sleep stage CSV")
+        logger (Optional[logging.Logger]): Logger for error reporting
+        
+    Raises:
+        CSVDataError: If file is empty
+    """
+    if not first_line:
+        if logger:
+            logger.error(f"{file_type} file is empty")
+        raise CSVDataError(f"{file_type} file is empty")
+
+def validate_buffer_not_empty(buffer: list, buffer_type: str = "buffer", logger: Optional[logging.Logger] = None) -> None:
+    """Validate that a buffer is not empty.
+    
+    Args:
+        buffer (list): Buffer to validate
+        buffer_type (str): Type of buffer for error message (e.g., "main CSV buffer", "sleep stage buffer")
+        logger (Optional[logging.Logger]): Logger instance for error reporting
+        
+    Raises:
+        CSVDataError: If buffer is empty
+    """
+    if not buffer:
+        if logger:
+            logger.error(f"{buffer_type} is empty")
+        raise CSVDataError(f"{buffer_type} is empty")
