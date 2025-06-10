@@ -37,7 +37,9 @@ from .validation import (
     validate_timestamps_unique,
     validate_data_not_empty,
     validate_transformed_rows_not_empty,
-    validate_timestamp_state
+    validate_timestamp_state,
+    validate_brainflow_data,
+    validate_add_to_buffer_requirements
 )
 
 class CSVManager:
@@ -91,7 +93,6 @@ class CSVManager:
         self.sleep_stage_buffer: List[Tuple[float, float, float, float]] = []  # (timestamp_start, timestamp_end, sleep_stage, buffer_id)
         
         # Create bound validation methods # TODO: some of these methods are never used outside of the tests
-        self._validate_data_shape = lambda data: validate_data_shape(data)
         self._validate_file_path = lambda path: validate_file_path(path)
         self.validate_saved_csv_matches_original_source = lambda original_csv_path, output_path=None: validate_saved_csv_matches_original_source(self, original_csv_path, output_path)
     
@@ -166,6 +167,48 @@ class CSVManager:
         if self.main_csv_buffer:
             self.last_saved_timestamp = self.main_csv_buffer[-1][timestamp_channel]
 
+    def _handle_row_addition(self, new_rows: List[List[float]], timestamp_channel: int, is_initial: bool) -> None:
+        """Handle the addition of rows to the buffer based on whether it's initial or subsequent data.
+        
+        Args:
+            new_rows (List[List[float]]): The rows to be added
+            timestamp_channel (int): Index of the timestamp channel
+            is_initial (bool): Whether this is the initial data chunk
+        """
+        if is_initial:
+            # Clear the output file early for initial data
+            self.clear_output_file()
+            # Add all rows for initial data first
+            self.main_csv_buffer.extend(new_rows)
+        else:
+            # For subsequent data, handle duplicates by finding the first new timestamp
+            rows_to_add, duplicate_count = self._filter_duplicate_timestamps(new_rows, timestamp_channel)
+            
+            if duplicate_count > 0:
+                self.logger.debug(f"Skipped {duplicate_count} duplicate/overlapping samples from streaming")
+            
+            # Add filtered rows to buffer
+            if rows_to_add:
+                self.main_csv_buffer.extend(rows_to_add)
+            else:
+                self.logger.debug("No new samples to add after filtering duplicates")
+
+    def _transform_data_to_rows(self, new_data: np.ndarray) -> List[List[float]]:
+        """Transform numpy array data into a list of rows.
+        
+        Args:
+            new_data (np.ndarray): Input data in channels x samples format
+            
+        Returns:
+            List[List[float]]: Data transformed into list of rows format
+            
+        Raises:
+            CSVDataError: If transformed rows are empty
+        """
+        transformed_rows = new_data.T.tolist()
+        validate_transformed_rows_not_empty(transformed_rows, self.logger)
+        return transformed_rows
+
     def add_data_to_buffer(self, new_data: np.ndarray, is_initial: bool = False) -> bool:
         """Add new data to the buffer and handle buffer management.
 
@@ -191,42 +234,18 @@ class CSVManager:
             BufferOverflowError: If adding data would exceed buffer size limit
         """
         try:
-            # Validate input data first
-            validate_data_not_empty(new_data)
-                
-            # Validate data shape matches expected BrainFlow format
-            self._validate_data_shape(new_data)
-            
-            # Validate buffer size and output path requirements
-            validate_buffer_size_and_path(len(new_data.T), self.main_buffer_size, self.main_csv_path)
-            
+            # Validate all requirements before processing
+            validate_add_to_buffer_requirements(new_data, is_initial, self.main_buffer_size,
+                                             self.main_csv_path, self.last_saved_timestamp, self.logger)
+
             # Convert data to list of rows, important to transpose the brainflow data first
-            new_rows = new_data.T.tolist()
-            validate_transformed_rows_not_empty(new_rows, self.logger)
+            transformed_rows = self._transform_data_to_rows(new_data)
 
             # Get timestamp channel index
             timestamp_channel = self._get_timestamp_channel_index()
 
-            # Validate timestamp state
-            validate_timestamp_state(is_initial, self.last_saved_timestamp, self.logger)
-
-            if is_initial:
-                # Clear the output file early for initial data
-                self.clear_output_file()
-                # Add all rows for initial data first
-                self.main_csv_buffer.extend(new_rows)
-            else:
-                # For subsequent data, handle duplicates by finding the first new timestamp
-                rows_to_add, duplicate_count = self._filter_duplicate_timestamps(new_rows, timestamp_channel)
-                
-                if duplicate_count > 0:
-                    self.logger.debug(f"Skipped {duplicate_count} duplicate/overlapping samples from streaming")
-                
-                # Add filtered rows to buffer
-                if rows_to_add:
-                    self.main_csv_buffer.extend(rows_to_add)
-                else:
-                    self.logger.debug("No new samples to add after filtering duplicates")
+            # Handle row addition
+            self._handle_row_addition(transformed_rows, timestamp_channel, is_initial)
 
             # Update last saved timestamp if buffer has data
             self._update_last_saved_timestamp(timestamp_channel)

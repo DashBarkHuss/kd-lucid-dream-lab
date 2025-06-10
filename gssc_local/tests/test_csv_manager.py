@@ -95,21 +95,23 @@ def test_init_invalid():
 
 def test_validate_data_shape_valid(csv_manager, sample_data):
     """Test data shape validation with valid data."""
-    csv_manager._validate_data_shape(sample_data)
+    from gssc_local.realtime_with_restart.export.csv.validation import validate_data_shape
+    validate_data_shape(sample_data)
     # No exception should be raised
 
 def test_validate_data_shape_invalid(csv_manager, csv_manager_large_index):
     """Test data shape validation with invalid data."""
+    from gssc_local.realtime_with_restart.export.csv.validation import validate_data_shape
     # Test with non-numpy array
     with pytest.raises(CSVDataError):
-        csv_manager._validate_data_shape([[1, 2, 3], [4, 5, 6]])
+        validate_data_shape([[1, 2, 3], [4, 5, 6]])
     # Test with 1D array
     with pytest.raises(CSVDataError):
-        csv_manager._validate_data_shape(np.array([1, 2, 3]))
+        validate_data_shape(np.array([1, 2, 3]))
     # Test with NaN values
     data_with_nan = np.array([[1, 2], [np.nan, 4]])
     with pytest.raises(CSVDataError):
-        csv_manager._validate_data_shape(data_with_nan)
+        validate_data_shape(data_with_nan)
 
 def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, temp_csv_path):
     """Test validation against original source."""

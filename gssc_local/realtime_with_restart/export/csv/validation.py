@@ -310,4 +310,46 @@ def validate_timestamp_state(is_initial: bool, last_saved_timestamp: float, logg
     """
     if not is_initial and last_saved_timestamp is None:
         logger.error("last_saved_timestamp is None for non-initial data")
-        raise BufferStateError("last_saved_timestamp is None for non-initial data. This indicates improper usage or a corrupted state. The timestamp should have been set during initial data processing.") 
+        raise BufferStateError("last_saved_timestamp is None for non-initial data. This indicates improper usage or a corrupted state. The timestamp should have been set during initial data processing.")
+
+def validate_brainflow_data(new_data: np.ndarray) -> None:
+    """Validate the brainflow data format and content.
+    
+    Args:
+        new_data (np.ndarray): Input data to validate
+        
+    Raises:
+        CSVDataError: If data validation fails
+    """
+    # Validate input data first
+    validate_data_not_empty(new_data)
+        
+    # Validate data shape matches expected BrainFlow format
+    validate_data_shape(new_data) 
+
+def validate_add_to_buffer_requirements(new_data: np.ndarray, is_initial: bool, buffer_size: int, 
+                                    csv_path: Optional[str], last_saved_timestamp: Optional[float], 
+                                    logger: logging.Logger) -> None:
+    """Validate all requirements before adding data to buffer.
+    
+    Args:
+        new_data (np.ndarray): Input data to validate
+        is_initial (bool): Whether this is the initial data chunk
+        buffer_size (int): Maximum buffer size
+        csv_path (Optional[str]): Path to CSV file
+        last_saved_timestamp (Optional[float]): Last saved timestamp
+        logger (logging.Logger): Logger instance
+        
+    Raises:
+        CSVDataError: If data validation fails
+        BufferOverflowError: If adding data would exceed buffer size limit
+        BufferStateError: If buffer state is invalid
+    """
+    # Validate brainflow data format
+    validate_brainflow_data(new_data)
+    
+    # Validate buffer size and output path requirements
+    validate_buffer_size_and_path(len(new_data.T), buffer_size, csv_path)
+    
+    # Validate timestamp state
+    validate_timestamp_state(is_initial, last_saved_timestamp, logger) 
