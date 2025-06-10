@@ -39,7 +39,9 @@ from .validation import (
     validate_sleep_stage_timestamps,
     validate_sleep_stage_format,
     validate_board_shim_set,
-    validate_csv_not_empty
+    validate_csv_not_empty,
+    validate_no_sleep_stage_overwrites,
+    validate_matching_timestamps
 )
 from .utils import check_file_exists
 
@@ -66,6 +68,39 @@ class CSVManager:
         sleep_stage_buffer_size (int): Maximum number of entries in sleep stage buffer (default: 100)
     """
     
+    # Format specifiers for sleep stage data:
+    # - timestamps: match BrainFlow's 6 decimal places
+    # - sleep stage and buffer ID: integer format
+    SLEEP_STAGE_FMT = ['%.6f', '%.6f', '%.0f', '%.0f']
+    
+    # Format specifier for main BrainFlow data:
+    # - all columns use 6 decimal places for consistency
+    MAIN_DATA_FMT = '%.6f'
+    
+    @staticmethod
+    def create_format_string(num_columns: int) -> str:
+        """Create a tab-separated format string using CSVManager's format specifier.
+        
+        Args:
+            num_columns (int): Number of columns to create format string for
+            
+        Returns:
+            str: Tab-separated format string
+        """
+        return '\t'.join([CSVManager.MAIN_DATA_FMT] * num_columns)
+    
+    @staticmethod
+    def _create_format_specifiers(shape: int) -> List[str]:
+        """Create a list of format specifiers for the given shape.
+        
+        Args:
+            shape (int): Number of columns in the data
+            
+        Returns:
+            List[str]: List of format specifiers, one for each column
+        """
+        return [CSVManager.MAIN_DATA_FMT] * shape
+
     def __init__(self, board_shim=None, main_buffer_size: int = 10_000, 
                  sleep_stage_buffer_size: int = 100, main_csv_path: Optional[str] = None,
                  sleep_stage_csv_path: Optional[str] = None):
@@ -468,7 +503,7 @@ class CSVManager:
         
         # Convert to numpy array and create format specifiers
         data_array = np.array(self.main_csv_buffer, dtype=float)
-        fmt = ['%.6f'] * data_array.shape[1]
+        fmt = self._create_format_specifiers(data_array.shape[1])
         
         return data_array, fmt, timestamp_channel
 
@@ -565,11 +600,7 @@ class CSVManager:
                 header = "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id\n"
                 with open(self.sleep_stage_csv_path, 'w') as f:
                     f.write(header)
-                    # Create format specifiers:
-                    # - timestamps: match BrainFlow's 6 decimal places for exact matching
-                    # - sleep stage and buffer ID: use integer format since they're discrete values
-                    fmt = ['%.6f', '%.6f', '%.0f', '%.0f']
-                    np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
+                    np.savetxt(f, data_array, delimiter='\t', fmt=self.SLEEP_STAGE_FMT)
 
         except (IOError, OSError) as e:
             self.logger.error(f"Failed to create sleep stage file: {e}")
@@ -592,9 +623,7 @@ class CSVManager:
             - List[str]: Format specifiers for each column
         """
         data_array = np.array(self.sleep_stage_buffer, dtype=float)
-        # timestamps: match BrainFlow's 6 decimal places, sleep stage and buffer ID: integer format
-        fmt = ['%.6f', '%.6f', '%.0f', '%.0f']
-        return data_array, fmt
+        return data_array, self.SLEEP_STAGE_FMT
 
     def _append_to_sleep_stage_file(self, data_array: np.ndarray, fmt: List[str]) -> None:
         """Append data to existing sleep stage file, handling header if needed.
@@ -794,20 +823,11 @@ class CSVManager:
             end_mask = merged_df['timestamp_str'] == sleep_row.timestamp_end_str
             matching_samples = merged_df[end_mask]
             
-            # Validate matching timestamps
-            if matching_samples.empty:
-                error_msg = f"No matching timestamp found for sleep stage end timestamp {sleep_row.timestamp_end_str}"
-                self.logger.error(f"{error_msg}. This is an error because every sleep stage end timestamp should have a matching sample.")
-                raise CSVDataError(error_msg)
+            # Validate timestamps match
+            validate_matching_timestamps(matching_samples, sleep_row.timestamp_end_str, self.logger)
             
-            # Check for overwrites
-            if not matching_samples['sleep_stage'].isna().all() or not matching_samples['buffer_id'].isna().all():
-                self.logger.error(
-                    f"Attempting to overwrite non-NaN values at timestamp {sleep_row.timestamp_end_str}. "
-                    f"Current values - Sleep Stage: {matching_samples['sleep_stage'].iloc[0]}, "
-                    f"Buffer ID: {matching_samples['buffer_id'].iloc[0]}"
-                )
-                raise CSVDataError("Cannot overwrite existing sleep stage or buffer ID values")
+            # Validate no overwrites
+            validate_no_sleep_stage_overwrites(matching_samples, sleep_row.timestamp_end_str, self.logger)
             
             # Assign values
             merged_df.loc[end_mask, 'sleep_stage'] = sleep_row.sleep_stage

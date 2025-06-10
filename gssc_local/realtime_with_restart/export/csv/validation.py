@@ -416,3 +416,38 @@ def validate_buffer_not_empty(buffer: list, buffer_type: str = "buffer", logger:
         if logger:
             logger.error(f"{buffer_type} is empty")
         raise CSVDataError(f"{buffer_type} is empty")
+
+def validate_no_sleep_stage_overwrites(matching_samples: pd.DataFrame, timestamp: str, logger: logging.Logger) -> None:
+    """Validate that there are no sleep stage or buffer ID overwrites.
+    
+    Args:
+        matching_samples (pd.DataFrame): DataFrame containing the samples to check
+        timestamp (str): Timestamp string for error reporting
+        logger (logging.Logger): Logger instance for error reporting
+        
+    Raises:
+        CSVDataError: If attempting to overwrite existing non-NaN values
+    """
+    if not matching_samples['sleep_stage'].isna().all() or not matching_samples['buffer_id'].isna().all():
+        logger.error(
+            f"Attempting to overwrite non-NaN values at timestamp {timestamp}. "
+            f"Current values - Sleep Stage: {matching_samples['sleep_stage'].iloc[0]}, "
+            f"Buffer ID: {matching_samples['buffer_id'].iloc[0]}"
+        )
+        raise CSVDataError("Cannot overwrite existing sleep stage or buffer ID values")
+
+def validate_matching_timestamps(matching_samples: pd.DataFrame, timestamp: str, logger: logging.Logger) -> None:
+    """Validate that there are matching timestamps between datasets.
+    
+    Args:
+        matching_samples (pd.DataFrame): DataFrame containing the samples to check
+        timestamp (str): Timestamp string for error reporting
+        logger (logging.Logger): Logger instance for error reporting
+        
+    Raises:
+        CSVDataError: If no matching timestamps are found
+    """
+    if matching_samples.empty:
+        error_msg = f"No matching timestamp found for sleep stage end timestamp {timestamp}"
+        logger.error(f"{error_msg}. This is an error because every sleep stage end timestamp should have a matching sample.")
+        raise CSVDataError(error_msg)

@@ -13,6 +13,7 @@ import multiprocessing
 from brainflow.board_shim import BoardShim, BoardIds
 import time
 import logging
+from ..realtime_with_restart.export.csv.manager import CSVManager
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -109,7 +110,7 @@ class TestRealtimeStream(unittest.TestCase):
         file_path = os.path.join(self.test_data_dir, 'mock_data_with_gap.csv')
         
         # Create format string for each column (32 columns total)
-        fmt = '\t'.join(['%.6f'] * 32)
+        fmt = '\t'.join([CSVManager.MAIN_DATA_FMT] * 32)
         
         np.savetxt(
             file_path,
