@@ -404,6 +404,11 @@ class CSVManager:
             
             # Check if adding this entry would exceed buffer size
             if self._check_sleep_stage_buffer_overflow():
+                validate_output_path_set(
+                    self.sleep_stage_csv_path,
+                    "sleep stage CSV",
+                    custom_message=f"Sleep stage buffer is full (size: {self.sleep_stage_buffer_size}) and no output path is set"
+                )
                 self.save_sleep_stages_to_csv()  # This will handle path validation and errors
             
             # Prepare and add the new entry
@@ -413,7 +418,8 @@ class CSVManager:
             return True
             
         except MissingOutputPathError:
-            raise  # Re-raise MissingOutputPathError without wrapping
+            # Let MissingOutputPathError pass through unchanged
+            raise
         except Exception as e:
             self.logger.error(f"Failed to add sleep stage to buffer: {e}")
             raise CSVDataError(f"Failed to add sleep stage to buffer: {e}")
@@ -579,6 +585,44 @@ class CSVManager:
             self.logger.error(f"Failed to create sleep stage file: {e}")
             raise CSVExportError(f"Failed to create sleep stage file: {e}")
 
+    def _clean_empty_sleep_stage_file(self) -> None:
+        """Delete sleep stage file if it exists and is empty or contains only header."""
+        if os.path.exists(self.sleep_stage_csv_path):
+            with open(self.sleep_stage_csv_path, 'r') as f:
+                content = f.read().strip()
+                if content == "" or content == "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id":
+                    os.remove(self.sleep_stage_csv_path)
+
+    def _prepare_sleep_stage_data(self) -> Tuple[np.ndarray, List[str]]:
+        """Convert sleep stage buffer to numpy array and prepare format specifiers.
+        
+        Returns:
+            Tuple containing:
+            - np.ndarray: Sleep stage data array
+            - List[str]: Format specifiers for each column
+        """
+        data_array = np.array(self.sleep_stage_buffer, dtype=float)
+        # timestamps: match BrainFlow's 6 decimal places, sleep stage and buffer ID: integer format
+        fmt = ['%.6f', '%.6f', '%.0f', '%.0f']
+        return data_array, fmt
+
+    def _append_to_sleep_stage_file(self, data_array: np.ndarray, fmt: List[str]) -> None:
+        """Append data to existing sleep stage file, handling header if needed.
+        
+        Args:
+            data_array: Numpy array of sleep stage data
+            fmt: Format specifiers for each column
+        """
+        with open(self.sleep_stage_csv_path, 'r') as f:
+            content = f.read().strip()
+            has_content = content and content != "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id"
+        
+        mode = 'a' if has_content else 'w'
+        with open(self.sleep_stage_csv_path, mode) as f:
+            if not has_content:
+                f.write("timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id\n")
+            np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
+
     def save_sleep_stages_to_csv(self) -> bool:
         """Save current sleep stage buffer contents to CSV file and clear the buffer.
         
@@ -598,50 +642,25 @@ class CSVManager:
             MissingOutputPathError: If no output path is set
         """
         try:
-            # First check if we have any data to save
+            # Handle empty buffer case
             if not self.sleep_stage_buffer:
-                # If file exists and is empty (no content or just header), delete it
-                if os.path.exists(self.sleep_stage_csv_path):
-                    with open(self.sleep_stage_csv_path, 'r') as f:
-                        content = f.read().strip()
-                        # Delete if file is completely empty or contains only the header
-                        if content == "" or content == "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id":
-                            os.remove(self.sleep_stage_csv_path)
+                self._clean_empty_sleep_stage_file()
                 return True
             
-            # Then check if we have a path to save to
-            if not self.sleep_stage_csv_path:
-                raise MissingOutputPathError(f"Sleep stage buffer is full (size: {self.sleep_stage_buffer_size}) and no output path is set")
+            # Validate path exists using existing validation function
+            validate_output_path_set(self.sleep_stage_csv_path, "sleep stage CSV")
             
-            # Convert buffer to numpy array
-            data_array = np.array(self.sleep_stage_buffer, dtype=float)
+            # Prepare data
+            data_array, fmt = self._prepare_sleep_stage_data()
             
-            # Create format specifiers:
-            # - timestamps: match BrainFlow's 6 decimal places for exact matching
-            # - sleep stage and buffer ID: use integer format since they're discrete values
-            fmt = ['%.6f', '%.6f', '%.0f', '%.0f']
-            
-            # Save with exact format matching
+            # Write data
             if os.path.exists(self.sleep_stage_csv_path):
-                # Check if file has content
-                with open(self.sleep_stage_csv_path, 'r') as f:
-                    content = f.read().strip()
-                    has_content = content and content != "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id"
-                
-                # Append to existing file if it has content
-                mode = 'a' if has_content else 'w'
-                with open(self.sleep_stage_csv_path, mode) as f:
-                    # Write header if this is the first write
-                    if not has_content:
-                        f.write("timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id\n")
-                    np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
+                self._append_to_sleep_stage_file(data_array, fmt)
             else:
-                # Create new file with header and data
                 self._create_sleep_stage_file(data_array)
             
-            # Clear buffer
+            # Clear buffer after successful write
             self.sleep_stage_buffer.clear()
-            
             return True
             
         except (IOError, OSError) as e:

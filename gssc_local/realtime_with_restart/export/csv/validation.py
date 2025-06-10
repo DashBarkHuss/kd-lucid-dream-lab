@@ -384,7 +384,7 @@ def validate_add_to_buffer_requirements(new_data: np.ndarray, is_initial: bool, 
     # Validate timestamp state
     validate_timestamp_state(is_initial, last_saved_timestamp, logger) 
 
-def validate_output_path_set(output_path: Optional[str], path_type: str = "output") -> None:
+def validate_output_path_set(output_path: Optional[str], path_type: str = "output", custom_message: Optional[str] = None) -> None:
     """Validate that an output path is set.
     
     Validation rules:
@@ -393,9 +393,11 @@ def validate_output_path_set(output_path: Optional[str], path_type: str = "outpu
     Args:
         output_path (Optional[str]): Path to validate
         path_type (str): Type of path for error message (e.g., "main CSV", "sleep stage"). Defaults to "output".
+        custom_message (Optional[str]): Optional custom error message. If provided, this will be used instead of the default message.
         
     Raises:
-        CSVExportError: If path is not set
+        MissingOutputPathError: If path is not set
     """
     if not output_path:
-        raise CSVExportError(f"No {path_type} path set") 
+        message = custom_message if custom_message else f"No {path_type} path set"
+        raise MissingOutputPathError(message)
