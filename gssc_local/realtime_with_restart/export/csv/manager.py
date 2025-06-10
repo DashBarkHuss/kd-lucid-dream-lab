@@ -39,7 +39,9 @@ from .validation import (
     validate_transformed_rows_not_empty,
     validate_timestamp_state,
     validate_brainflow_data,
-    validate_add_to_buffer_requirements
+    validate_add_to_buffer_requirements,
+    validate_output_path_set,
+    find_duplicates
 )
 
 class CSVManager:
@@ -145,17 +147,19 @@ class CSVManager:
                 - Filtered rows (only rows with timestamps greater than last_saved_timestamp)
                 - Number of duplicate rows that were filtered out
         """
-        start_idx = 0
-        duplicate_count = 0
+        if self.last_saved_timestamp is None:
+            return new_rows, 0
+            
+        timestamps = [row[timestamp_channel] for row in new_rows]
+        duplicates = find_duplicates(timestamps, reference_value=self.last_saved_timestamp, comparison='less_equal')
         
-        for i, row in enumerate(new_rows):
-            if row[timestamp_channel] <= self.last_saved_timestamp:
-                duplicate_count += 1
-            else:
-                start_idx = i
-                break
+        # Keep only rows whose timestamps are greater than last_saved_timestamp
+        rows_to_add = [row for row in new_rows if row[timestamp_channel] > self.last_saved_timestamp]
+        duplicate_count = len(new_rows) - len(rows_to_add)
         
-        rows_to_add = new_rows[start_idx:]
+        if duplicate_count > 0:
+            self.logger.debug(f"Skipped {duplicate_count} duplicate/overlapping samples from streaming")
+            
         return rows_to_add, duplicate_count
 
     def _update_last_saved_timestamp(self, timestamp_channel: int) -> None:
@@ -462,31 +466,15 @@ class CSVManager:
             CSVDataError: If data validation fails
         """
         try:
-
-            
-
-                
-            # TODO: This code block was causing data loss by deleting the CSV file when buffer was empty.
-            # It's unclear what the original purpose was, and it seems to be a remnant from an earlier version.
-            # Commenting out to prevent accidental data deletion.
-            # if not self.main_csv_buffer:
-            #     # If file exists and is empty, delete it
-            #     if self.main_csv_path and os.path.exists(self.main_csv_path):
-            #         os.remove(self.main_csv_path)
-            #     return True # TODO: why is this returning True?
-            
-            if not self.main_csv_path:
-                raise CSVExportError("No main CSV path set")
+            validate_output_path_set(self.main_csv_path, "main CSV")
                 
             # return early if buffer is empty
             if not self.main_csv_buffer:
                 return True
             
             # Get timestamp channel index
-            if self.board_shim is not None:
-                timestamp_channel = self._get_timestamp_channel_index()
-            else:
-                raise CSVExportError("board_shim is not set; cannot determine timestamp channel index")
+            timestamp_channel = self._get_timestamp_channel_index()
+            
 
             # Validate timestamps in buffer before saving
             buffer_timestamps = [row[timestamp_channel] for row in self.main_csv_buffer]

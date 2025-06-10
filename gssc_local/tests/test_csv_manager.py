@@ -1254,7 +1254,8 @@ def test_buffer_management_add_then_check(csv_manager, temp_csv_path):
         duration_seconds=0.1,  # Short duration for small test
         sampling_rate=125,     # 125 Hz (Cyton Daisy standard)
         add_noise=False,       # Clean data for easier verification
-        board_id=BoardIds.CYTON_DAISY_BOARD
+        board_id=BoardIds.CYTON_DAISY_BOARD,
+        start_time=1700000000.1  # Explicit start time
     )
     
     # Add data to buffer
@@ -1269,11 +1270,14 @@ def test_buffer_management_add_then_check(csv_manager, temp_csv_path):
     
     # Create more test data that would exceed buffer size
     # For 0.1 seconds at 125 Hz: 12.5 samples (rounded to 12)
+    # Start time should be after the first chunk's end time
+    subsequent_start_time = 1700000000.1 + 0.1  # Initial start time + initial duration
     more_data, _ = create_brainflow_test_data(
         duration_seconds=0.1,  # Short duration for small test
         sampling_rate=125,     # 125 Hz (Cyton Daisy standard)
         add_noise=False,       # Clean data for easier verification
-        board_id=BoardIds.CYTON_DAISY_BOARD
+        board_id=BoardIds.CYTON_DAISY_BOARD,
+        start_time=subsequent_start_time  # Start after first chunk ends
     )
     
     # This should trigger a save since total size would exceed buffer_size
@@ -1433,11 +1437,34 @@ def test_save_new_data_subsequent(csv_manager, sample_data):
     # Save initial data
     csv_manager.add_data_to_buffer(sample_data, is_initial=True)
     initial_length = len(csv_manager.main_csv_buffer)
+    
     # Create new data with some overlap (last 5 samples)
     new_data = sample_data[:, -5:]
     result = csv_manager.add_data_to_buffer(new_data)
     assert result is True
-    # Should add new rows since they have different timestamps
+    
+    # Buffer length should not change since all timestamps are duplicates
+    assert len(csv_manager.main_csv_buffer) == initial_length
+    
+    # Now create new data with timestamps after the initial data
+    timestamp_channel = BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)
+    last_timestamp = sample_data[timestamp_channel, -1]
+    
+    # Create new data with timestamps after the last timestamp
+    duration_seconds = 0.1  # 0.1 seconds at 125 Hz = ~12 samples
+    new_data, _ = create_brainflow_test_data(
+        duration_seconds=duration_seconds,
+        sampling_rate=125,
+        add_noise=False,
+        board_id=BoardIds.CYTON_DAISY_BOARD,
+        start_time=last_timestamp + 0.1  # Start 0.1 seconds after last timestamp
+    )
+    
+    # Add the new data
+    result = csv_manager.add_data_to_buffer(new_data.T)
+    assert result is True
+    
+    # Buffer length should increase since timestamps are new
     assert len(csv_manager.main_csv_buffer) > initial_length
 
 def test_backward_compatibility_save_all_and_cleanup(csv_manager, sample_data, temp_csv_path):

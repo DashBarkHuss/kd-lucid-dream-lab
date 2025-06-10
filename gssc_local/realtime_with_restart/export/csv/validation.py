@@ -220,6 +220,40 @@ def validate_sleep_stage_csv_format(header: str, first_line: Optional[str] = Non
         except ValueError:
             raise CSVFormatError(f"Invalid timestamp format: {timestamp_end_str}")
 
+def find_duplicates(timestamps: List[float], reference_value: Optional[float] = None, comparison: str = 'exact') -> Dict[float, int]:
+    """Find duplicate timestamps in a list.
+    
+    This function can find either:
+    1. Exact duplicates within the list (when comparison='exact')
+    2. Values that match a condition against a reference value (when comparison='less_equal')
+    
+    Args:
+        timestamps (List[float]): List of timestamps to check
+        reference_value (Optional[float]): Reference value to compare against. Only used if comparison='less_equal'
+        comparison (str): Type of comparison to perform:
+            - 'exact': Find timestamps that appear more than once in the list
+            - 'less_equal': Find timestamps that are <= reference_value
+            
+    Returns:
+        Dict[float, int]: Dictionary of duplicate timestamps and their counts
+        
+    Raises:
+        ValueError: If comparison is 'less_equal' but no reference_value provided
+    """
+    if comparison == 'less_equal' and reference_value is None:
+        raise ValueError("reference_value must be provided when comparison='less_equal'")
+        
+    duplicates = {}
+    if comparison == 'exact':
+        # Find exact duplicates using Counter
+        counts = Counter(timestamps)
+        duplicates = {ts: count for ts, count in counts.items() if count > 1}
+    elif comparison == 'less_equal':
+        # Find values <= reference_value
+        duplicates = {ts: 1 for ts in timestamps if ts <= reference_value}
+        
+    return duplicates
+
 def validate_timestamps_unique(timestamps: List[float], logger: Optional[logging.Logger] = None) -> None:
     """Validate that all timestamps in a list are unique.
     
@@ -237,16 +271,12 @@ def validate_timestamps_unique(timestamps: List[float], logger: Optional[logging
     Raises:
         CSVDataError: If duplicate timestamps are found
     """
-    unique_timestamps = set(timestamps)
-    if len(timestamps) != len(unique_timestamps):
-        duplicate_count = len(timestamps) - len(unique_timestamps)
-        error_msg = f"Found {duplicate_count} duplicate timestamps in buffer before saving"
+    duplicates = find_duplicates(timestamps, comparison='exact')
+    if duplicates:
+        error_msg = f"Found {len(duplicates)} duplicate timestamps in buffer before saving"
         
         if logger:
             logger.error(error_msg + "!")
-            # Find and log the duplicates
-            timestamp_counts = Counter(timestamps)
-            duplicates = {ts: count for ts, count in timestamp_counts.items() if count > 1}
             for ts, count in duplicates.items():
                 logger.error(f"Timestamp {ts} appears {count} times")
         
@@ -353,3 +383,19 @@ def validate_add_to_buffer_requirements(new_data: np.ndarray, is_initial: bool, 
     
     # Validate timestamp state
     validate_timestamp_state(is_initial, last_saved_timestamp, logger) 
+
+def validate_output_path_set(output_path: Optional[str], path_type: str = "output") -> None:
+    """Validate that an output path is set.
+    
+    Validation rules:
+    - Path must not be None or empty
+    
+    Args:
+        output_path (Optional[str]): Path to validate
+        path_type (str): Type of path for error message (e.g., "main CSV", "sleep stage"). Defaults to "output".
+        
+    Raises:
+        CSVExportError: If path is not set
+    """
+    if not output_path:
+        raise CSVExportError(f"No {path_type} path set") 
