@@ -25,7 +25,20 @@ import pandas as pd
 from .exceptions import (
     CSVExportError, CSVDataError, CSVFormatError,
     MissingOutputPathError, BufferOverflowError,
-
+)
+from .utils import (
+    get_column_count_from_first_line,
+    get_default_sleep_stage_path,
+    clean_empty_sleep_stage_file,
+    create_format_string,
+    create_format_specifiers,
+    create_column_names,
+    transform_data_to_rows,
+    filter_duplicate_timestamps,
+    process_sleep_stage_data,
+    finalize_merged_data,
+    MAIN_DATA_FMT,
+    check_file_exists,
 )
 from .validation import (
     validate_file_path,
@@ -43,7 +56,6 @@ from .validation import (
     validate_no_sleep_stage_overwrites,
     validate_matching_timestamps
 )
-from .utils import check_file_exists
 
 class CSVManager:
     """Manages CSV data export and validation for BrainFlow data.
@@ -72,34 +84,6 @@ class CSVManager:
     # - timestamps: match BrainFlow's 6 decimal places
     # - sleep stage and buffer ID: integer format
     SLEEP_STAGE_FMT = ['%.6f', '%.6f', '%.0f', '%.0f']
-    
-    # Format specifier for main BrainFlow data:
-    # - all columns use 6 decimal places for consistency
-    MAIN_DATA_FMT = '%.6f'
-    
-    @staticmethod
-    def create_format_string(num_columns: int) -> str:
-        """Create a tab-separated format string using CSVManager's format specifier.
-        
-        Args:
-            num_columns (int): Number of columns to create format string for
-            
-        Returns:
-            str: Tab-separated format string
-        """
-        return '\t'.join([CSVManager.MAIN_DATA_FMT] * num_columns)
-    
-    @staticmethod
-    def _create_format_specifiers(shape: int) -> List[str]:
-        """Create a list of format specifiers for the given shape.
-        
-        Args:
-            shape (int): Number of columns in the data
-            
-        Returns:
-            List[str]: List of format specifiers, one for each column
-        """
-        return [CSVManager.MAIN_DATA_FMT] * shape
 
     def __init__(self, board_shim=None, main_buffer_size: int = 10_000, 
                  sleep_stage_buffer_size: int = 100, main_csv_path: Optional[str] = None,
@@ -165,33 +149,6 @@ class CSVManager:
             with open(self.sleep_stage_csv_path, 'w') as f:
                 pass
 
-    def _filter_duplicate_timestamps(self, new_rows: List[List[float]], timestamp_channel: int) -> Tuple[List[List[float]], int]:
-        """Filter out rows with timestamps less than or equal to the last saved timestamp.
-        
-        Args:
-            new_rows (List[List[float]]): List of data rows to filter
-            timestamp_channel (int): Index of the timestamp channel in each row
-            
-        Returns:
-            Tuple[List[List[float]], int]: Tuple containing:
-                - Filtered rows (only rows with timestamps greater than last_saved_timestamp)
-                - Number of duplicate rows that were filtered out
-        """
-        if self.last_saved_timestamp is None:
-            return new_rows, 0
-            
-        timestamps = [row[timestamp_channel] for row in new_rows]
-        duplicates = find_duplicates(timestamps, reference_value=self.last_saved_timestamp, comparison='less_equal')
-        
-        # Keep only rows whose timestamps are greater than last_saved_timestamp
-        rows_to_add = [row for row in new_rows if row[timestamp_channel] > self.last_saved_timestamp]
-        duplicate_count = len(new_rows) - len(rows_to_add)
-        
-        if duplicate_count > 0:
-            self.logger.debug(f"Skipped {duplicate_count} duplicate/overlapping samples from streaming")
-            
-        return rows_to_add, duplicate_count
-
     def _update_last_saved_timestamp(self, timestamp_channel: int) -> None:
         """Update the last saved timestamp from the current buffer if it has data.
         
@@ -216,7 +173,7 @@ class CSVManager:
             self.main_csv_buffer.extend(new_rows)
         else:
             # For subsequent data, handle duplicates by finding the first new timestamp
-            rows_to_add, duplicate_count = self._filter_duplicate_timestamps(new_rows, timestamp_channel)
+            rows_to_add, duplicate_count = filter_duplicate_timestamps(new_rows, timestamp_channel, self.last_saved_timestamp, self.logger)
             
             if duplicate_count > 0:
                 self.logger.debug(f"Skipped {duplicate_count} duplicate/overlapping samples from streaming")
@@ -226,22 +183,6 @@ class CSVManager:
                 self.main_csv_buffer.extend(rows_to_add)
             else:
                 self.logger.debug("No new samples to add after filtering duplicates")
-
-    def _transform_data_to_rows(self, new_data: np.ndarray) -> List[List[float]]:
-        """Transform numpy array data into a list of rows.
-        
-        Args:
-            new_data (np.ndarray): Input data in channels x samples format
-            
-        Returns:
-            List[List[float]]: Data transformed into list of rows format
-            
-        Raises:
-            CSVDataError: If transformed rows are empty
-        """
-        transformed_rows = new_data.T.tolist()
-        validate_transformed_rows_not_empty(transformed_rows, self.logger)
-        return transformed_rows
 
     def add_data_to_buffer(self, new_data: np.ndarray, is_initial: bool = False) -> bool:
         """Add new data to the buffer and handle buffer management.
@@ -273,7 +214,7 @@ class CSVManager:
                                              self.main_csv_path, self.last_saved_timestamp, self.logger)
 
             # Convert data to list of rows, important to transpose the brainflow data first
-            transformed_rows = self._transform_data_to_rows(new_data)
+            transformed_rows = transform_data_to_rows(new_data, self.logger)
 
             # Get timestamp channel index
             timestamp_channel = self._get_timestamp_channel_index()
@@ -335,24 +276,7 @@ class CSVManager:
             self.logger.error(f"Failed to save all data: {e}")
             raise CSVExportError(f"Failed to save all data: {e}")
 
-    def _get_default_sleep_stage_path(self, main_path: Union[str, Path]) -> str:
-        """Get the default sleep stage path based on the main CSV path.
-        
-        This is a convenience method that follows the convention of appending '.sleep.csv'
-        to the main path. For example:
-        - main_path: 'data/recording.csv'
-        - returns: 'data/recording.sleep.csv'
-        
-        Args:
-            main_path (Union[str, Path]): Path to the main CSV file
-            
-        Returns:
-            str: The default sleep stage path
-        """
-        main_path = str(main_path)
-        if main_path.endswith('.csv'):
-            return main_path[:-4] + '.sleep.csv'
-        return main_path + '.sleep.csv'
+
 
     def save_all_and_cleanup(self, output_path: Optional[Union[str, Path]] = None, merge_files: bool = False, merge_output_path: Optional[Union[str, Path]] = None) -> bool:
         """Save all remaining data and perform cleanup.
@@ -382,7 +306,7 @@ class CSVManager:
             
             # If sleep stage path not set, use convention
             if self.sleep_stage_csv_path is None:
-                self.sleep_stage_csv_path = self._get_default_sleep_stage_path(path_to_use)
+                self.sleep_stage_csv_path = get_default_sleep_stage_path(path_to_use)
             
             result = self.save_all_data()
 
@@ -503,7 +427,7 @@ class CSVManager:
         
         # Convert to numpy array and create format specifiers
         data_array = np.array(self.main_csv_buffer, dtype=float)
-        fmt = self._create_format_specifiers(data_array.shape[1])
+        fmt = create_format_specifiers(data_array.shape[1])
         
         return data_array, fmt, timestamp_channel
 
@@ -525,21 +449,7 @@ class CSVManager:
         except (IOError, OSError) as e:
             raise CSVExportError(f"Failed to {'append to' if is_append else 'create'} main CSV file: {e}")
 
-    def _get_main_csv_line_count(self) -> int:
-        """Get the number of lines in the main CSV file.
-        
-        Returns:
-            int: Number of lines in the main CSV file
-            
-        Raises:
-            CSVExportError: If file operations fail
-        """
-        try:
-            with open(self.main_csv_path, 'r') as f:
-                return sum(1 for _ in f)
-        except (IOError, OSError) as e:
-            self.logger.warning(f"Failed to count lines in main CSV file: {e}")
-            return 0
+
 
     def save_main_buffer_to_csv(self, is_initial: bool = False) -> bool:
         """Save current main BrainFlow data buffer contents to CSV file and clear the buffer.
@@ -606,13 +516,7 @@ class CSVManager:
             self.logger.error(f"Failed to create sleep stage file: {e}")
             raise CSVExportError(f"Failed to create sleep stage file: {e}")
 
-    def _clean_empty_sleep_stage_file(self) -> None:
-        """Delete sleep stage file if it exists and is empty or contains only header."""
-        if os.path.exists(self.sleep_stage_csv_path):
-            with open(self.sleep_stage_csv_path, 'r') as f:
-                content = f.read().strip()
-                if content == "" or content == "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id":
-                    os.remove(self.sleep_stage_csv_path)
+
 
     def _prepare_sleep_stage_data(self) -> Tuple[np.ndarray, List[str]]:
         """Convert sleep stage buffer to numpy array and prepare format specifiers.
@@ -663,7 +567,7 @@ class CSVManager:
         try:
             # Handle empty buffer case
             if not self.sleep_stage_buffer:
-                self._clean_empty_sleep_stage_file()
+                clean_empty_sleep_stage_file(self.sleep_stage_csv_path)
                 return True
             
             # Validate path exists using existing validation function
@@ -694,36 +598,7 @@ class CSVManager:
             self.logger.error(f"Failed to save sleep stage CSV: {e}")
             raise CSVExportError(f"Failed to save sleep stage CSV: {e}")
 
-    def _get_column_count_from_first_line(self, file_path: Path) -> int:
-        """Get the number of columns from the first line of the CSV file.
-        
-        Args:
-            file_path (Path): Path to the CSV file
-            
-        Returns:
-            int: Number of columns in the CSV
-            
-        Raises:
-            CSVDataError: If file is empty
-        """
-        with open(file_path, 'r') as f:
-            first_line = f.readline().strip()
-            validate_csv_not_empty(first_line, "Main CSV", self.logger)
-            return len(first_line.split('\t'))
-    
-    def _create_column_names(self, num_columns: int, timestamp_channel: int) -> List[str]:
-        """Create column names for the CSV DataFrame.
-        
-        Args:
-            num_columns (int): Number of columns in the CSV
-            timestamp_channel (int): Index of the timestamp channel
-            
-        Returns:
-            List[str]: List of column names
-        """
-        column_names = [f'channel_{i}' for i in range(num_columns)]
-        column_names[timestamp_channel] = 'timestamp'
-        return column_names
+
     
     def _read_and_validate_main_csv(self, main_path: Path) -> pd.DataFrame:
         """Read and validate the main CSV file containing BrainFlow data.
@@ -742,14 +617,14 @@ class CSVManager:
         main_path = validate_file_path(main_path)
         
         # Get column count from first line
-        num_columns = self._get_column_count_from_first_line(main_path)
+        num_columns = get_column_count_from_first_line(main_path, self.logger)
         
         # Get and validate timestamp channel
         timestamp_channel = self._get_timestamp_channel_index()
         validate_main_csv_columns(num_columns, timestamp_channel)
         
         # Create column names and read full file
-        column_names = self._create_column_names(num_columns, timestamp_channel)
+        column_names = create_column_names(num_columns, timestamp_channel)
         main_df = pd.read_csv(main_path, delimiter='\t', names=column_names)
         
         # Add string timestamp column
@@ -776,30 +651,7 @@ class CSVManager:
         validate_sleep_stage_format(sleep_stage_path)
         
         # Read and process data
-        return self._process_sleep_stage_data(sleep_stage_path)
-
-    def _process_sleep_stage_data(self, file_path: Path) -> Optional[pd.DataFrame]:
-        """Process and validate sleep stage data from CSV.
-        
-        Args:
-            file_path (Path): Path to the sleep stage CSV file
-            
-        Returns:
-            Optional[pd.DataFrame]: Processed DataFrame or None if empty
-            
-        Raises:
-            CSVFormatError: If data processing fails
-        """
-        # Read data
-        sleep_stage_df = pd.read_csv(file_path, delimiter='\t')
-            
-        # Add string timestamp column for merging
-        sleep_stage_df['timestamp_end_str'] = sleep_stage_df['timestamp_end'].astype(str)
-        
-        # Validate and convert timestamps
-        sleep_stage_df = validate_sleep_stage_timestamps(sleep_stage_df)
-        
-        return sleep_stage_df.sort_values('timestamp_start')
+        return process_sleep_stage_data(sleep_stage_path)
 
     def _merge_sleep_stages_into_main_data(self, merged_df: pd.DataFrame, sleep_stage_df: pd.DataFrame) -> pd.DataFrame:
         """Merge sleep stage data into the main DataFrame.
@@ -834,25 +686,6 @@ class CSVManager:
             merged_df.loc[end_mask, 'buffer_id'] = sleep_row.buffer_id
             
         return merged_df
-
-    def _finalize_merged_data(self, merged_df: pd.DataFrame) -> pd.DataFrame:
-        """Finalize the merged DataFrame by ensuring proper types and sorting.
-        
-        Args:
-            merged_df (pd.DataFrame): DataFrame to finalize
-            
-        Returns:
-            pd.DataFrame: Finalized DataFrame
-            
-        Raises:
-            CSVFormatError: If timestamp conversion fails
-        """
-        try:
-            merged_df['timestamp'] = pd.to_numeric(merged_df['timestamp'], errors='raise')
-        except ValueError as e:
-            raise CSVFormatError(f"Invalid timestamp format in main CSV: {e}")
-        
-        return merged_df.sort_values('timestamp')
 
     def merge_files(self, main_csv_path: Union[str, Path],
                    sleep_stage_csv_path: Union[str, Path],
@@ -912,7 +745,7 @@ class CSVManager:
                 merged_df['buffer_id'] = np.nan
             
             # Finalize and save
-            merged_df = self._finalize_merged_data(merged_df)
+            merged_df = finalize_merged_data(merged_df)
             merged_df.to_csv(output_path, sep='\t', index=False, float_format='%.6f')
             
             return True

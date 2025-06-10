@@ -32,6 +32,7 @@ from ..realtime_with_restart.export.csv.exceptions import (
     MissingOutputPathError, BufferError, BufferOverflowError,
     BufferStateError, BufferValidationError
 )
+from ..realtime_with_restart.export.csv.utils import MAIN_DATA_FMT
 
 # Configure logging
 logging.basicConfig(
@@ -140,7 +141,7 @@ def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, te
 
     # Create a reference CSV
     ref_path = temp_csv_path + '.ref'
-    np.savetxt(ref_path, sample_data.T, delimiter='\t', fmt=CSVManager.MAIN_DATA_FMT)
+    np.savetxt(ref_path, sample_data.T, delimiter='\t', fmt=MAIN_DATA_FMT)
     print(f"DEBUG: Created reference CSV at: {ref_path}")
 
     # Print contents of both files

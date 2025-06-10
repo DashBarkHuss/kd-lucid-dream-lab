@@ -10,10 +10,13 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
 import multiprocessing
-from brainflow.board_shim import BoardShim, BoardIds
+from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
 import time
 import logging
+from ..realtime_with_restart.export.csv.utils import MAIN_DATA_FMT
 from ..realtime_with_restart.export.csv.manager import CSVManager
+from ..realtime_with_restart.core.stream_manager import StreamManager
+from ..realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -22,8 +25,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from gssc_local.realtime_with_restart.main import main
 from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.board_manager import BoardManager
-from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
-from gssc_local.realtime_with_restart.core.stream_manager import StreamManager
 
 # Configure logging for tests
 logging.basicConfig(
@@ -110,7 +111,7 @@ class TestRealtimeStream(unittest.TestCase):
         file_path = os.path.join(self.test_data_dir, 'mock_data_with_gap.csv')
         
         # Create format string for each column (32 columns total)
-        fmt = '\t'.join([CSVManager.MAIN_DATA_FMT] * 32)
+        fmt = '\t'.join([MAIN_DATA_FMT] * 32)
         
         np.savetxt(
             file_path,

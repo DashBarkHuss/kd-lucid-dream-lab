@@ -3,6 +3,10 @@ import pandas as pd
 import time
 from pathlib import Path
 from brainflow.board_shim import BoardShim, BoardIds
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from gssc_local.realtime_with_restart.export.csv.utils import create_format_string
 
 def create_consecutive_data(output_file, duration=30):
     """
@@ -54,7 +58,7 @@ def create_consecutive_data(output_file, duration=30):
     output_file.parent.mkdir(exist_ok=True, parents=True)
     
     # Create format string for each column (32 columns total)
-    fmt = '%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f'
+    fmt = create_format_string(32)
     
     # Save to CSV in BrainFlow format
     np.savetxt(

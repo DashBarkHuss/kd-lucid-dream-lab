@@ -3,6 +3,10 @@ import pandas as pd
 import time
 from pathlib import Path
 from brainflow.board_shim import BoardShim, BoardIds
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from gssc_local.realtime_with_restart.export.csv.utils import create_format_string
 
 def create_gapped_data(output_file, duration=38, gap_position=10, gap_size=3):
     """
@@ -31,7 +35,7 @@ def create_gapped_data(output_file, duration=38, gap_position=10, gap_size=3):
     # Column 2: Sample index (increments by 1)
     data[:, 1] = np.arange(1, n_samples + 1)
     
-    # Columns 3-17: Fixed values that increment with sample index
+    # Columns 3-17: Consecutive numbers starting from 2916
     base_value = 2916  # Starting value from example file
     for i in range(2, 17):
         data[:, i] = base_value
@@ -72,7 +76,7 @@ def create_gapped_data(output_file, duration=38, gap_position=10, gap_size=3):
     output_file.parent.mkdir(exist_ok=True, parents=True)
     
     # Create format string for each column (32 columns total)
-    fmt = '%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f'
+    fmt = create_format_string(32)
     
     # Save to CSV in BrainFlow format
     np.savetxt(
