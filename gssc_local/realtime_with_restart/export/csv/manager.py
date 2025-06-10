@@ -675,6 +675,146 @@ class CSVManager:
             self.logger.error(f"Failed to save sleep stage CSV: {e}")
             raise CSVExportError(f"Failed to save sleep stage CSV: {e}")
 
+    def _read_and_validate_main_csv(self, main_path: Path) -> pd.DataFrame:
+        """Read and validate the main CSV file containing BrainFlow data.
+        
+        Args:
+            main_path (Path): Path to the main CSV file
+            
+        Returns:
+            pd.DataFrame: DataFrame containing the main CSV data with proper column names
+            
+        Raises:
+            CSVDataError: If file is empty
+            CSVFormatError: If format is invalid
+        """
+        # Read first line to get column count
+        with open(main_path, 'r') as f:
+            first_line = f.readline().strip()
+            if not first_line:
+                raise CSVDataError("Main CSV file is empty")
+            num_columns = len(first_line.split('\t'))
+        
+        # Validate timestamp channel
+        timestamp_channel = self._get_timestamp_channel_index()
+        if timestamp_channel >= num_columns:
+            raise CSVFormatError(f"Timestamp channel index {timestamp_channel} exceeds number of columns {num_columns}")
+        
+        # Create column names
+        column_names = [f'channel_{i}' for i in range(num_columns)]
+        column_names[timestamp_channel] = 'timestamp'
+        
+        # Read full file
+        main_df = pd.read_csv(main_path, delimiter='\t', names=column_names)
+        if main_df.empty:
+            raise CSVDataError("Main CSV file is empty")
+        
+        # Add string timestamp column
+        main_df['timestamp_str'] = main_df['timestamp'].astype(str)
+        return main_df
+
+    def _read_and_validate_sleep_stage_csv(self, sleep_stage_path: Path) -> Optional[pd.DataFrame]:
+        """Read and validate the sleep stage CSV file.
+        
+        Args:
+            sleep_stage_path (Path): Path to the sleep stage CSV file
+            
+        Returns:
+            Optional[pd.DataFrame]: DataFrame containing sleep stage data, or None if file doesn't exist
+            
+        Raises:
+            CSVFormatError: If format is invalid
+        """
+        if not os.path.exists(sleep_stage_path):
+            self.logger.info(f"Sleep stage file not found at {sleep_stage_path}")
+            return None
+            
+        # Validate header and format
+        with open(sleep_stage_path, 'r') as f:
+            header = f.readline().strip()
+            if not header:
+                raise CSVFormatError("Sleep stage CSV file is empty")
+            first_line = f.readline().strip()
+            validate_sleep_stage_csv_format(header, first_line if first_line else None)
+        
+        # Read and process sleep stage data
+        sleep_stage_df = pd.read_csv(sleep_stage_path, delimiter='\t')
+        if sleep_stage_df.empty:
+            self.logger.warning("Sleep stage CSV file is empty")
+            return None
+            
+        # Add string timestamp and convert numeric columns
+        sleep_stage_df['timestamp_end_str'] = sleep_stage_df['timestamp_end'].astype(str)
+        try:
+            sleep_stage_df['timestamp_start'] = pd.to_numeric(sleep_stage_df['timestamp_start'], errors='raise')
+            sleep_stage_df['timestamp_end'] = pd.to_numeric(sleep_stage_df['timestamp_end'], errors='raise')
+        except ValueError as e:
+            raise CSVFormatError(f"Invalid timestamp format: {e}")
+            
+        return sleep_stage_df.sort_values('timestamp_start')
+
+    def _merge_sleep_stages_into_main_data(self, merged_df: pd.DataFrame, sleep_stage_df: pd.DataFrame) -> pd.DataFrame:
+        """Merge sleep stage data into the main DataFrame.
+        
+        Args:
+            merged_df (pd.DataFrame): Main DataFrame to merge into
+            sleep_stage_df (pd.DataFrame): Sleep stage DataFrame to merge from
+            
+        Returns:
+            pd.DataFrame: Merged DataFrame with sleep stages
+            
+        Raises:
+            CSVDataError: If merge validation fails
+        """
+        # Initialize sleep stage columns
+        merged_df['sleep_stage'] = np.nan
+        merged_df['buffer_id'] = np.nan
+        
+        # Process each sleep stage entry
+        for sleep_row in sleep_stage_df.itertuples():
+            end_mask = merged_df['timestamp_str'] == sleep_row.timestamp_end_str
+            matching_samples = merged_df[end_mask]
+            
+            # Validate matching timestamps
+            if matching_samples.empty:
+                error_msg = f"No matching timestamp found for sleep stage end timestamp {sleep_row.timestamp_end_str}"
+                self.logger.error(f"{error_msg}. This is an error because every sleep stage end timestamp should have a matching sample.")
+                raise CSVDataError(error_msg)
+            
+            # Check for overwrites
+            if not matching_samples['sleep_stage'].isna().all() or not matching_samples['buffer_id'].isna().all():
+                self.logger.error(
+                    f"Attempting to overwrite non-NaN values at timestamp {sleep_row.timestamp_end_str}. "
+                    f"Current values - Sleep Stage: {matching_samples['sleep_stage'].iloc[0]}, "
+                    f"Buffer ID: {matching_samples['buffer_id'].iloc[0]}"
+                )
+                raise CSVDataError("Cannot overwrite existing sleep stage or buffer ID values")
+            
+            # Assign values
+            merged_df.loc[end_mask, 'sleep_stage'] = sleep_row.sleep_stage
+            merged_df.loc[end_mask, 'buffer_id'] = sleep_row.buffer_id
+            
+        return merged_df
+
+    def _finalize_merged_data(self, merged_df: pd.DataFrame) -> pd.DataFrame:
+        """Finalize the merged DataFrame by ensuring proper types and sorting.
+        
+        Args:
+            merged_df (pd.DataFrame): DataFrame to finalize
+            
+        Returns:
+            pd.DataFrame: Finalized DataFrame
+            
+        Raises:
+            CSVFormatError: If timestamp conversion fails
+        """
+        try:
+            merged_df['timestamp'] = pd.to_numeric(merged_df['timestamp'], errors='raise')
+        except ValueError as e:
+            raise CSVFormatError(f"Invalid timestamp format in main CSV: {e}")
+        
+        return merged_df.sort_values('timestamp')
+
     def merge_files(self, main_csv_path: Union[str, Path],
                    sleep_stage_csv_path: Union[str, Path],
                    output_path: Union[str, Path]) -> bool:
@@ -717,114 +857,23 @@ class CSVManager:
             sleep_stage_path = self._validate_file_path(sleep_stage_csv_path)
             output_path = self._validate_file_path(output_path)
             
-            # Read main CSV
-            # BrainFlow data doesn't have headers, so we need to determine column names from the data
-            # First read a single line to get the number of columns
-            with open(main_path, 'r') as f:
-                first_line = f.readline().strip()
-                if not first_line:  # Check if file is empty
-                    raise CSVDataError("Main CSV file is empty")
-                num_columns = len(first_line.split('\t'))
+            # Read and validate input files
+            main_df = self._read_and_validate_main_csv(main_path)
+            sleep_stage_df = self._read_and_validate_sleep_stage_csv(sleep_stage_path)
             
-            # Get timestamp channel index from BrainFlow
-            timestamp_channel = self._get_timestamp_channel_index()
-            if timestamp_channel >= num_columns:
-                raise CSVFormatError(f"Timestamp channel index {timestamp_channel} exceeds number of columns {num_columns}")
-            
-            # Create column names: channel data with timestamp in correct position
-            column_names = [f'channel_{i}' for i in range(num_columns)]
-            column_names[timestamp_channel] = 'timestamp'
-            
-            # Now read the full file with the correct column names
-            main_df = pd.read_csv(main_path, delimiter='\t', names=column_names)
-            if main_df.empty:
-                raise CSVDataError("Main CSV file is empty")
-            
-            # Store original string timestamps before converting to numeric
-            main_df['timestamp_str'] = main_df['timestamp'].astype(str)
-
-            # Create a copy of the main dataframe
+            # Create initial merged DataFrame
             merged_df = main_df.copy()
             
-            # Initialize sleep stage and buffer ID columns with NaN
-            merged_df['sleep_stage'] = np.nan
-            merged_df['buffer_id'] = np.nan
-            
-            # Check if sleep stage file exists
-            if os.path.exists(sleep_stage_path):
-                # First validate the file format by checking header and first line
-                with open(sleep_stage_path, 'r') as f:
-                    header = f.readline().strip()
-                    if not header:
-                        raise CSVFormatError("Sleep stage CSV file is empty")
-                    
-                    # Validate header and first line using the new validation function
-                    first_line = f.readline().strip()
-                    validate_sleep_stage_csv_format(header, first_line if first_line else None)
-
-                # Read sleep stage CSV
-                sleep_stage_df = pd.read_csv(sleep_stage_path, delimiter='\t')
-                if sleep_stage_df.empty:
-                    self.logger.warning("Sleep stage CSV file is empty")
-                else:
-                    # Store original string timestamps before converting to numeric
-                    sleep_stage_df['timestamp_end_str'] = sleep_stage_df['timestamp_end'].astype(str)
-                    
-                    # Ensure timestamp columns are numeric for range operations
-                    try:
-                        sleep_stage_df['timestamp_start'] = pd.to_numeric(sleep_stage_df['timestamp_start'], errors='raise')
-                        sleep_stage_df['timestamp_end'] = pd.to_numeric(sleep_stage_df['timestamp_end'], errors='raise')
-                    except ValueError as e:
-                        raise CSVFormatError(f"Invalid timestamp format: {e}")
-
-                    # Sort sleep stage dataframe by timestamp
-                    sleep_stage_df = sleep_stage_df.sort_values('timestamp_start')
-                    
-                    # For each sleep stage entry, find the exact end timestamp and assign values
-                    for sleep_row in sleep_stage_df.itertuples():
-                        # Find the exact matching timestamp in the main CSV
-                        # Note: We use exact string comparison because:
-                        # 1. Timestamps are generated with fixed sampling rates (e.g. 125 Hz)
-                        # 2. Each sleep stage must be assigned to its exact end timestamp
-                        # 3. Using string comparison avoids floating point precision issues
-                        # 4. This ensures data integrity by preventing sleep stages from being assigned to nearby timestamps
-                        end_mask = merged_df['timestamp_str'] == sleep_row.timestamp_end_str
-                        matching_samples = merged_df[end_mask]
-                        
-                        if matching_samples.empty:
-                            self.logger.error(
-                                f"No matching timestamp found for sleep stage end timestamp {sleep_row.timestamp_end_str}. "
-                                f"This is an error because every sleep stage end timestamp should have a matching sample."
-                            )
-                            raise CSVDataError(
-                                f"No matching timestamp found for sleep stage end timestamp {sleep_row.timestamp_end_str}"
-                            )
-                            
-                        # Check if we would overwrite any non-NaN values
-                        if not matching_samples['sleep_stage'].isna().all() or not matching_samples['buffer_id'].isna().all():
-                            self.logger.error(
-                                f"Attempting to overwrite non-NaN values at timestamp {sleep_row.timestamp_end_str}. "
-                                f"Current values - Sleep Stage: {matching_samples['sleep_stage'].iloc[0]}, "
-                                f"Buffer ID: {matching_samples['buffer_id'].iloc[0]}"
-                            )
-                            raise CSVDataError("Cannot overwrite existing sleep stage or buffer ID values")
-                            
-                        # Assign the sleep stage and buffer ID to the matching samples
-                        merged_df.loc[end_mask, 'sleep_stage'] = sleep_row.sleep_stage
-                        merged_df.loc[end_mask, 'buffer_id'] = sleep_row.buffer_id
+            # Merge sleep stages if available
+            if sleep_stage_df is not None:
+                merged_df = self._merge_sleep_stages_into_main_data(merged_df, sleep_stage_df)
             else:
-                self.logger.info(f"Sleep stage file not found at {sleep_stage_path}. Proceeding with merge using NaN values for sleep stage and buffer ID.")
+                # Initialize empty sleep stage columns
+                merged_df['sleep_stage'] = np.nan
+                merged_df['buffer_id'] = np.nan
             
-            # Ensure main timestamp column is numeric
-            try:
-                merged_df['timestamp'] = pd.to_numeric(merged_df['timestamp'], errors='raise')
-            except ValueError as e:
-                raise CSVFormatError(f"Invalid timestamp format in main CSV: {e}")
-            
-            # Sort main dataframe by timestamp
-            merged_df = merged_df.sort_values('timestamp')
-            
-            # Save merged data
+            # Finalize and save
+            merged_df = self._finalize_merged_data(merged_df)
             merged_df.to_csv(output_path, sep='\t', index=False, float_format='%.6f')
             
             return True
