@@ -793,9 +793,6 @@ class CSVManager:
         """
         # Read data
         sleep_stage_df = pd.read_csv(file_path, delimiter='\t')
-        if sleep_stage_df.empty:
-            self.logger.warning("Sleep stage CSV file is empty")
-            return None
             
         # Add string timestamp column for merging
         sleep_stage_df['timestamp_end_str'] = sleep_stage_df['timestamp_end'].astype(str)
