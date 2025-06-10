@@ -253,7 +253,7 @@ class CSVManager:
             # Then check if buffer size exceeds limit
             if self._check_main_buffer_overflow():
                 # Save current buffer
-                self.save_incremental_to_csv(is_initial=is_initial)  # This clears the buffer
+                self.save_main_buffer_to_csv(is_initial=is_initial)  # This clears the buffer
 
             return True
             
@@ -293,7 +293,7 @@ class CSVManager:
 
             # Save any remaining data in the main buffer
             if self.main_csv_buffer:
-                self.save_incremental_to_csv()
+                self.save_main_buffer_to_csv()
                 
             # Save any remaining sleep stage data
             if self.sleep_stage_buffer:
@@ -354,7 +354,6 @@ class CSVManager:
             # If sleep stage path not set, use convention
             if self.sleep_stage_csv_path is None:
                 self.sleep_stage_csv_path = self._get_default_sleep_stage_path(path_to_use)
-                self.logger.info(f"Using default sleep stage path: {self.sleep_stage_csv_path}")
             
             result = self.save_all_data()
 
@@ -449,8 +448,8 @@ class CSVManager:
             self.logger.error(f"Error during CSVManager cleanup: {e}")
             raise CSVExportError(f"Failed to cleanup CSVManager: {e}")
 
-    def save_incremental_to_csv(self, is_initial: bool = False) -> bool:
-        """Save current buffer contents to CSV file and clear the buffer.
+    def save_main_buffer_to_csv(self, is_initial: bool = False) -> bool:
+        """Save current main BrainFlow data buffer contents to CSV file and clear the buffer.
         
         This method handles both first write (create new file) and subsequent writes (append).
         It preserves the exact CSV format and clears the buffer after successful write.

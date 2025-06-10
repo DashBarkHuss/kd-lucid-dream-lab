@@ -240,7 +240,7 @@ def test_buffer_save_performance(csv_manager):
                 # Measure time for saving buffer
                 start_time = time.time()
                 try:
-                    csv_manager.save_incremental_to_csv()
+                    csv_manager.save_main_buffer_to_csv()
                 except Exception as e:
                     logger.error(f"Error saving buffer: {str(e)}")
                     raise

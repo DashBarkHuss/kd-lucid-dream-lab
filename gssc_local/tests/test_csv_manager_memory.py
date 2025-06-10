@@ -109,7 +109,7 @@ def test_memory_leak_detection(csv_manager):
             
             # Process data - each chunk is treated as initial since it's new data
             csv_manager.add_data_to_buffer(data.T, is_initial=True)
-            csv_manager.save_incremental_to_csv()
+            csv_manager.save_main_buffer_to_csv()
             
             # Add sleep stage data
             start_time = data[0, BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)]
