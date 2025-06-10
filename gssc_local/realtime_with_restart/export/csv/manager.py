@@ -452,6 +452,64 @@ class CSVManager:
             self.logger.error(f"Error during CSVManager cleanup: {e}")
             raise CSVExportError(f"Failed to cleanup CSVManager: {e}")
 
+    def _prepare_main_csv_data_for_save(self) -> Tuple[np.ndarray, List[str], int]:
+        """Prepare main CSV buffer data for saving by validating and converting formats.
+        
+        Returns:
+            Tuple containing:
+            - np.ndarray: Prepared data array
+            - List[str]: Format specifiers for each column
+            - int: Index of timestamp channel
+            
+        Raises:
+            CSVDataError: If data validation fails
+        """
+        timestamp_channel = self._get_timestamp_channel_index()
+        
+        # Validate timestamps in buffer
+        buffer_timestamps = [row[timestamp_channel] for row in self.main_csv_buffer]
+        validate_timestamps_unique(buffer_timestamps, self.logger)
+        
+        # Convert to numpy array and create format specifiers
+        data_array = np.array(self.main_csv_buffer, dtype=float)
+        fmt = ['%.6f'] * data_array.shape[1]
+        
+        return data_array, fmt, timestamp_channel
+
+    def _write_main_csv_data_to_file(self, data_array: np.ndarray, fmt: List[str], is_append: bool = True) -> None:
+        """Write data array to main CSV file.
+        
+        Args:
+            data_array: Numpy array of data to write
+            fmt: Format specifiers for each column
+            is_append: Whether to append to existing file
+            
+        Raises:
+            CSVExportError: If file operations fail
+        """
+        try:
+            mode = 'a' if is_append else 'w'
+            with open(self.main_csv_path, mode) as f:
+                np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
+        except (IOError, OSError) as e:
+            raise CSVExportError(f"Failed to {'append to' if is_append else 'create'} main CSV file: {e}")
+
+    def _get_main_csv_line_count(self) -> int:
+        """Get the number of lines in the main CSV file.
+        
+        Returns:
+            int: Number of lines in the main CSV file
+            
+        Raises:
+            CSVExportError: If file operations fail
+        """
+        try:
+            with open(self.main_csv_path, 'r') as f:
+                return sum(1 for _ in f)
+        except (IOError, OSError) as e:
+            self.logger.warning(f"Failed to count lines in main CSV file: {e}")
+            return 0
+
     def save_main_buffer_to_csv(self, is_initial: bool = False) -> bool:
         """Save current main BrainFlow data buffer contents to CSV file and clear the buffer.
         
@@ -466,67 +524,35 @@ class CSVManager:
             CSVDataError: If data validation fails
         """
         try:
+            # Validate requirements
             validate_output_path_set(self.main_csv_path, "main CSV")
-                
-            # return early if buffer is empty
             if not self.main_csv_buffer:
                 return True
-            
-            # Get timestamp channel index
-            timestamp_channel = self._get_timestamp_channel_index()
-            
 
-            # Validate timestamps in buffer before saving
-            buffer_timestamps = [row[timestamp_channel] for row in self.main_csv_buffer]
-            validate_timestamps_unique(buffer_timestamps, self.logger)
+            # Prepare data for saving
+            data_array, fmt, timestamp_channel = self._prepare_main_csv_data_for_save()
             
-            # Convert to numpy array
-            data_array = np.array(self.main_csv_buffer, dtype=float)
+            # Determine if we're appending or creating new file
+            file_exists = os.path.exists(self.main_csv_path)
             
-            # Create format specifiers - all columns use float format
-            fmt = ['%.6f'] * data_array.shape[1]
+            # Write data to file
+            self._write_main_csv_data_to_file(data_array, fmt, is_append=file_exists)
             
-            # Save with exact format matching
-            if os.path.exists(self.main_csv_path):
-                # Log before appending
-                with open(self.main_csv_path, 'r') as f:
-                    samples_before = sum(1 for _ in f)
-                
-                # Append to existing file
-                with open(self.main_csv_path, 'a') as f:
-                    np.savetxt(f, data_array, delimiter='\t', fmt=fmt)
-                
-                # Log after appending
-                with open(self.main_csv_path, 'r') as f:
-                    samples_after = sum(1 for _ in f)
-            else:
-                # Log before creating new file
-                 # TODO: this is too coupled. WE should be creating the file in the add_data_to_buffer method on the initial data chunk.
-                
-                # Create a new file
-                np.savetxt(self.main_csv_path, data_array, delimiter='\t', fmt=fmt)
-                
-                # Log after creating new file
-                with open(self.main_csv_path, 'r') as f:
-                    samples_after = sum(1 for _ in f)
-            
-            # Update last saved timestamp before clearing buffer
+            # Update state
             self._update_last_saved_timestamp(timestamp_channel)
-            
-            # Clear buffer after saving
             self.main_csv_buffer.clear()
-
+            
             return True
             
-        except (IOError, OSError) as e:
-            self.logger.error(f"Failed to save CSV due to I/O error: {e}")
-            raise CSVExportError(f"Failed to save CSV due to I/O error: {e}")
+        except (CSVExportError, CSVDataError):
+            # Re-raise known exceptions
+            raise
         except ValueError as e:
-            self.logger.error(f"Failed to save CSV due to invalid data: {e}")
-            raise CSVDataError(f"Failed to save CSV due to invalid data: {e}")
+            self.logger.error(f"Failed to save main CSV due to invalid data: {e}")
+            raise CSVDataError(f"Failed to save main CSV due to invalid data: {e}")
         except Exception as e:
-            self.logger.error(f"Failed to save CSV: {e}")
-            raise CSVExportError(f"Failed to save CSV: {e}")
+            self.logger.error(f"Unexpected error while saving main CSV: {e}")
+            raise CSVExportError(f"Unexpected error while saving main CSV: {e}")
 
     def _create_sleep_stage_file(self, data_array: Optional[np.ndarray] = None) -> None:
         """Create a new sleep stage file with header and optionally write data.
