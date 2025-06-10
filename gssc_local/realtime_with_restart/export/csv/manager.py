@@ -42,7 +42,8 @@ from .validation import (
     validate_add_to_buffer_requirements,
     validate_output_path_set,
     find_duplicates,
-    validate_main_csv_columns
+    validate_main_csv_columns,
+    validate_sleep_stage_timestamps
 )
 
 class CSVManager:
@@ -751,32 +752,57 @@ class CSVManager:
         Raises:
             CSVFormatError: If format is invalid
         """
+        # Check file existence
         if not os.path.exists(sleep_stage_path):
             self.logger.info(f"Sleep stage file not found at {sleep_stage_path}")
             return None
             
-        # Validate header and format
-        with open(sleep_stage_path, 'r') as f:
+        # Validate CSV format
+        self._validate_sleep_stage_format(sleep_stage_path)
+        
+        # Read and process data
+        return self._process_sleep_stage_data(sleep_stage_path)
+
+    def _validate_sleep_stage_format(self, file_path: Path) -> None:
+        """Validate the format of the sleep stage CSV file.
+        
+        Args:
+            file_path (Path): Path to the sleep stage CSV file
+            
+        Raises:
+            CSVFormatError: If format is invalid
+        """
+        with open(file_path, 'r') as f:
             header = f.readline().strip()
             if not header:
                 raise CSVFormatError("Sleep stage CSV file is empty")
             first_line = f.readline().strip()
             validate_sleep_stage_csv_format(header, first_line if first_line else None)
+
+    def _process_sleep_stage_data(self, file_path: Path) -> Optional[pd.DataFrame]:
+        """Process and validate sleep stage data from CSV.
         
-        # Read and process sleep stage data
-        sleep_stage_df = pd.read_csv(sleep_stage_path, delimiter='\t')
+        Args:
+            file_path (Path): Path to the sleep stage CSV file
+            
+        Returns:
+            Optional[pd.DataFrame]: Processed DataFrame or None if empty
+            
+        Raises:
+            CSVFormatError: If data processing fails
+        """
+        # Read data
+        sleep_stage_df = pd.read_csv(file_path, delimiter='\t')
         if sleep_stage_df.empty:
             self.logger.warning("Sleep stage CSV file is empty")
             return None
             
-        # Add string timestamp and convert numeric columns
+        # Add string timestamp column for merging
         sleep_stage_df['timestamp_end_str'] = sleep_stage_df['timestamp_end'].astype(str)
-        try:
-            sleep_stage_df['timestamp_start'] = pd.to_numeric(sleep_stage_df['timestamp_start'], errors='raise')
-            sleep_stage_df['timestamp_end'] = pd.to_numeric(sleep_stage_df['timestamp_end'], errors='raise')
-        except ValueError as e:
-            raise CSVFormatError(f"Invalid timestamp format: {e}")
-            
+        
+        # Validate and convert timestamps
+        sleep_stage_df = validate_sleep_stage_timestamps(sleep_stage_df)
+        
         return sleep_stage_df.sort_values('timestamp_start')
 
     def _merge_sleep_stages_into_main_data(self, merged_df: pd.DataFrame, sleep_stage_df: pd.DataFrame) -> pd.DataFrame:

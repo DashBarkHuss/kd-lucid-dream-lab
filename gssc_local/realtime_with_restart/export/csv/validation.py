@@ -414,3 +414,22 @@ def validate_main_csv_columns(num_columns: int, timestamp_channel: int) -> None:
     """
     if timestamp_channel >= num_columns:
         raise CSVFormatError(f"Timestamp channel index {timestamp_channel} exceeds number of columns {num_columns}")
+
+def validate_sleep_stage_timestamps(df: pd.DataFrame) -> pd.DataFrame:
+    """Validate and convert sleep stage timestamps to numeric format.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing sleep stage data
+        
+    Returns:
+        pd.DataFrame: DataFrame with validated and converted timestamps
+        
+    Raises:
+        CSVFormatError: If timestamp conversion fails
+    """
+    try:
+        df['timestamp_start'] = pd.to_numeric(df['timestamp_start'], errors='raise')
+        df['timestamp_end'] = pd.to_numeric(df['timestamp_end'], errors='raise')
+        return df
+    except ValueError as e:
+        raise CSVFormatError(f"Invalid timestamp format: {e}")
