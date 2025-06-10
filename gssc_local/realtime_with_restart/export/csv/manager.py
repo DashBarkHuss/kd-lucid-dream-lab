@@ -41,7 +41,8 @@ from .validation import (
     validate_brainflow_data,
     validate_add_to_buffer_requirements,
     validate_output_path_set,
-    find_duplicates
+    find_duplicates,
+    validate_main_csv_columns
 )
 
 class CSVManager:
@@ -675,6 +676,38 @@ class CSVManager:
             self.logger.error(f"Failed to save sleep stage CSV: {e}")
             raise CSVExportError(f"Failed to save sleep stage CSV: {e}")
 
+    def _get_column_count_from_first_line(self, file_path: Path) -> int:
+        """Get the number of columns from the first line of the CSV file.
+        
+        Args:
+            file_path (Path): Path to the CSV file
+            
+        Returns:
+            int: Number of columns in the CSV
+            
+        Raises:
+            CSVDataError: If file is empty
+        """
+        with open(file_path, 'r') as f:
+            first_line = f.readline().strip()
+            if not first_line:
+                raise CSVDataError("Main CSV file is empty")
+            return len(first_line.split('\t'))
+    
+    def _create_column_names(self, num_columns: int, timestamp_channel: int) -> List[str]:
+        """Create column names for the CSV DataFrame.
+        
+        Args:
+            num_columns (int): Number of columns in the CSV
+            timestamp_channel (int): Index of the timestamp channel
+            
+        Returns:
+            List[str]: List of column names
+        """
+        column_names = [f'channel_{i}' for i in range(num_columns)]
+        column_names[timestamp_channel] = 'timestamp'
+        return column_names
+    
     def _read_and_validate_main_csv(self, main_path: Path) -> pd.DataFrame:
         """Read and validate the main CSV file containing BrainFlow data.
         
@@ -688,26 +721,19 @@ class CSVManager:
             CSVDataError: If file is empty
             CSVFormatError: If format is invalid
         """
-        # Read first line to get column count
-        with open(main_path, 'r') as f:
-            first_line = f.readline().strip()
-            if not first_line:
-                raise CSVDataError("Main CSV file is empty")
-            num_columns = len(first_line.split('\t'))
+        # Validate file path
+        main_path = self._validate_file_path(main_path)
         
-        # Validate timestamp channel
+        # Get column count from first line
+        num_columns = self._get_column_count_from_first_line(main_path)
+        
+        # Get and validate timestamp channel
         timestamp_channel = self._get_timestamp_channel_index()
-        if timestamp_channel >= num_columns:
-            raise CSVFormatError(f"Timestamp channel index {timestamp_channel} exceeds number of columns {num_columns}")
+        validate_main_csv_columns(num_columns, timestamp_channel)
         
-        # Create column names
-        column_names = [f'channel_{i}' for i in range(num_columns)]
-        column_names[timestamp_channel] = 'timestamp'
-        
-        # Read full file
+        # Create column names and read full file
+        column_names = self._create_column_names(num_columns, timestamp_channel)
         main_df = pd.read_csv(main_path, delimiter='\t', names=column_names)
-        if main_df.empty:
-            raise CSVDataError("Main CSV file is empty")
         
         # Add string timestamp column
         main_df['timestamp_str'] = main_df['timestamp'].astype(str)

@@ -401,3 +401,16 @@ def validate_output_path_set(output_path: Optional[str], path_type: str = "outpu
     if not output_path:
         message = custom_message if custom_message else f"No {path_type} path set"
         raise MissingOutputPathError(message)
+
+def validate_main_csv_columns(num_columns: int, timestamp_channel: int) -> None:
+    """Validate the column count and timestamp channel index of the main CSV file.
+    
+    Args:
+        num_columns (int): Number of columns in the CSV
+        timestamp_channel (int): Index of the timestamp channel
+        
+    Raises:
+        CSVFormatError: If timestamp channel index exceeds number of columns
+    """
+    if timestamp_channel >= num_columns:
+        raise CSVFormatError(f"Timestamp channel index {timestamp_channel} exceeds number of columns {num_columns}")
