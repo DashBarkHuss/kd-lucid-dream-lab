@@ -30,7 +30,6 @@ from .exceptions import (
 from .validation import (
     validate_data_shape,
     validate_file_path,
-    validate_saved_csv_matches_original_source,
     validate_sleep_stage_data,
     validate_sleep_stage_csv_format,
     validate_buffer_size_and_path,
@@ -43,8 +42,11 @@ from .validation import (
     validate_output_path_set,
     find_duplicates,
     validate_main_csv_columns,
-    validate_sleep_stage_timestamps
+    validate_sleep_stage_timestamps,
+    validate_sleep_stage_format
 )
+from .utils import check_file_exists
+from .test_utils import compare_csv_files
 
 class CSVManager:
     """Manages CSV data export and validation for BrainFlow data.
@@ -96,10 +98,6 @@ class CSVManager:
         # Initialize other attributes
         self.sleep_stage_buffer: List[Tuple[float, float, float, float]] = []  # (timestamp_start, timestamp_end, sleep_stage, buffer_id)
         
-        # Create bound validation methods # TODO: some of these methods are never used outside of the tests
-        self._validate_file_path = lambda path: validate_file_path(path)
-        self.validate_saved_csv_matches_original_source = lambda original_csv_path, output_path=None: validate_saved_csv_matches_original_source(self, original_csv_path, output_path)
-    
    
     def _check_buffer_overflow(self, buffer: List[Tuple[float, float, float, float]], buffer_size: int) -> bool:
         """Check if buffer would overflow with current size.
@@ -723,7 +721,7 @@ class CSVManager:
             CSVFormatError: If format is invalid
         """
         # Validate file path
-        main_path = self._validate_file_path(main_path)
+        main_path = validate_file_path(main_path)
         
         # Get column count from first line
         num_columns = self._get_column_count_from_first_line(main_path)
@@ -753,31 +751,14 @@ class CSVManager:
             CSVFormatError: If format is invalid
         """
         # Check file existence
-        if not os.path.exists(sleep_stage_path):
-            self.logger.info(f"Sleep stage file not found at {sleep_stage_path}")
+        if not check_file_exists(sleep_stage_path, self.logger):
             return None
             
         # Validate CSV format
-        self._validate_sleep_stage_format(sleep_stage_path)
+        validate_sleep_stage_format(sleep_stage_path)
         
         # Read and process data
         return self._process_sleep_stage_data(sleep_stage_path)
-
-    def _validate_sleep_stage_format(self, file_path: Path) -> None:
-        """Validate the format of the sleep stage CSV file.
-        
-        Args:
-            file_path (Path): Path to the sleep stage CSV file
-            
-        Raises:
-            CSVFormatError: If format is invalid
-        """
-        with open(file_path, 'r') as f:
-            header = f.readline().strip()
-            if not header:
-                raise CSVFormatError("Sleep stage CSV file is empty")
-            first_line = f.readline().strip()
-            validate_sleep_stage_csv_format(header, first_line if first_line else None)
 
     def _process_sleep_stage_data(self, file_path: Path) -> Optional[pd.DataFrame]:
         """Process and validate sleep stage data from CSV.
@@ -881,7 +862,7 @@ class CSVManager:
         #
         # COMMON PITFALL:
         # Do NOT assume that only the end of the current epoch should have a value. If a timestamp is the end of a previous epoch,
-        # it should also have a value, even if it overlaps with a non-end timestamp of the current epoch. 
+        # it should also have a value, even if it overlaps with a non-end timestamp of the current epoch.
         # A timestamp can be the end of a previous epoch while also being part of the current epoch.
         
         If the sleep stage file doesn't exist, the merge will still proceed, but all
@@ -902,9 +883,9 @@ class CSVManager:
         """
         try:
             # Validate paths
-            main_path = self._validate_file_path(main_csv_path)
-            sleep_stage_path = self._validate_file_path(sleep_stage_csv_path)
-            output_path = self._validate_file_path(output_path)
+            main_path = validate_file_path(main_csv_path)
+            sleep_stage_path = validate_file_path(sleep_stage_csv_path)
+            output_path = validate_file_path(output_path)
             
             # Read and validate input files
             main_df = self._read_and_validate_main_csv(main_path)

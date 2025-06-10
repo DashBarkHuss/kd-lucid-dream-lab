@@ -1,4 +1,10 @@
-#previously called BufferManager
+"""
+Data Manager for handling data export and validation of brainflow data.
+
+This module provides functionality for saving and validating data from brainflow streaming to a csv file with sleep stage integration.
+It implements a memory-efficient buffer management system that prevents memory overflow during long recordings.
+"""
+
 import numpy as np
 import logging
 import torch
@@ -582,6 +588,7 @@ class DataManager:
         except Exception as e:
             logging.error(f"Error during DataManager cleanup: {str(e)}")
             raise
+
 
 
 

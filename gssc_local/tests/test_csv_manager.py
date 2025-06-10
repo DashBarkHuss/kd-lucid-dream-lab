@@ -25,6 +25,13 @@ from brainflow.board_shim import BoardShim, BoardIds
 from brainflow.board_shim import BrainFlowInputParams
 
 from gssc_local.tests.test_utils import create_brainflow_test_data
+from ..realtime_with_restart.export.csv.test_utils import compare_csv_files
+from ..realtime_with_restart.export.csv.validation import validate_file_path
+from ..realtime_with_restart.export.csv.exceptions import (
+    CSVExportError, CSVValidationError, CSVDataError, CSVFormatError,
+    MissingOutputPathError, BufferError, BufferOverflowError,
+    BufferStateError, BufferValidationError
+)
 
 # Configure logging
 logging.basicConfig(
@@ -152,8 +159,10 @@ def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, te
         print(f"First 3 lines of reference CSV:\n{''.join(ref_lines[:3])}")
 
     # Test validation
-    result = csv_manager.validate_saved_csv_matches_original_source(ref_path)
-    assert result is True
+    result = compare_csv_files(temp_csv_path, ref_path)
+    assert result.matches, f"CSV comparison failed: {result.error_message}"
+    assert result.line_count_matches, f"Line count mismatch: expected {result.expected_line_count}, got {result.actual_line_count}"
+    assert not result.mismatched_lines, f"Found {len(result.mismatched_lines)} mismatched lines"
 
     # Clean up reference file
     os.remove(ref_path)
@@ -201,30 +210,32 @@ def test_validate_file_path(csv_manager):
     # Test valid path
     with tempfile.TemporaryDirectory() as temp_dir:
         valid_path = os.path.join(temp_dir, "test.csv")
-        result = csv_manager._validate_file_path(valid_path)
+        result = validate_file_path(valid_path)
         assert isinstance(result, Path)
     
     # Test invalid path
     with pytest.raises(CSVExportError):
-        csv_manager._validate_file_path("/nonexistent/path/test.csv")
+        validate_file_path("/nonexistent/path/test.csv")
 
 def test_error_handling(csv_manager, temp_csv_path):
     """Test error handling in various scenarios."""
 
     # Test validating CSV without saving
-    with pytest.raises(CSVValidationError):
-        # Create an empty file to test validation
-        with open(temp_csv_path, 'w') as f:
-            f.write('')
-        csv_manager.validate_saved_csv_matches_original_source(temp_csv_path)
+    # Create an empty file to test validation
+    with open(temp_csv_path, 'w') as f:
+        f.write('')
+    result = compare_csv_files(temp_csv_path, temp_csv_path)
+    assert not result.matches
+    assert result.error_message == "Both saved and reference CSV files are empty"
     
     # Test validating against original without saving
-    with pytest.raises(CSVValidationError):
-        # Create an empty reference file
-        ref_path = temp_csv_path + '.ref'
-        with open(ref_path, 'w') as f:
-            f.write('')
-        csv_manager.validate_saved_csv_matches_original_source(ref_path)
+    # Create an empty reference file
+    ref_path = temp_csv_path + '.ref'
+    with open(ref_path, 'w') as f:
+        f.write('')
+    result = compare_csv_files(temp_csv_path, ref_path)
+    assert not result.matches
+    assert result.error_message == "Both saved and reference CSV files are empty"
 
 def test_cleanup():
     """Test that cleanup properly resets all state."""
