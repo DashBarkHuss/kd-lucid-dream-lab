@@ -184,8 +184,8 @@ class CSVManager:
             else:
                 self.logger.debug("No new samples to add after filtering duplicates")
 
-    def add_data_to_buffer(self, new_data: np.ndarray, is_initial: bool = False) -> bool:
-        """Add new data to the buffer and handle buffer management.
+    def queue_data_for_csv_write(self, new_data: np.ndarray, is_initial: bool = False) -> bool:
+        """Queue new data for CSV writing and handle buffer management.
 
         Handles continuous streaming data that needs careful timestamp management and duplicate prevention.
         

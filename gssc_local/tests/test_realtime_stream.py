@@ -211,7 +211,7 @@ class TestRealtimeStream(unittest.TestCase):
         
         # Mock DataManager
         self.mock_data_manager = Mock(spec=DataManager)
-        self.mock_data_manager.add_data_to_buffer = Mock()
+        self.mock_data_manager.queue_data_for_csv_write = Mock()
         self.mock_data_manager.accumulate_data_for_epoch_processing.return_value = True
         self.mock_data_manager.save_new_data = Mock()
         self.mock_data_manager._calculate_next_buffer_id_to_process.return_value = 0
@@ -340,7 +340,7 @@ class TestRealtimeStream(unittest.TestCase):
         print("✓ BoardManager mock configured correctly")
         
         # Test DataManager mock
-        self.assertTrue(self.mock_data_manager.add_data_to_buffer.return_value)
+        self.assertTrue(self.mock_data_manager.queue_data_for_csv_write.return_value)
         self.assertTrue(self.mock_data_manager.accumulate_data_for_epoch_processing.return_value)
         self.mock_data_manager.save_new_data.assert_not_called()
         self.assertEqual(self.mock_data_manager._calculate_next_buffer_id_to_process(), 0)

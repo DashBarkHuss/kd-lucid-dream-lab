@@ -123,9 +123,9 @@ def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, te
     print(f"DEBUG: sample_data first row: {sample_data[0, :5]}")  # First 5 elements of first row
 
     # Save data to CSV
-    print(f"DEBUG: Before add_data_to_buffer - main_csv_path: {csv_manager.main_csv_path}")
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
-    print(f"DEBUG: After add_data_to_buffer - main_csv_path: {csv_manager.main_csv_path}")
+    print(f"DEBUG: Before queue_data_for_csv_write - main_csv_path: {csv_manager.main_csv_path}")
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
+    print(f"DEBUG: After queue_data_for_csv_write - main_csv_path: {csv_manager.main_csv_path}")
     
     # Set both paths
     csv_manager.main_csv_path = temp_csv_path
@@ -167,7 +167,7 @@ def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, te
 def test_add_sleep_stage_to_csv_buffer(csv_manager, sample_data):
     """Test adding sleep stage data."""
     # Save initial data
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     # Add sleep stage data
     sleep_stage = 2.0
     buffer_id = 1.0
@@ -185,7 +185,7 @@ def test_add_sleep_stage_to_csv_buffer(csv_manager, sample_data):
 def test_add_sleep_stage_invalid(csv_manager, sample_data):
     """Test adding invalid sleep stage data."""
     # Save initial data
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     
     # Test invalid sleep stage type
     with pytest.raises(CSVDataError):
@@ -273,7 +273,7 @@ def test_buffer_management_no_output_path(csv_manager):
     
     # Try to add data that would exceed buffer size
     with pytest.raises(MissingOutputPathError):
-        csv_manager.add_data_to_buffer(data, is_initial=True)
+        csv_manager.queue_data_for_csv_write(data, is_initial=True)
 
 def test_buffer_management_invalid_data(csv_manager, temp_csv_path):
     """Test buffer management with invalid data."""
@@ -283,7 +283,7 @@ def test_buffer_management_invalid_data(csv_manager, temp_csv_path):
     # Try to add invalid data (non-numeric)
     invalid_data = np.array([['invalid', 'data'], ['more', 'invalid']], dtype=object)
     with pytest.raises(CSVDataError):
-        csv_manager.add_data_to_buffer(invalid_data, is_initial=True)
+        csv_manager.queue_data_for_csv_write(invalid_data, is_initial=True)
 
 def test_buffer_management_empty_data(csv_manager, temp_csv_path):
     """Test buffer management with empty data."""
@@ -293,7 +293,7 @@ def test_buffer_management_empty_data(csv_manager, temp_csv_path):
     # Try to add empty data
     empty_data = np.array([[]])
     with pytest.raises(CSVDataError):
-        csv_manager.add_data_to_buffer(empty_data, is_initial=True)
+        csv_manager.queue_data_for_csv_write(empty_data, is_initial=True)
 
 def test_add_sleep_stage_to_sleep_stage_csv(csv_manager, sample_data, temp_csv_path):
     """Test adding sleep stage data to sleep stage buffer."""
@@ -428,7 +428,7 @@ def test_save_all_and_cleanup_method(csv_manager, sample_data, temp_csv_path):
     csv_manager.main_csv_path = temp_csv_path
     
     # Save some data
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     
     # Add sleep stage data
     csv_manager.add_sleep_stage_to_sleep_stage_csv(2.0, 1.0, 0.0, 30.0)
@@ -449,7 +449,7 @@ def test_save_all_data(csv_manager, sample_data, temp_csv_path):
     Run pytest with -s to see debug output.
     """
     # Add some data to the main buffer
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
 
     # Add some sleep stage data
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
@@ -517,7 +517,7 @@ def test_cleanup_without_path_reset(csv_manager, sample_data, temp_csv_path):
 def test_save_main_buffer_to_csv(csv_manager, sample_data, temp_csv_path):
     """Test saving data to CSV file."""
     # Save some data first
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     # Set both paths
     csv_manager.main_csv_path = temp_csv_path
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
@@ -533,7 +533,7 @@ def test_save_main_buffer_to_csv(csv_manager, sample_data, temp_csv_path):
 def test_save_main_buffer_to_csv_uses_new_methods(csv_manager, sample_data, temp_csv_path):
     """Test that save_main_buffer_to_csv uses the new methods correctly."""
     # Save initial data
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
 
     # Add some sleep stage data
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
@@ -575,7 +575,7 @@ def test_save_main_buffer_to_csv_first_write(csv_manager, sample_data, temp_csv_
     csv_manager.main_csv_path = temp_csv_path
     
     # Add data to buffer
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     
     # Save incrementally
     result = csv_manager.save_main_buffer_to_csv()
@@ -595,7 +595,7 @@ def test_save_main_buffer_to_csv_append(csv_manager, sample_data, temp_csv_path)
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
 
     # First add data to main buffer
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     csv_manager.save_main_buffer_to_csv()
 
     # Add sleep stage data
@@ -617,7 +617,7 @@ def test_save_main_buffer_to_csv_append(csv_manager, sample_data, temp_csv_path)
 def test_save_main_buffer_to_csv_no_output_path(csv_manager, sample_data):
     """Test save_main_buffer_to_csv with no output path set."""
     # Add data to buffer
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     
     # Try to save without output path
     with pytest.raises(CSVExportError):
@@ -670,7 +670,7 @@ def test_save_sleep_stages_to_csv_first_write(csv_manager, sample_data, temp_csv
     # Add data to main buffer first
     print(f"Adding main data to buffer...")
     print(f"Sample data shape: {sample_data.shape}")
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     print(f"Main buffer length after adding data: {len(csv_manager.main_csv_buffer)}")
     
     # Add sleep stage data to buffer
@@ -792,7 +792,7 @@ def test_merge_files_successful(csv_manager, sample_data, temp_csv_path):
     # Create main CSV file
     main_csv_path = temp_csv_path
     csv_manager.main_csv_path = main_csv_path
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     csv_manager.save_main_buffer_to_csv()
     
     # Create sleep stage CSV file with two epochs
@@ -869,7 +869,7 @@ def test_merge_files_missing_sleep_stage_file(csv_manager, sample_data, temp_csv
     # Create main CSV file
     main_csv_path = temp_csv_path
     csv_manager.main_csv_path = main_csv_path
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     csv_manager.save_main_buffer_to_csv()
     
     # Try to merge with non-existent sleep stage file
@@ -906,7 +906,7 @@ def test_merge_files_invalid_sleep_stage_format(csv_manager, sample_data, temp_c
     # Create main CSV file
     main_csv_path = temp_csv_path
     csv_manager.main_csv_path = main_csv_path
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     csv_manager.save_main_buffer_to_csv()
     
     # Create invalid sleep stage CSV file
@@ -948,7 +948,7 @@ def test_merge_files_empty_sleep_stage_file(csv_manager, sample_data, temp_csv_p
     # Create main CSV file
     main_csv_path = temp_csv_path
     csv_manager.main_csv_path = main_csv_path
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     csv_manager.save_main_buffer_to_csv()
     
     # Create empty sleep stage CSV file
@@ -991,7 +991,7 @@ def test_merge_files_large_files(csv_manager, temp_csv_path):
     )
     
     # Add data to buffer
-    csv_manager.add_data_to_buffer(data.T, is_initial=True)  # Transpose to match expected shape
+    csv_manager.queue_data_for_csv_write(data.T, is_initial=True)  # Transpose to match expected shape
     csv_manager.save_main_buffer_to_csv()
     
     # Create sleep stage CSV file
@@ -1075,7 +1075,7 @@ def test_csv_memory_management_full_flow():
             # Transpose chunk to match expected (channels, samples) shape
             chunk = chunk.T
             # Add to buffer - this will automatically save when buffer is full
-            csv_manager.add_data_to_buffer(chunk, is_initial=(i == 0))
+            csv_manager.queue_data_for_csv_write(chunk, is_initial=(i == 0))
             
             # Get the latest timestamp from the data we've processed
             latest_processed_timestamp = data[i, timestamp_channel]
@@ -1267,7 +1267,7 @@ def test_buffer_management_add_then_check(csv_manager, temp_csv_path):
     )
     
     # Add data to buffer
-    result = csv_manager.add_data_to_buffer(data.T, is_initial=True)  # Transpose to match expected shape
+    result = csv_manager.queue_data_for_csv_write(data.T, is_initial=True)  # Transpose to match expected shape
     assert result is True
     
     # Verify data was saved to CSV (not in buffer) since it exceeds buffer size
@@ -1289,7 +1289,7 @@ def test_buffer_management_add_then_check(csv_manager, temp_csv_path):
     )
     
     # This should trigger a save since total size would exceed buffer_size
-    result = csv_manager.add_data_to_buffer(more_data.T)  # Transpose to match expected shape
+    result = csv_manager.queue_data_for_csv_write(more_data.T)  # Transpose to match expected shape
     assert result is True
     
     # Verify file exists and has correct content
@@ -1318,7 +1318,7 @@ def test_buffer_management_large_initial_data(csv_manager, temp_csv_path):
     )
     
     # Add large initial data
-    result = csv_manager.add_data_to_buffer(data.T, is_initial=True)  # Transpose to match expected shape
+    result = csv_manager.queue_data_for_csv_write(data.T, is_initial=True)  # Transpose to match expected shape
     assert result is True
     
     # Verify file exists and has correct content
@@ -1346,7 +1346,7 @@ def test_buffer_management_subsequent_data(csv_manager, temp_csv_path):
         board_id=BoardIds.CYTON_DAISY_BOARD,
         start_time=1700000000.1  # Explicit start time
     )
-    csv_manager.add_data_to_buffer(initial_data.T, is_initial=True)  # Transpose to match expected shape
+    csv_manager.queue_data_for_csv_write(initial_data.T, is_initial=True)  # Transpose to match expected shape
     
     # Add subsequent data that would exceed buffer size
     # For 0.2 seconds at 125 Hz: 25 samples
@@ -1361,7 +1361,7 @@ def test_buffer_management_subsequent_data(csv_manager, temp_csv_path):
     )
     
     # This should trigger a save since total size would exceed buffer_size
-    result = csv_manager.add_data_to_buffer(subsequent_data.T)  # Transpose to match expected shape
+    result = csv_manager.queue_data_for_csv_write(subsequent_data.T)  # Transpose to match expected shape
     assert result is True
     
     # Verify file exists and has correct content
@@ -1383,7 +1383,7 @@ def test_merge_files_no_sleep_stage_file(csv_manager, sample_data, temp_csv_path
     # Create main CSV file
     main_csv_path = temp_csv_path
     csv_manager.main_csv_path = main_csv_path
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     csv_manager.save_main_buffer_to_csv()
     
     # Create a non-existent sleep stage file path
@@ -1416,7 +1416,7 @@ def test_save_all_data_with_empty_buffers(csv_manager, sample_data, temp_csv_pat
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
     
     # Add data to buffer and save it incrementally
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     csv_manager.save_main_buffer_to_csv()
     
     # Verify buffer is empty after save
@@ -1433,7 +1433,7 @@ def test_save_all_data_with_empty_buffers(csv_manager, sample_data, temp_csv_pat
 
 def test_save_new_data_initial(csv_manager, sample_data):
     """Test saving initial data."""
-    result = csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    result = csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     assert result is True
     assert len(csv_manager.main_csv_buffer) == sample_data.shape[1]
     # Get timestamp from the timestamp channel
@@ -1443,12 +1443,12 @@ def test_save_new_data_initial(csv_manager, sample_data):
 def test_save_new_data_subsequent(csv_manager, sample_data):
     """Test saving subsequent data."""
     # Save initial data
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     initial_length = len(csv_manager.main_csv_buffer)
     
     # Create new data with some overlap (last 5 samples)
     new_data = sample_data[:, -5:]
-    result = csv_manager.add_data_to_buffer(new_data)
+    result = csv_manager.queue_data_for_csv_write(new_data)
     assert result is True
     
     # Buffer length should not change since all timestamps are duplicates
@@ -1469,7 +1469,7 @@ def test_save_new_data_subsequent(csv_manager, sample_data):
     )
     
     # Add the new data
-    result = csv_manager.add_data_to_buffer(new_data.T)
+    result = csv_manager.queue_data_for_csv_write(new_data.T)
     assert result is True
     
     # Buffer length should increase since timestamps are new
@@ -1485,7 +1485,7 @@ def test_backward_compatibility_save_all_and_cleanup(csv_manager, sample_data, t
     csv_manager.main_csv_path = temp_csv_path
     
     # Save some data
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
     
     # Add sleep stage data with new method signature
     csv_manager.add_sleep_stage_to_sleep_stage_csv(2.0, 1.0, 0.0, 30.0)
@@ -1506,7 +1506,7 @@ def test_save_all_data(csv_manager, sample_data, temp_csv_path):
     Run pytest with -s to see debug output.
     """
     # Add some data to the main buffer
-    csv_manager.add_data_to_buffer(sample_data, is_initial=True)
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
 
     # Add some sleep stage data
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'

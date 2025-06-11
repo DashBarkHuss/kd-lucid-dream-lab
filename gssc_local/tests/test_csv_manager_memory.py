@@ -66,7 +66,7 @@ def test_peak_memory_usage(csv_manager):
         chunk_size = 1250  # 10 seconds of data
         for i in range(0, len(data), chunk_size):
             chunk = data[i:i + chunk_size]
-            csv_manager.add_data_to_buffer(chunk.T, is_initial=(i == 0))
+            csv_manager.queue_data_for_csv_write(chunk.T, is_initial=(i == 0))
 
             # Add sleep stage data every minute
             if i % (125 * 60) == 0:  # Every minute
@@ -108,7 +108,7 @@ def test_memory_leak_detection(csv_manager):
             )
             
             # Process data - each chunk is treated as initial since it's new data
-            csv_manager.add_data_to_buffer(data.T, is_initial=True)
+            csv_manager.queue_data_for_csv_write(data.T, is_initial=True)
             csv_manager.save_main_buffer_to_csv()
             
             # Add sleep stage data
@@ -145,7 +145,7 @@ def test_buffer_size_compliance(csv_manager):
         )
 
         # Process data and verify buffer size compliance
-        csv_manager.add_data_to_buffer(data.T, is_initial=True)
+        csv_manager.queue_data_for_csv_write(data.T, is_initial=True)
         assert len(csv_manager.main_csv_buffer) <= csv_manager.main_buffer_size, \
             f"Main buffer size exceeded: {len(csv_manager.main_csv_buffer)} > {csv_manager.main_buffer_size}"
 
@@ -184,7 +184,7 @@ def test_large_file_handling(csv_manager):
         chunk_size = 1250  # 10 seconds of data
         for i in range(0, len(data), chunk_size):
             chunk = data[i:i + chunk_size]
-            csv_manager.add_data_to_buffer(chunk.T, is_initial=(i == 0))
+            csv_manager.queue_data_for_csv_write(chunk.T, is_initial=(i == 0))
 
         # Add sleep stages every minute
         for i in range(0, len(data), 125 * 60):  # Every minute

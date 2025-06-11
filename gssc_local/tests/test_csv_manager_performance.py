@@ -116,7 +116,7 @@ def test_buffer_add_performance(csv_manager):
                 # Measure time for adding data
                 start_time = time.time()
                 try:
-                    result = csv_manager.add_data_to_buffer(data.T, is_initial=True)
+                    result = csv_manager.queue_data_for_csv_write(data.T, is_initial=True)
                 except Exception as e:
                     logger.error(f"Error adding data to buffer: {str(e)}")
                     if csv_manager.main_csv_buffer:
@@ -231,7 +231,7 @@ def test_buffer_save_performance(csv_manager):
                 last_timestamp += duration_seconds
                 
                 # Add data to buffer without triggering auto-save
-                csv_manager.add_data_to_buffer(data.T, is_initial=(save_idx == 0))
+                csv_manager.queue_data_for_csv_write(data.T, is_initial=(save_idx == 0))
                 
                 # Clear any existing file for the first save
                 if save_idx == 0 and os.path.exists(main_csv_path):
