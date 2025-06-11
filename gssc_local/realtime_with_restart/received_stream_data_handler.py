@@ -19,10 +19,10 @@ class ReceivedStreamedDataHandler:
         
         self.sample_count += board_data.shape[1]  # Increment total sample count
 
-        # add data to the buffer
-        self.data_manager.add_data_to_buffer(board_data, self.is_initial)
+        # Queue data for CSV writing
+        self.data_manager.queue_data_for_csv_write(board_data, self.is_initial)
         # add data to memory for epoch processing
-        self.data_manager.accumulate_data_for_epoch_processing(board_data, self.is_initial)
+        self.data_manager.add_to_data_processing_buffer(board_data, self.is_initial)
 
         self.is_initial = False
         

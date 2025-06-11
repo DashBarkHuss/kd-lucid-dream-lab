@@ -193,13 +193,13 @@ class TestRealtimeStream(unittest.TestCase):
         # Mock BoardManager
         self.mock_board_manager = Mock(spec=BoardManager)
         self.mock_board_manager.board_shim = Mock()
-        self.mock_board_manager.sampling_rate = 125  # CYTON_DAISY_BOARD sampling rate
-        self.mock_board_manager.timestamp_channel = 31  # Standard timestamp channel
+        self.mock_board_manager.sampling_rate = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD)  # Get actual sampling rate
+        self.mock_board_manager.board_timestamp_channel = BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)  # Get actual timestamp channel
         
         # Mock BoardShim methods
         self.mock_board_manager.board_shim.get_board_id.return_value = BoardIds.CYTON_DAISY_BOARD
         self.mock_board_manager.board_shim.get_exg_channels.return_value = list(range(8))  # 8 EEG channels
-        self.mock_board_manager.board_shim.get_timestamp_channel.return_value = 31
+        self.mock_board_manager.board_shim.get_timestamp_channel.return_value = BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)
         
         # Mock Qt App
         self.mock_qt_app = Mock()
@@ -212,7 +212,7 @@ class TestRealtimeStream(unittest.TestCase):
         # Mock DataManager
         self.mock_data_manager = Mock(spec=DataManager)
         self.mock_data_manager.queue_data_for_csv_write = Mock()
-        self.mock_data_manager.accumulate_data_for_epoch_processing.return_value = True
+        self.mock_data_manager.add_to_data_processing_buffer.return_value = True
         self.mock_data_manager.save_new_data = Mock()
         self.mock_data_manager._calculate_next_buffer_id_to_process.return_value = 0
         self.mock_data_manager.next_available_epoch_on_buffer.return_value = (True, None, 0, 1250)  # 10 seconds at 125 Hz
@@ -299,7 +299,7 @@ class TestRealtimeStream(unittest.TestCase):
         
         # Mock DataFrame for file reading
         mock_df = pd.DataFrame(np.zeros((1000, 32)))
-        mock_df.iloc[:, self.mock_board_manager.timestamp_channel] = np.arange(1000) / 125.0  # timestamps
+        mock_df.iloc[:, self.mock_board_manager.board_timestamp_channel] = np.arange(1000) / 125.0  # timestamps
         
         # Run the pipeline
         with patch('gssc_local.realtime_with_restart.main.pd.read_csv') as mock_read_csv:
@@ -334,14 +334,14 @@ class TestRealtimeStream(unittest.TestCase):
         
         # Test BoardManager mock
         self.assertEqual(self.mock_board_manager.sampling_rate, 125)
-        self.assertEqual(self.mock_board_manager.timestamp_channel, 31)
+        self.assertEqual(self.mock_board_manager.board_timestamp_channel, 30)
         self.assertEqual(self.mock_board_manager.board_shim.get_board_id(), BoardIds.CYTON_DAISY_BOARD)
         self.assertEqual(self.mock_board_manager.board_shim.get_exg_channels(), list(range(8)))
         print("✓ BoardManager mock configured correctly")
         
         # Test DataManager mock
         self.assertTrue(self.mock_data_manager.queue_data_for_csv_write.return_value)
-        self.assertTrue(self.mock_data_manager.accumulate_data_for_epoch_processing.return_value)
+        self.assertTrue(self.mock_data_manager.add_to_data_processing_buffer.return_value)
         self.mock_data_manager.save_new_data.assert_not_called()
         self.assertEqual(self.mock_data_manager._calculate_next_buffer_id_to_process(), 0)
         can_process, reason, start_idx, end_idx = self.mock_data_manager.next_available_epoch_on_buffer(0)
