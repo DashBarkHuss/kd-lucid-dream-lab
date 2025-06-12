@@ -88,10 +88,10 @@ class SpeedControlledBoardManager(BoardManager):
         self.current_position = 0
         
         # Initialize timing variables using the first timestamp from the file
-        if self.timestamp_channel is None or len(self.file_data) == 0:
+        if self.board_timestamp_channel is None or len(self.file_data) == 0:
             raise ValueError("No timestamps available in file data")
             
-        self.start_time = float(self.file_data.iloc[0, self.timestamp_channel])
+        self.start_time = float(self.file_data.iloc[0, self.board_timestamp_channel])
         self.last_chunk_time = self.start_time
         
         # Return total available samples for progress tracking

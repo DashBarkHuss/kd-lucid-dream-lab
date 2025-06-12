@@ -169,7 +169,7 @@ def main():
     # Use SpeedControlledBoardManager with 100x speed for fast testing
     board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=1000.0)
     board_manager.setup_board()
-    timestamp_channel = board_manager.timestamp_channel
+    board_timestamp_channel = board_manager.board_timestamp_channel
     received_streamed_data_handler = ReceivedStreamedDataHandler(board_manager, logger)
 
     # Configure buffer sizes and file paths for periodic saving
@@ -196,16 +196,16 @@ def main():
                 if new_data.size > 0:
                     # If this is the first data chunk, set the start timestamp
                     # This is used for timing calculations
-                    if start_first_data_ts is None and timestamp_channel is not None:
-                        start_first_data_ts = float(new_data[timestamp_channel][0])
+                    if start_first_data_ts is None and board_timestamp_channel is not None:
+                        start_first_data_ts = float(new_data[board_timestamp_channel][0])
                         logger.info(f"Set start_first_data_ts to: {start_first_data_ts}")
                     
                     # Process the data through the pipeline
                     received_streamed_data_handler.process_board_data(new_data)
                     
                     # Update last good timestamp for gap detection
-                    if timestamp_channel is not None:
-                        last_good_ts = float(new_data[timestamp_channel][-1])
+                    if board_timestamp_channel is not None:
+                        last_good_ts = float(new_data[board_timestamp_channel][-1])
                     
                     # Log progress
                     logger.info(f"Processed {received_streamed_data_handler.sample_count} samples")
@@ -228,7 +228,7 @@ def main():
 
             # Calculate new offset after gap
             # Find the next valid data point after the gap
-            timestamps = original_playback_data.iloc[:, timestamp_channel]
+            timestamps = original_playback_data.iloc[:, board_timestamp_channel]
             next_rows = timestamps[timestamps > last_good_ts]
             
             if len(next_rows) == 0:

@@ -19,7 +19,7 @@ class BoardManager:
         self.current_position = 0
         self.buffer_manager = None
         self.master_board_id = master_board_id  # Add master board ID
-        self.timestamp_channel = None  # Will be set in setup_board
+        self.board_timestamp_channel = None  # Will be set in setup_board
         self.gap_threshold = 2.0  # Add gap threshold in seconds
         
 
@@ -54,7 +54,7 @@ class BoardManager:
             self.board_shim.prepare_session()
             print(f"\nBoard Configuration:")
             print(f"Master board: {self.master_board_id}")
-            print(f"Timestamp channel: {self.timestamp_channel}")
+            print(f"Timestamp channel: {self.board_timestamp_channel}")
             print(f"Sampling rate: {self.sampling_rate}")
             
             self.board_shim.config_board("old_timestamps")
@@ -78,7 +78,7 @@ class BoardManager:
             print("\nStarting data stream:")
             print(f"- Buffer size: {self.buffer_size}")
             print(f"- Sampling rate: {self.sampling_rate}")
-            print(f"- Timestamp channel: {self.timestamp_channel}")
+            print(f"- Timestamp channel: {self.board_timestamp_channel}")
             
             self.board_shim.start_stream(self.buffer_size)
             
@@ -116,8 +116,8 @@ class BoardManager:
                     print("- get_board_data returned empty array despite positive count!")
                 else:
                     # For streaming, set recording_start_time to the first timestamp if not already set
-                    if self.recording_start_time is None and self.timestamp_channel is not None:
-                        self.recording_start_time = initial_data[self.timestamp_channel][0]
+                    if self.recording_start_time is None and self.board_timestamp_channel is not None:
+                        self.recording_start_time = initial_data[self.board_timestamp_channel][0]
                         print(f"- Set recording start time to: {self.recording_start_time}")
                     
                 return initial_data
@@ -156,8 +156,8 @@ class BoardManager:
 
                 if new_data.size > 0:
                     
-                    if self.timestamp_channel is not None:
-                        last_timestamp = new_data[self.timestamp_channel][-1]
+                    if self.board_timestamp_channel is not None:
+                        last_timestamp = new_data[self.board_timestamp_channel][-1]
                         
 
                         self.last_chunk_last_timestamp = last_timestamp
