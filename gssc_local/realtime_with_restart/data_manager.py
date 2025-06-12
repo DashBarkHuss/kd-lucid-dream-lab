@@ -38,8 +38,8 @@ class DataManager:
         self.buffer_step = self.seconds_per_step
         
         # Initialize channels and buffers
-        self.electrode_channels, self.timestamp_channel, self.all_channels_with_timestamp = self._init_channels()
-        self.all_previous_relevant_column_data = [[] for _ in range(len(self.all_channels_with_timestamp))]
+        self.electrode_channels, self.board_timestamp_channel, self.electrode_and_timestamp_channels = self._init_channels()
+        self.electrode_and_timestamp_data = [[] for _ in range(len(self.electrode_and_timestamp_channels))]  # Buffer containing electrode and timestamp data
         
         # Buffer tracking
         self.points_collected = 0
@@ -73,7 +73,8 @@ class DataManager:
         self.gap_threshold = 2.0  # Large gap threshold (seconds)
         self.interpolation_threshold = 0.1  # Maximum gap to interpolate (seconds)
         self.current_epoch_start_time = None
-        self.buffer_timestamp_index = self.all_channels_with_timestamp.index(self.timestamp_channel)
+        # Index position of timestamp within electrode_and_timestamp_data array
+        self.electrode_and_timestamp_data_timestamp_index = self.electrode_and_timestamp_channels.index(self.board_timestamp_channel)
         
         # Add validation settings
         self.validate_consecutive_values = False  # Set to True to enable consecutive value validation
@@ -100,16 +101,58 @@ class DataManager:
 
 
     def _init_channels(self):
-        """Initialize channel information"""
-        electrode_channels = self.board_shim.get_exg_channels(self.board_shim.get_board_id())
-        board_timestamp_channel = self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
-        all_channels_with_timestamp = list(electrode_channels)
+        """Initialize and validate channel information from the board.
         
-        if board_timestamp_channel is not None and board_timestamp_channel not in electrode_channels:
-            all_channels_with_timestamp.append(board_timestamp_channel)
-            self.buffer_timestamp_index = len(all_channels_with_timestamp) - 1
+        Returns:
+            tuple: Contains:
+                - electrode_channels (list): Channel numbers for EEG/EMG/EOG on the board
+                - board_timestamp_channel (int): Channel number for timestamp on the board
+                - electrode_and_timestamp_channels (list): Combined list of all channel numbers we'll read
+                
+        Raises:
+            RuntimeError: If board is not properly initialized
+        """
+        if not self.board_shim:
+            raise RuntimeError("Board not initialized properly")
+            
+        try:
+            # Get channel information from board
+            electrode_channels = self._get_board_electrode_channels()
+            board_timestamp_channel = self._get_board_timestamp_channel()
+            
+            # Combine channels into unified list
+            electrode_and_timestamp_channels = self._combine_channels(electrode_channels, board_timestamp_channel)
+            
+            return electrode_channels, board_timestamp_channel, electrode_and_timestamp_channels
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize channels: {str(e)}")
+            
+    def _get_board_electrode_channels(self):
+        """Get the electrode (EEG/EMG/EOG) channel indices from the board."""
+        return self.board_shim.get_exg_channels(self.board_shim.get_board_id())
         
-        return electrode_channels, board_timestamp_channel, all_channels_with_timestamp
+    def _get_board_timestamp_channel(self):
+        """Get the timestamp channel index from the board."""
+        return self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())
+        
+    def _combine_channels(self, electrode_channels, timestamp_channel):
+        """Combine electrode and timestamp channels into a unified list.
+        
+        Args:
+            electrode_channels (list): List of electrode channel indices
+            timestamp_channel (int): Timestamp channel index
+            
+        Returns:
+            list: Combined list of all channel indices
+        """
+        all_channels = list(electrode_channels)
+        
+        if timestamp_channel is not None and timestamp_channel not in electrode_channels:
+            all_channels.append(timestamp_channel)
+            self.electrode_and_timestamp_data_timestamp_index = len(all_channels) - 1
+            
+        return all_channels
 
     def validate_consecutive_data(self, data, channel_idx=None):
         """
@@ -159,7 +202,7 @@ class DataManager:
         self.last_validated_value = channel_data[-1]
         return True, "Data validated successfully"
 
-    def accumulate_data_for_epoch_processing(self, new_data, is_initial=False):
+    def add_to_data_processing_buffer(self, new_data, is_initial=False):
         
         """Add new data to the buffer for epoch processing"""
         # Validate data values
@@ -177,20 +220,52 @@ class DataManager:
         # Update points collected
         self.points_collected += len(new_data[0])
         
-        # Update all_previous_data
-        if not is_initial: # TODO: do we check if the data is duplicated when processing in the epoch?
-            for i, channel in enumerate(self.all_channels_with_timestamp):
-                self.all_previous_relevant_column_data[i].extend(new_data[channel].tolist()) # TODO: what is this buffer used for specifically- it should be better named. 
-                # TODO: we need to manage the memory of this buffer. 
+        # Update analysis ready data
+        if not is_initial:  # TODO: do we check if the data is duplicated when processing in the epoch?
+            for i, channel in enumerate(self.electrode_and_timestamp_channels):
+                self.electrode_and_timestamp_data[i].extend(new_data[channel].tolist())
         else:
-            for i, channel in enumerate(self.all_channels_with_timestamp):
-                self.all_previous_relevant_column_data[i] = new_data[channel].tolist()
+            for i, channel in enumerate(self.electrode_and_timestamp_channels):
+                self.electrode_and_timestamp_data[i] = new_data[channel].tolist()
                 
         return True
 
-    def add_data_to_buffer(self, new_data, is_initial=False):
-        """Add new data to the buffer and handle buffer management."""
-        self.csv_manager.add_data_to_buffer(new_data, is_initial)
+    def queue_data_for_csv_write(self, new_data, is_initial=False):
+        """Queue new data for CSV writing and handle buffer management."""
+        self.csv_manager.queue_data_for_csv_write(new_data, is_initial)
+
+    def _get_etd_timestamps(self):
+        """Helper method to get timestamp data from electrode_and_timestamp_data.
+        
+        Returns:
+            The timestamp data array from electrode_and_timestamp_data
+        """
+        return self.electrode_and_timestamp_data[self.electrode_and_timestamp_data_timestamp_index]
+
+    def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
+        """Validate the epoch has no gaps
+        
+        Args:
+            buffer_id: ID of the buffer being validated
+            epoch_start_idx: Start index of the epoch
+            epoch_end_idx: End index of the epoch
+            
+        Returns:
+            tuple: (has_gap, gap_size)
+            - has_gap: True if a gap was detected
+            - gap_size: Size of the gap if one was detected, otherwise 0
+        """
+        # Get timestamp data
+        timestamp_data = np.array(self._get_etd_timestamps())
+        
+        # Use GapHandler to validate gaps
+        has_gap, gap_size = self.gap_handler.validate_epoch_gaps(
+            timestamps=timestamp_data,
+            epoch_start_idx=epoch_start_idx,
+            epoch_end_idx=epoch_end_idx
+        )
+        
+        return has_gap, gap_size
 
     def add_sleep_stage_to_csv_buffer(self, sleep_stage, next_buffer_id, epoch_end_idx):
         """Add the sleep stage and buffer ID with timestamps to the sleep stage CSV"""
@@ -198,7 +273,7 @@ class DataManager:
         epoch_start_idx = epoch_end_idx - self.points_per_epoch
         
         # Get timestamps from the data
-        timestamp_data = self.all_previous_relevant_column_data[self.buffer_timestamp_index]
+        timestamp_data = self._get_etd_timestamps()
         timestamp_start = timestamp_data[epoch_start_idx]
         timestamp_end = timestamp_data[epoch_end_idx - 1]  # epoch_end_idx is exclusive, so use -1
         
@@ -215,48 +290,11 @@ class DataManager:
             float(timestamp_end)
         )
 
-    def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
-        """Validate the epoch has no gaps
-        
-        Args:
-            buffer_id: ID of the buffer being validated
-            epoch_start_idx: Start index of the epoch
-            epoch_end_idx: End index of the epoch
-            
-        Returns:
-            tuple: (has_gap, gap_size)
-            - has_gap: True if a gap was detected
-            - gap_size: Size of the gap if one was detected, otherwise 0
-        """
-        # Get timestamp data
-        timestamp_data = np.array(self.all_previous_relevant_column_data[self.buffer_timestamp_index])
-        
-        # Use GapHandler to validate gaps
-        has_gap, gap_size = self.gap_handler.validate_epoch_gaps(
-            timestamps=timestamp_data,
-            epoch_start_idx=epoch_start_idx,
-            epoch_end_idx=epoch_end_idx
-        )
-        
-        return has_gap, gap_size
-
-        # OLD IMPLEMENTATION:
-        # """
-        # # Check for gaps in the timestamp data
-        # timestamp_data = self.all_previous_relevant_column_data[self.buffer_timestamp_index]
-        # has_gap, gap_size, gap_start_idx, gap_end_idx = self.detect_gap(
-        #     timestamp_data[epoch_start_idx:epoch_end_idx],
-        #     timestamp_data[epoch_start_idx-1] if epoch_start_idx > 0 else None
-        # )
-        # 
-        # return has_gap, gap_size
-        # """
-
     def _enough_data_to_process_epoch(self, buffer_id, epoch_end_idx):
         """Check if we have enough data to process the given buffer"""
         buffer_delay = buffer_id * self.points_per_step
-        return (epoch_end_idx < len(self.all_previous_relevant_column_data[0]) and 
-                len(self.all_previous_relevant_column_data[0]) >= buffer_delay)
+        return (epoch_end_idx < len(self.electrode_and_timestamp_data[0]) and 
+                len(self.electrode_and_timestamp_data[0]) >= buffer_delay)
     
     def _has_enough_data_for_buffer(self, buffer_id):
         """Check if we have enough data points and time has passed for the specified buffer
@@ -276,18 +314,18 @@ class DataManager:
             buffer_delay = buffer_id * self.points_per_step
             required_points = buffer_delay + self.points_per_epoch
             
-        if len(self.all_previous_relevant_column_data[0]) < required_points:
+        if len(self.electrode_and_timestamp_data[0]) < required_points:
             return False, "Not enough data points"
             
         # Get the current timestamp from the data
-        current_timestamp = self.all_previous_relevant_column_data[self.buffer_timestamp_index][-1]
+        current_timestamp = self._get_etd_timestamps()[-1]
         
         # For the first epoch, we can process it
         if self.last_processed_buffer == -1:
             return True, ""
             
         # For subsequent epochs, check if we've moved forward by buffer_step seconds
-        last_epoch_timestamp = self.all_previous_relevant_column_data[self.buffer_timestamp_index][
+        last_epoch_timestamp = self._get_etd_timestamps()[
             self.processed_epoch_start_indices[self.last_processed_buffer][-1]
         ]
         
@@ -317,14 +355,13 @@ class DataManager:
     def manage_epoch(self, buffer_id, epoch_start_idx, epoch_end_idx):
         """Validate and process a specified epoch on a specified buffer."""
 
-
         # validate that we can process the epoch
         has_gap, gap_size = self.validate_epoch_gaps(buffer_id, epoch_start_idx, epoch_end_idx)
 
         if has_gap:
             # Handle the gap
             self.handle_gap(
-                prev_timestamp=self.all_previous_relevant_column_data[self.buffer_timestamp_index][epoch_start_idx-1],
+                prev_timestamp=self._get_etd_timestamps()[epoch_start_idx-1],
                 gap_size=gap_size, buffer_id=buffer_id
             )
        
@@ -350,7 +387,7 @@ class DataManager:
         
         # Extract EXACTLY points_per_epoch data points from the correct slice
         epoch_data = np.array([
-            self.all_previous_relevant_column_data[channel][start_idx:end_idx]
+            self.electrode_and_timestamp_data[channel][start_idx:end_idx]
             for channel in self.electrode_channels
         ])
         
@@ -358,7 +395,7 @@ class DataManager:
         assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
         
         # Get the timestamp data for this epoch
-        timestamp_data = self.all_previous_relevant_column_data[self.buffer_timestamp_index][start_idx:end_idx]
+        timestamp_data = self._get_etd_timestamps()[start_idx:end_idx]
         epoch_start_time = timestamp_data[0]  # First timestamp in the epoch
         
         # Get index combinations for EEG and EOG channels
@@ -403,7 +440,6 @@ class DataManager:
         # Debug logging
         print(f"\n=== Debug: DataManager.save_to_csv ===")
         print(f"Total points collected: {self.points_collected}")
-        print(f"Length of all_previous_relevant_column_data[0]: {len(self.all_previous_relevant_column_data[0])}")
         print(f"CSVManager main_buffer_size: {self.csv_manager.main_buffer_size}")
         print(f"CSVManager main_csv_buffer length: {len(self.csv_manager.main_csv_buffer)}")
         
@@ -416,27 +452,6 @@ class DataManager:
     def validate_saved_csv(self, original_csv_path, output_csv_path):
         """Validate that the saved CSV matches the original format exactly, ignoring sleep stage and buffer ID columns"""
         return self.csv_manager.validate_saved_csv_matches_original_source(original_csv_path, output_csv_path)
-
-    def _get_affected_buffer(self, timestamp):
-        """
-        Determine which buffer is affected by a gap based on timestamp.
-        
-        Args:
-            timestamp: The timestamp where the gap occurred
-            
-        Returns:
-            int: Buffer ID (0-5) or None if cannot be determined
-        """
-        if not self.all_previous_relevant_column_data[0]:  # No data yet
-            return None
-        
-        # Calculate time from start of recording
-        start_time = self.all_previous_relevant_column_data[self.buffer_timestamp_index][0]
-        relative_time = timestamp - start_time
-        
-        # Calculate which buffer this timestamp would belong to
-        buffer_id = int((relative_time % self.seconds_per_epoch) // 5)
-        return buffer_id if 0 <= buffer_id <= 5 else None
 
     def detect_gap(self, timestamps, prev_timestamp):
         """
@@ -571,7 +586,7 @@ class DataManager:
             self.last_saved_timestamp = None
             
             # Clear data buffers
-            self.all_previous_relevant_column_data = [[] for _ in range(len(self.all_channels_with_timestamp))]
+            self.electrode_and_timestamp_data = [[] for _ in range(len(self.electrode_and_timestamp_channels))]
             self.processed_epoch_start_indices = [[] for _ in range(6)]
             
             # Reset hidden states

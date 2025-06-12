@@ -42,7 +42,7 @@ class BoardManager:
 
         # Get sampling rate and timestamp channel from master board, not playback board
         self.sampling_rate = BoardShim.get_sampling_rate(self.master_board_id)
-        self.timestamp_channel = BoardShim.get_timestamp_channel(self.master_board_id)
+        self.board_timestamp_channel = BoardShim.get_timestamp_channel(self.master_board_id)
         
         return self.board_shim
 
