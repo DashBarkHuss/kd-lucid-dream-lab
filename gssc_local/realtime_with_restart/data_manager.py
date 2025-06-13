@@ -263,8 +263,8 @@ class DataManager:
         
         Args:
             buffer_id: ID of the buffer being validated
-            epoch_start_idx_abs: Start index of the epoch
-            epoch_end_idx_abs: End index of the epoch
+            epoch_start_idx_abs: Absolute start index of the epoch in the total streamed data
+            epoch_end_idx_abs: Absolute end index of the epoch in the total streamed data
             
         Returns:
             tuple: (has_gap, gap_size)
@@ -288,7 +288,13 @@ class DataManager:
         return has_gap, gap_size
 
     def add_sleep_stage_to_csv_buffer(self, sleep_stage, next_buffer_id, epoch_end_idx_abs):
-        """Add the sleep stage and buffer ID with timestamps to the sleep stage CSV"""
+        """Add the sleep stage and buffer ID with timestamps to the sleep stage CSV
+        
+        Args:
+            sleep_stage: The predicted sleep stage
+            next_buffer_id: The ID of the buffer that processed this epoch
+            epoch_end_idx_abs: Absolute end index of the epoch in the total streamed data
+        """
         # Calculate timestamps for this epoch
         epoch_start_idx_abs = epoch_end_idx_abs - self.points_per_epoch
         
@@ -336,8 +342,8 @@ class DataManager:
             
         Returns:
             tuple: (epoch_start_idx_abs, epoch_end_idx_abs)
-            - epoch_start_idx_abs: The starting index for the epoch
-            - epoch_end_idx_abs: The ending index for the epoch
+            - epoch_start_idx_abs: The absolute starting index for the epoch in the total streamed data
+            - epoch_end_idx_abs: The absolute ending index for the epoch in the total streamed data
         """
         buffer_start_offset = self._get_data_point_delay_for_buffer(buffer_id)
         last_epoch_start_idx_abs = None
@@ -365,7 +371,7 @@ class DataManager:
         (both initial and subsequent) at this buffer's position.
         
         Args:
-            epoch_end_idx_abs: End index of the proposed epoch
+            epoch_end_idx_abs: Absolute end index of the proposed epoch in the total streamed data
             total_etd_points: Total number of data points available
             buffer_data_point_delay: Delay points for this buffer
             
@@ -418,7 +424,7 @@ class DataManager:
         
         Args:
             buffer_id: The ID of the buffer to check
-            epoch_end_idx_abs: End index of the proposed epoch
+            epoch_end_idx_abs: Absolute end index of the proposed epoch in the total streamed data
             total_etd_points: Total number of data points available
             buffer_data_point_delay: Delay points for this buffer
             
@@ -452,11 +458,11 @@ class DataManager:
             buffer_id: The ID of the round robin buffer to check (0-5)
             
         Returns:
-            tuple: (can_process, reason, start_idx, end_idx)
+            tuple: (can_process, reason, epoch_start_idx_abs, epoch_end_idx_abs)
                 - can_process: True if we can process this buffer
                 - reason: Explanation if we can't process, empty string if we can
-                - start_idx: Start index of next epoch if can_process, else None
-                - end_idx: End index of next epoch if can_process, else None
+                - epoch_start_idx_abs: Start index of next epoch if can_process, else None
+                - epoch_end_idx_abs: End index of next epoch if can_process, else None
         """
         # Get required values
         buffer_data_point_delay = self._get_data_point_delay_for_buffer(buffer_id)
@@ -506,7 +512,16 @@ class DataManager:
         self.add_sleep_stage_to_csv_buffer(sleep_stage, buffer_id, epoch_end_idx_abs)
 
     def _process_epoch(self, start_idx_abs, end_idx_abs, buffer_id):
-        """Handle the data for a specified epoch on a specified buffer which has valid data."""        
+        """Handle the data for a specified epoch on a specified buffer which has valid data.
+        
+        Args:
+            start_idx_abs: Absolute start index of the epoch in the total streamed data
+            end_idx_abs: Absolute end index of the epoch in the total streamed data
+            buffer_id: The ID of the buffer to process
+            
+        Returns:
+            np.ndarray: Array containing the predicted sleep stage
+        """
         
         print(f"\nProcessing buffer {buffer_id}")
         print(f"Epoch range: {start_idx_abs} to {end_idx_abs}")

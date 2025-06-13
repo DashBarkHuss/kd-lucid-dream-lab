@@ -112,7 +112,7 @@ class GapHandler:
         if not np.all(np.diff(timestamps) >= 0):
             raise InvalidTimestampError("Timestamps must be monotonically increasing")
             
-    def _validate_epoch_indices(self, timestamps: np.ndarray, start_idx: int, end_idx: int) -> None:
+    def _validate_epoch_indices(self, timestamps: np.ndarray, start_idx_rel: int, end_idx_rel: int) -> None:
         """Validate epoch indices.
         
         Args:
@@ -123,15 +123,15 @@ class GapHandler:
         Raises:
             InvalidEpochIndicesError: If epoch indices are invalid
         """
-        if start_idx < 0 or end_idx > len(timestamps):
+        if start_idx_rel < 0 or end_idx_rel > len(timestamps):
             raise InvalidEpochIndicesError(
-                f"Epoch indices out of bounds: start_idx={start_idx}, end_idx={end_idx}, "
+                f"Epoch indices out of bounds: start_idx={start_idx_rel}, end_idx={end_idx_rel}, "
                 f"array_length={len(timestamps)}"
             )
             
-        if start_idx >= end_idx:
+        if start_idx_rel >= end_idx_rel:
             raise InvalidEpochIndicesError(
-                f"Start index must be less than end index: start_idx={start_idx}, end_idx={end_idx}"
+                f"Start index must be less than end index: start_idx={start_idx_rel}, end_idx={end_idx_rel}"
             )
         
     def detect_gap(self, timestamps: np.ndarray, prev_timestamp: Optional[float] = None) -> Tuple[bool, float, Optional[int], Optional[int]]:
