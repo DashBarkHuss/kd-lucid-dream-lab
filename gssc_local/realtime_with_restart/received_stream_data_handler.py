@@ -31,7 +31,7 @@ class ReceivedStreamedDataHandler:
         self.logger.info(f"Next buffer ID to process: {next_buffer_id}")
 
         # Check if we CAN process an epoch (have enough data + right timing)
-        can_process, reason, epoch_start_idx, epoch_end_idx = self.data_manager.next_available_epoch_on_buffer(next_buffer_id)
+        can_process, reason, epoch_start_idx, epoch_end_idx = self.data_manager.next_available_epoch_on_round_robin_buffer(next_buffer_id)
         self.logger.info(f"Can process epoch: {can_process}")
         if not can_process:
             self.logger.info(f"Reason: {reason}")
@@ -41,8 +41,8 @@ class ReceivedStreamedDataHandler:
             self.logger.info(f"Processing epoch on buffer {next_buffer_id}")
             self.logger.info(f"Epoch indices: {epoch_start_idx} to {epoch_end_idx}")
             self.data_manager.manage_epoch(buffer_id=next_buffer_id, 
-                                    epoch_start_idx=epoch_start_idx, 
-                                    epoch_end_idx=epoch_end_idx)
+                                    epoch_start_idx_abs=epoch_start_idx, 
+                                    epoch_end_idx_abs=epoch_end_idx)
         
         # Log processing statistics
         self.logger.info(f"Processed {self.sample_count} samples")        

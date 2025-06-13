@@ -167,7 +167,7 @@ def main():
     # Initialize board and handler
     board_id = BoardIds.CYTON_DAISY_BOARD
     # Use SpeedControlledBoardManager with 100x speed for fast testing
-    board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=1000.0)
+    board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=2000.0)
     board_manager.setup_board()
     board_timestamp_channel = board_manager.board_timestamp_channel
     received_streamed_data_handler = ReceivedStreamedDataHandler(board_manager, logger)
@@ -206,10 +206,7 @@ def main():
                     # Update last good timestamp for gap detection
                     if board_timestamp_channel is not None:
                         last_good_ts = float(new_data[board_timestamp_channel][-1])
-                    
-                    # Log progress
-                    logger.info(f"Processed {received_streamed_data_handler.sample_count} samples")
-                    logger.info(f"Current buffer size: {len(received_streamed_data_handler.data_manager.csv_manager.main_csv_buffer)}")
+
                 else:
                     # No more data
                     logger.info("No more data to process")

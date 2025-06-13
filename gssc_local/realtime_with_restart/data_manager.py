@@ -60,7 +60,7 @@ class DataManager:
         #     [],                    # Buffer 4 hasn't processed any epochs yet
         #     []                     # Buffer 5 hasn't processed any epochs yet
         # ]
-        self.processed_epoch_start_indices = [[] for _ in range(6)]
+        self.matrix_of_round_robin_processed_epoch_start_indices_of_total_streamed_data = [[] for _ in range(6)]
         
         # Initialize hidden states for each buffer
         self.buffer_hidden_states = [
@@ -84,6 +84,7 @@ class DataManager:
         self.last_validated_value_for_consecutive_data_validation = None  # Track last validated value
         self.output_csv_path = None
         self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
+        self.etd_offset = 0 # offset to account for memory management of electrode_and_timestamp_data
         
         # Initialize CSVManager
         self.csv_manager = CSVManager(
@@ -240,13 +241,30 @@ class DataManager:
         """
         return self.electrode_and_timestamp_data[self.electrode_and_timestamp_data_timestamp_index]
 
-    def validate_epoch_gaps(self, buffer_id, epoch_start_idx, epoch_end_idx):
+
+
+    def _adjust_index_with_etd_offset(self, index, to_etd=True):
+        """Place holder method for when we add memory management to electrode_and_timestamp_data.
+        
+        Args:
+            index: index of sample
+            to_etd: True if the index is relative to the total streamed data, False if the index is relative to the electrode_and_timestamp_data
+            
+        Returns:
+            int: Adjusted index to be relative to the total streamed data or electrode_and_timestamp_data
+        """
+        
+        return index - self.etd_offset if to_etd else index + self.etd_offset
+    
+
+
+    def validate_epoch_gaps(self, buffer_id, epoch_start_idx_abs, epoch_end_idx_abs):
         """Validate the epoch has no gaps
         
         Args:
             buffer_id: ID of the buffer being validated
-            epoch_start_idx: Start index of the epoch
-            epoch_end_idx: End index of the epoch
+            epoch_start_idx_abs: Start index of the epoch
+            epoch_end_idx_abs: End index of the epoch
             
         Returns:
             tuple: (has_gap, gap_size)
@@ -255,32 +273,33 @@ class DataManager:
         """
         # Get timestamp data
         timestamp_data = np.array(self._get_etd_timestamps())
+
+        # Adjust the epoch indices to account for the buffer delay
+        epoch_start_idx_rel = self._adjust_index_with_etd_offset(epoch_start_idx_abs)
+        epoch_end_idx_rel = self._adjust_index_with_etd_offset(epoch_end_idx_abs)
         
         # Use GapHandler to validate gaps
         has_gap, gap_size = self.gap_handler.validate_epoch_gaps(
             timestamps=timestamp_data,
-            epoch_start_idx=epoch_start_idx,
-            epoch_end_idx=epoch_end_idx
+            epoch_start_idx_rel=epoch_start_idx_rel,
+            epoch_end_idx_rel=epoch_end_idx_rel
         )
         
         return has_gap, gap_size
 
-    def add_sleep_stage_to_csv_buffer(self, sleep_stage, next_buffer_id, epoch_end_idx):
+    def add_sleep_stage_to_csv_buffer(self, sleep_stage, next_buffer_id, epoch_end_idx_abs):
         """Add the sleep stage and buffer ID with timestamps to the sleep stage CSV"""
         # Calculate timestamps for this epoch
-        epoch_start_idx = epoch_end_idx - self.points_per_epoch
+        epoch_start_idx_abs = epoch_end_idx_abs - self.points_per_epoch
         
         # Get timestamps from the data
         timestamp_data = self._get_etd_timestamps()
-        timestamp_start = timestamp_data[epoch_start_idx]
-        timestamp_end = timestamp_data[epoch_end_idx - 1]  # epoch_end_idx is exclusive, so use -1
-        
-        # Log current state
-        print(f"Current length of main_csv_buffer: {len(self.csv_manager.main_csv_buffer)}")
-        print(f"Epoch end index: {epoch_end_idx}")
-        print(f"Timestamp range: {timestamp_start} to {timestamp_end}")
+        timestamp_start = timestamp_data[epoch_start_idx_abs]
+        timestamp_end = timestamp_data[epoch_end_idx_abs - 1]  # epoch_end_idx_abs is exclusive, so use -1
+
         
         # Use the new method signature with timestamps
+        ## Needs absolute indices for the timestamps
         self.csv_manager.add_sleep_stage_to_sleep_stage_csv(
             float(sleep_stage[0]), 
             float(next_buffer_id), 
@@ -316,44 +335,44 @@ class DataManager:
             buffer_id: The ID of the buffer to get indices for
             
         Returns:
-            tuple: (epoch_start_idx, epoch_end_idx)
-            - epoch_start_idx: The starting index for the epoch
-            - epoch_end_idx: The ending index for the epoch
+            tuple: (epoch_start_idx_abs, epoch_end_idx_abs)
+            - epoch_start_idx_abs: The starting index for the epoch
+            - epoch_end_idx_abs: The ending index for the epoch
         """
         buffer_start_offset = self._get_data_point_delay_for_buffer(buffer_id)
-        last_epoch_start_idx = None
+        last_epoch_start_idx_abs = None
         
         try:
-            last_epoch_start_idx = self.processed_epoch_start_indices[buffer_id][-1]
+            last_epoch_start_idx_abs = self.matrix_of_round_robin_processed_epoch_start_indices_of_total_streamed_data[buffer_id][-1]
         except (IndexError, KeyError):
             pass
 
         # If this is the first epoch for this buffer, start at the buffer's offset
-        if last_epoch_start_idx is None:
-            epoch_start_idx = buffer_start_offset
+        if last_epoch_start_idx_abs is None:
+            epoch_start_idx_abs = buffer_start_offset
         else:
             # Otherwise, start after the last processed epoch
-            epoch_start_idx = last_epoch_start_idx + self.points_per_epoch
+            epoch_start_idx_abs = last_epoch_start_idx_abs + self.points_per_epoch
 
-        epoch_end_idx = epoch_start_idx + self.points_per_epoch
+        epoch_end_idx_abs = epoch_start_idx_abs + self.points_per_epoch
         
-        return epoch_start_idx, epoch_end_idx
+        return epoch_start_idx_abs, epoch_end_idx_abs
 
-    def _has_minimum_points_to_start_processing(self, epoch_end_idx, total_etd_points, buffer_data_point_delay):
+    def _has_minimum_points_to_start_processing(self, epoch_end_idx_abs, total_etd_points, buffer_data_point_delay):
         """Check if we have the minimum required points to start processing epochs at this buffer position.
         
         This is the basic requirement that must be met before we can process ANY epochs
         (both initial and subsequent) at this buffer's position.
         
         Args:
-            epoch_end_idx: End index of the proposed epoch
+            epoch_end_idx_abs: End index of the proposed epoch
             total_etd_points: Total number of data points available
             buffer_data_point_delay: Delay points for this buffer
             
         Returns:
             bool: True if we have enough points to start processing, False otherwise
         """
-        return (epoch_end_idx < total_etd_points and 
+        return (epoch_end_idx_abs < total_etd_points and 
                 total_etd_points >= buffer_data_point_delay)
 
     def _is_first_epoch_in_round_robin(self, buffer_id):
@@ -365,8 +384,8 @@ class DataManager:
         Returns:
             bool: True if no epochs have been processed yet in any buffer
         """
-        has_processed_epochs = (self.processed_epoch_start_indices[buffer_id] or 
-                              any(len(indices) > 0 for indices in self.processed_epoch_start_indices))
+        has_processed_epochs = (self.matrix_of_round_robin_processed_epoch_start_indices_of_total_streamed_data[buffer_id] or 
+                              any(len(indices) > 0 for indices in self.matrix_of_round_robin_processed_epoch_start_indices_of_total_streamed_data))
         return not has_processed_epochs
 
     def _has_enough_delay_since_last_epoch(self):
@@ -381,7 +400,7 @@ class DataManager:
         last_etd_timestamp = self._get_etd_timestamps()[-1]
         last_epoch_timestamp = max(
             self._get_etd_timestamps()[indices[-1]]
-            for indices in self.processed_epoch_start_indices
+            for indices in self.matrix_of_round_robin_processed_epoch_start_indices_of_total_streamed_data
             if indices
         )
         return last_etd_timestamp - last_epoch_timestamp >= self.round_robin_delay
@@ -394,12 +413,12 @@ class DataManager:
         """
         return (self.last_processed_buffer + 1) % 6
 
-    def _validate_epoch_availability(self, buffer_id, epoch_end_idx, total_etd_points, buffer_data_point_delay):
+    def _validate_epoch_availability(self, buffer_id, epoch_end_idx_abs, total_etd_points, buffer_data_point_delay):
         """Validate if an epoch is available for processing.
         
         Args:
             buffer_id: The ID of the buffer to check
-            epoch_end_idx: End index of the proposed epoch
+            epoch_end_idx_abs: End index of the proposed epoch
             total_etd_points: Total number of data points available
             buffer_data_point_delay: Delay points for this buffer
             
@@ -409,7 +428,7 @@ class DataManager:
                 - reason: Explanation if not valid, None if valid
         """
         # First check - Always verify we have minimum required points to start processing
-        if not self._has_minimum_points_to_start_processing(epoch_end_idx, total_etd_points, buffer_data_point_delay):
+        if not self._has_minimum_points_to_start_processing(epoch_end_idx_abs, total_etd_points, buffer_data_point_delay):
             return False, "Need more samples to form complete epoch"
             
         # If this is the first epoch, we only need the minimum points check
@@ -422,15 +441,15 @@ class DataManager:
             
         return True, None
 
-    def next_available_epoch_on_buffer(self, buffer_id):
-        """Return the next available epoch on the buffer.
+    def next_available_epoch_on_round_robin_buffer(self, buffer_id):
+        """Return the next available epoch on the round robin buffer.
         
         For an epoch to be available:
         - We need enough points to cover both buffer delay and a full epoch
         - We need enough time to have passed since the last epoch on any buffer
         
         Args:
-            buffer_id: The ID of the buffer to check (0-5)
+            buffer_id: The ID of the round robin buffer to check (0-5)
             
         Returns:
             tuple: (can_process, reason, start_idx, end_idx)
@@ -442,12 +461,12 @@ class DataManager:
         # Get required values
         buffer_data_point_delay = self._get_data_point_delay_for_buffer(buffer_id)
         total_etd_points = self._get_total_data_points_etd()
-        epoch_start_idx, epoch_end_idx = self._get_next_epoch_indices(buffer_id)
+        epoch_start_idx_abs, epoch_end_idx_abs = self._get_next_epoch_indices(buffer_id)
         
         # Validate epoch availability
         is_valid, reason = self._validate_epoch_availability(
             buffer_id, 
-            epoch_end_idx, 
+            epoch_end_idx_abs, 
             total_etd_points, 
             buffer_data_point_delay
         )
@@ -456,46 +475,46 @@ class DataManager:
         return (
             is_valid,
             reason if not is_valid else None,
-            epoch_start_idx if is_valid else None,
-            epoch_end_idx if is_valid else None
+            epoch_start_idx_abs if is_valid else None,
+            epoch_end_idx_abs if is_valid else None
         )
 
-    def manage_epoch(self, buffer_id, epoch_start_idx, epoch_end_idx):
+    def manage_epoch(self, buffer_id, epoch_start_idx_abs, epoch_end_idx_abs):
         """Validate and process a specified epoch on a specified buffer."""
 
         # validate that we can process the epoch
-        has_gap, gap_size = self.validate_epoch_gaps(buffer_id, epoch_start_idx, epoch_end_idx)
+        has_gap, gap_size = self.validate_epoch_gaps(buffer_id, epoch_start_idx_abs, epoch_end_idx_abs)
 
         if has_gap:
             # Handle the gap
             self.handle_gap(
-                prev_timestamp=self._get_etd_timestamps()[epoch_start_idx-1],
+                prev_timestamp=self._get_etd_timestamps()[epoch_start_idx_abs-1],
                 gap_size=gap_size, buffer_id=buffer_id
             )
        
         # Update buffer status
-        self.processed_epoch_start_indices[buffer_id].append(epoch_start_idx)
+        self.matrix_of_round_robin_processed_epoch_start_indices_of_total_streamed_data[buffer_id].append(epoch_start_idx_abs)
         self.last_processed_buffer = buffer_id  
 
         if has_gap:
             return
 
         # Process the epoch
-        sleep_stage = self._process_epoch(start_idx=epoch_start_idx, end_idx=epoch_end_idx, buffer_id=buffer_id)
+        sleep_stage = self._process_epoch(start_idx_abs=epoch_start_idx_abs, end_idx_abs=epoch_end_idx_abs, buffer_id=buffer_id)
         
         # Add sleep stage to CSV
-        self.add_sleep_stage_to_csv_buffer(sleep_stage, buffer_id, epoch_end_idx)
+        self.add_sleep_stage_to_csv_buffer(sleep_stage, buffer_id, epoch_end_idx_abs)
 
-    def _process_epoch(self, start_idx, end_idx, buffer_id):
+    def _process_epoch(self, start_idx_abs, end_idx_abs, buffer_id):
         """Handle the data for a specified epoch on a specified buffer which has valid data."""        
         
         print(f"\nProcessing buffer {buffer_id}")
-        print(f"Epoch range: {start_idx} to {end_idx}")
-        print(f"Buffer {buffer_id}: Epoch range: {start_idx * self.expected_interval} to {end_idx * self.expected_interval} seconds")
+        print(f"Epoch range: {start_idx_abs} to {end_idx_abs}")
+        print(f"Buffer {buffer_id}: Epoch range: {start_idx_abs * self.expected_interval} to {end_idx_abs * self.expected_interval} seconds")
         
         # Extract EXACTLY points_per_epoch data points from the correct slice
         epoch_data = np.array([
-            self.electrode_and_timestamp_data[channel][start_idx:end_idx]
+            self.electrode_and_timestamp_data[channel][start_idx_abs:end_idx_abs]
             for channel in self.electrode_channels
         ])
         
@@ -503,7 +522,7 @@ class DataManager:
         assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
         
         # Get the timestamp data for this epoch
-        timestamp_data = self._get_etd_timestamps()[start_idx:end_idx]
+        timestamp_data = self._get_etd_timestamps()[start_idx_abs:end_idx_abs]
         epoch_start_time = timestamp_data[0]  # First timestamp in the epoch
         
         # Get index combinations for EEG and EOG channels
@@ -524,7 +543,7 @@ class DataManager:
         print(f"Total epochs scored: {self.epochs_scored}")
         
         # Update visualization using Visualizer
-        time_offset = start_idx / self.sampling_rate
+        time_offset = start_idx_abs / self.sampling_rate
         self.visualizer.plot_polysomnograph(
             epoch_data, 
             self.sampling_rate, 
@@ -649,7 +668,6 @@ class DataManager:
         try:
             # Log final epoch count before cleanup
             print(f"\nFinal epoch count: {self.epochs_scored} epochs were scored")
-            print(f"Total data points in buffer: {self._get_total_data_points_etd()}")  # Updated logging
             
             # Clean up CSVManager - reset paths since we're done
             if hasattr(self, 'csv_manager'):
@@ -665,7 +683,7 @@ class DataManager:
             
             # Clear data buffers
             self.electrode_and_timestamp_data = [[] for _ in range(len(self.electrode_and_timestamp_channels))]
-            self.processed_epoch_start_indices = [[] for _ in range(6)]
+            self.matrix_of_round_robin_processed_epoch_start_indices_of_total_streamed_data = [[] for _ in range(6)]
             
             # Reset hidden states
             self.buffer_hidden_states = [

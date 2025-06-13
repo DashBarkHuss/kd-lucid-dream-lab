@@ -147,18 +147,18 @@ def test_validate_epoch_gaps(gap_handler):
     
     # Test gap between epochs by checking the second epoch
     # This should detect the gap between the end of first epoch and start of second epoch
-    has_gap, gap_size = gap_handler.validate_epoch_gaps(timestamps, epoch_start_idx=samples_per_epoch, epoch_end_idx=2*samples_per_epoch)
+    has_gap, gap_size = gap_handler.validate_epoch_gaps(timestamps, epoch_start_idx_rel=samples_per_epoch, epoch_end_idx_rel=2*samples_per_epoch)
     assert has_gap
     assert abs(gap_size - (GAP_THRESHOLD + 0.01)) < FLOAT_COMPARISON_TOLERANCE
 
     # Test no gap within first epoch
-    has_gap, gap_size = gap_handler.validate_epoch_gaps(timestamps, epoch_start_idx=0, epoch_end_idx=samples_per_epoch)
+    has_gap, gap_size = gap_handler.validate_epoch_gaps(timestamps, epoch_start_idx_rel=0, epoch_end_idx_rel=samples_per_epoch)
     assert not has_gap
     assert gap_size == 0
 
     # Test invalid epoch indices
     with pytest.raises(InvalidEpochIndicesError):
-        gap_handler.validate_epoch_gaps(timestamps, epoch_start_idx=samples_per_epoch, epoch_end_idx=samples_per_epoch-1)
+        gap_handler.validate_epoch_gaps(timestamps, epoch_start_idx_rel=samples_per_epoch, epoch_end_idx_rel=samples_per_epoch-1)
 
 def test_cleanup(gap_handler):
     """Test cleanup functionality."""

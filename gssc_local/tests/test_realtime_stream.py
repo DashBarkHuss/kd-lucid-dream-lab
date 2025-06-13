@@ -215,7 +215,7 @@ class TestRealtimeStream(unittest.TestCase):
         self.mock_data_manager.add_to_data_processing_buffer.return_value = True
         self.mock_data_manager.save_new_data = Mock()
         self.mock_data_manager._calculate_next_buffer_id_to_process.return_value = 0
-        self.mock_data_manager.next_available_epoch_on_buffer.return_value = (True, None, 0, 1250)  # 10 seconds at 125 Hz
+        self.mock_data_manager.next_available_epoch_on_round_robin_buffer.return_value = (True, None, 0, 1250)  # 10 seconds at 125 Hz
         self.mock_data_manager.manage_epoch.return_value = [1]  # Mock sleep stage prediction
         self.mock_data_manager.add_sleep_stage_to_csv = Mock()
         self.mock_data_manager.visualizer = self.mock_visualizer
@@ -344,7 +344,7 @@ class TestRealtimeStream(unittest.TestCase):
         self.assertTrue(self.mock_data_manager.add_to_data_processing_buffer.return_value)
         self.mock_data_manager.save_new_data.assert_not_called()
         self.assertEqual(self.mock_data_manager._calculate_next_buffer_id_to_process(), 0)
-        can_process, reason, start_idx, end_idx = self.mock_data_manager.next_available_epoch_on_buffer(0)
+        can_process, reason, start_idx, end_idx = self.mock_data_manager.next_available_epoch_on_round_robin_buffer(0)
         self.assertTrue(can_process)
         self.assertEqual(end_idx - start_idx, 1250)  # 10 seconds at 125 Hz
         print("✓ DataManager mock configured correctly")

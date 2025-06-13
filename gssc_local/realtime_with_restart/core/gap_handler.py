@@ -187,13 +187,13 @@ class GapHandler:
             return False, 0, None, None
         return True, max_gap, gap_start_idx, gap_end_idx
         
-    def validate_epoch_gaps(self, timestamps: np.ndarray, epoch_start_idx: int, epoch_end_idx: int) -> Tuple[bool, float]:
+    def validate_epoch_gaps(self, timestamps: np.ndarray, epoch_start_idx_rel: int, epoch_end_idx_rel: int) -> Tuple[bool, float]:
         """Validate the epoch has no gaps.
         
         Args:
             timestamps: Array of Unix timestamps (seconds since epoch) from BrainFlow
-            epoch_start_idx: Start index of the epoch
-            epoch_end_idx: End index of the epoch
+            epoch_start_idx: Start index of the epoch relative in timestamps, not absolute in total streamed data
+            epoch_end_idx: End index of the epoch relative in timestamps, not absolute in total streamed data   
             
         Returns:
             tuple: (has_gap, gap_size)
@@ -206,13 +206,16 @@ class GapHandler:
             InvalidEpochIndicesError: If epoch indices are invalid
         """
         self._validate_timestamps(timestamps)
-        self._validate_epoch_indices(timestamps, epoch_start_idx, epoch_end_idx)
+
+        # this validation expects the epoch_start_idx and epoch_end_idx to be the indices of the epochs in the timestamps array.
+        # if we cut the timestamps array without adjusting the indices then the indices will be incorrect.
+        self._validate_epoch_indices(timestamps, epoch_start_idx_rel, epoch_end_idx_rel)
         
         # Get the epoch timestamps
-        epoch_timestamps = timestamps[epoch_start_idx:epoch_end_idx]
+        epoch_timestamps = timestamps[epoch_start_idx_rel:epoch_end_idx_rel]
         
         # Get the previous timestamp if available
-        prev_timestamp = timestamps[epoch_start_idx-1] if epoch_start_idx > 0 else None
+        prev_timestamp = timestamps[epoch_start_idx_rel-1] if epoch_start_idx_rel > 0 else None
         
         # Check for gaps
         has_gap, gap_size, _, _ = self.detect_gap(epoch_timestamps, prev_timestamp)
