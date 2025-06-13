@@ -46,7 +46,7 @@ class DataManager:
         self.electrode_and_timestamp_data = [[] for _ in range(len(self.electrode_and_timestamp_channels))]  # Buffer containing electrode and timestamp data
         
         # Buffer tracking
-        self.points_collected = 0
+        self.total_streamed_samples_since_start = 0
         self.last_processed_buffer = -1
         
      
@@ -81,7 +81,7 @@ class DataManager:
         # Add validation settings
         self.validate_consecutive_values = False  # Set to True to enable consecutive value validation
         self.validation_channel = 0  # Channel to validate (default to first channel)
-        self.last_validated_value = None  # Track last validated value
+        self.last_validated_value_for_consecutive_data_validation = None  # Track last validated value
         self.output_csv_path = None
         self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
         
@@ -186,12 +186,12 @@ class DataManager:
         channel_data = data[adjusted_channel_idx]
         
         # For the first validation, just store the last value
-        if self.last_validated_value is None:
-            self.last_validated_value = channel_data[-1]
+        if self.last_validated_value_for_consecutive_data_validation is None:
+            self.last_validated_value_for_consecutive_data_validation = channel_data[-1]
             return True, "First validation - stored last value"
             
         # Check if the new data starts where the last data ended
-        expected_next_value = self.last_validated_value + 1
+        expected_next_value = self.last_validated_value_for_consecutive_data_validation + 1
         if channel_data[0] != expected_next_value:
             return False, f"Non-consecutive data detected. Expected {expected_next_value}, got {channel_data[0]}"
             
@@ -201,7 +201,7 @@ class DataManager:
                 return False, f"Non-consecutive data within chunk at index {i}. Expected {channel_data[i-1] + 1}, got {channel_data[i]}"
                 
         # Update last validated value
-        self.last_validated_value = channel_data[-1]
+        self.last_validated_value_for_consecutive_data_validation = channel_data[-1]
         return True, "Data validated successfully"
 
     def add_to_data_processing_buffer(self, new_data, is_initial=False):
@@ -220,15 +220,11 @@ class DataManager:
                 raise Exception(f"Consecutive value validation failed: {message}")
             
         # Update points collected
-        self.points_collected += len(new_data[0])
+        self.total_streamed_samples_since_start += len(new_data[0])
         
         # Update analysis ready data
-        if not is_initial:  # TODO: do we check if the data is duplicated when processing in the epoch?
-            for i, channel in enumerate(self.electrode_and_timestamp_channels):
-                self.electrode_and_timestamp_data[i].extend(new_data[channel].tolist())
-        else:
-            for i, channel in enumerate(self.electrode_and_timestamp_channels):
-                self.electrode_and_timestamp_data[i] = new_data[channel].tolist()
+        for i, channel in enumerate(self.electrode_and_timestamp_channels):
+            self.electrode_and_timestamp_data[i].extend(new_data[channel].tolist())
                 
         return True
 
@@ -551,7 +547,7 @@ class DataManager:
         
         # Debug logging
         print(f"\n=== Debug: DataManager.save_to_csv ===")
-        print(f"Total points collected: {self.points_collected}")
+        print(f"Total points collected: {self.total_streamed_samples_since_start}")
         print(f"CSVManager main_buffer_size: {self.csv_manager.main_buffer_size}")
         print(f"CSVManager main_csv_buffer length: {len(self.csv_manager.main_csv_buffer)}")
         
@@ -660,10 +656,10 @@ class DataManager:
                 self.csv_manager.cleanup(reset_paths=True)
             
             # Reset state variables
-            self.points_collected = 0
+            self.total_streamed_samples_since_start = 0
             self.last_processed_buffer = -1
             self.current_epoch_start_time = None
-            self.last_validated_value = None
+            self.last_validated_value_for_consecutive_data_validation = None
             self.output_csv_path = None
             self.last_saved_timestamp = None
             
