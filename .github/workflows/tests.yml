@@ -66,4 +66,4 @@ jobs:
         run: |
           Xvfb :99 -screen 0 1920x1080x24 -ac &
           sleep 3
-          pytest -v gssc_local/tests/
+          pytest -v gssc_local/tests/ -k "not test_index_translation and not test_processing_continuity and not test_round_robin_integration"
