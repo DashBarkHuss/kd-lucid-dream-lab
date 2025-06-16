@@ -145,9 +145,9 @@ class TestEpochBuffer:
         # Verify offset tracking
         assert data_manager.etd_buffer_manager.offset > 0, "Buffer offset should be updated after trimming"
         
-        # Verify total streamed samples tracking
+        # Test total streamed samples tracking
         assert data_manager.etd_buffer_manager.total_streamed_samples == initial_data_size + 20 * sampling_rate, \
-            "Total streamed samples should include all data, even after trimming"
+            f"Total streamed samples should be {initial_data_size + 20 * sampling_rate}, got {data_manager.etd_buffer_manager.total_streamed_samples}"
         
         # assert that the last channel is the timestamp channel
         assert data_manager.etd_buffer_manager.electrode_and_timestamp_channels[-1] == metadata['timestamp_channel'], \
@@ -215,7 +215,7 @@ class TestEpochBuffer:
             f"Buffer start should map to relative index 0, got {start_relative}"
             
         # Test index at buffer end
-        end_absolute = data_manager.total_streamed_samples_since_start - 1
+        end_absolute = data_manager.etd_buffer_manager.total_streamed_samples - 1
         end_relative = data_manager.etd_buffer_manager._adjust_index_with_offset(end_absolute, to_etd=True)
         expected_end_relative = data_manager._get_total_data_points_etd() - 1
         assert end_relative == expected_end_relative, \
@@ -226,7 +226,7 @@ class TestEpochBuffer:
             data_manager.etd_buffer_manager._adjust_index_with_offset(-1, to_etd=True)
             
         with pytest.raises(ValueError):
-            data_manager.etd_buffer_manager._adjust_index_with_offset(data_manager.total_streamed_samples_since_start, to_etd=True)
+            data_manager.etd_buffer_manager._adjust_index_with_offset(data_manager.etd_buffer_manager.total_streamed_samples, to_etd=True)
 
     def test_processing_continuity(self, data_manager, test_data):
         """Test that epoch processing continues correctly after buffer trimming."""
@@ -282,8 +282,8 @@ class TestEpochBuffer:
         # Test gap detection
         has_gap, gap_size = data_manager.validate_epoch_gaps(
             buffer_id=0,
-            epoch_start_idx_abs=data_manager.total_streamed_samples_since_start - points_per_epoch,
-            epoch_end_idx_abs=data_manager.total_streamed_samples_since_start
+            epoch_start_idx_abs=data_manager.etd_buffer_manager.total_streamed_samples - points_per_epoch,
+            epoch_end_idx_abs=data_manager.etd_buffer_manager.total_streamed_samples
         )
         
         assert has_gap, "Should detect gap in data"
@@ -405,10 +405,10 @@ class TestEpochBuffer:
         assert final_buffer_size == expected_buffer_size, \
             f"Buffer should maintain size of {expected_buffer_size}, got {final_buffer_size}"
         
-        # Verify total streamed samples tracking
+        # Test total streamed samples tracking
         expected_total_samples = initial_data_size + 20 * sampling_rate
-        assert data_manager.total_streamed_samples_since_start == expected_total_samples, \
-            f"Total streamed samples should be {expected_total_samples}, got {data_manager.total_streamed_samples_since_start}"
+        assert data_manager.etd_buffer_manager.total_streamed_samples == expected_total_samples, \
+            f"Total streamed samples should be {expected_total_samples}, got {data_manager.etd_buffer_manager.total_streamed_samples}"
 
 if __name__ == '__main__':
     import pytest

@@ -54,7 +54,6 @@ class DataManager:
         )
         
         # Buffer tracking
-        self.total_streamed_samples_since_start = 0
         self.last_processed_buffer = -1
         
         # List of lists tracking where each buffer has started processing epochs
@@ -233,8 +232,6 @@ class DataManager:
         total_channels = self.board_shim.get_num_rows(self.board_shim.get_board_id())
         if new_data.shape[1] != total_channels:
             raise ValueError(f"Expected data in (n_samples, n_channels) format with {total_channels} channels, got shape {new_data.shape}")
-        # Update points collected - new_data is (n_samples, n_channels)
-        self.total_streamed_samples_since_start += new_data.shape[0]
         # Transpose to (n_channels, n_samples) for buffer manager
         new_data_t = new_data.T
         # Update analysis ready data
@@ -566,7 +563,7 @@ class DataManager:
         
         # Debug logging
         print(f"\n=== Debug: DataManager.save_to_csv ===")
-        print(f"Total points collected: {self.total_streamed_samples_since_start}")
+        print(f"Total points collected: {self.etd_buffer_manager.total_streamed_samples}")
         print(f"CSVManager main_buffer_size: {self.csv_manager.main_buffer_size}")
         print(f"CSVManager main_csv_buffer length: {len(self.csv_manager.main_csv_buffer)}")
         
@@ -674,7 +671,6 @@ class DataManager:
                 self.csv_manager.cleanup(reset_paths=True)
             
             # Reset state variables
-            self.total_streamed_samples_since_start = 0
             self.last_processed_buffer = -1
             self.current_epoch_start_time = None
             self.last_validated_value_for_consecutive_data_validation = None
