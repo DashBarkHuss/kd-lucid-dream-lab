@@ -250,6 +250,13 @@ class CSVManager:
         - Initial vs subsequent data handling
         - Buffer clearing when necessary
         
+        Note on Data Format:
+        - Input data must be in (n_channels, n_samples) format (BrainFlow's native format)
+        - Data is transformed to (samples, channels) format only at the final CSV writing stage
+        - This transformation happens in transform_data_to_rows() and is necessary because:
+            1. CSV files are naturally row-oriented (each row represents one time point)
+            2. The final CSV format needs to be (samples, channels) for compatibility with other tools
+        
         Args:
             new_data (np.ndarray): New data to add in (n_channels, n_samples) format.
                 - Each row represents a channel

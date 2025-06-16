@@ -115,15 +115,32 @@ def create_column_names(num_columns: int, timestamp_channel: int) -> List[str]:
     return column_names
 
 def transform_data_to_rows(new_data: np.ndarray, logger=None) -> List[List[float]]:
-    """Transform numpy array data into a list of rows.
+    """Transform data from (channels, samples) format to (samples, channels) format for CSV writing.
+    
+    This transformation is necessary because:
+    1. CSV files are naturally row-oriented (each row represents one time point)
+    2. The final CSV format needs to be (samples, channels) for compatibility with other tools
+    3. The transformation happens only once, at the final CSV writing stage
     
     Args:
-        new_data (np.ndarray): Input data in channels x samples format
+        new_data (np.ndarray): Data in (n_channels, n_samples) format
+            - Each row represents a channel
+            - Each column represents a time point
+            - Example: For 8 channels and 1000 samples: shape (8, 1000)
         logger (Optional[logging.Logger]): Logger instance for error reporting
         
     Returns:
-        List[List[float]]: Data transformed into list of rows format
-        
+        List[List[float]]: Data transformed to (samples, channels) format
+            - Each inner list represents one time point
+            - Each inner list contains values for all channels at that time point
+            - Example: For 8 channels and 1000 samples:
+                [
+                    [sample1_ch1, sample1_ch2, ..., sample1_ch8],  # First time point
+                    [sample2_ch1, sample2_ch2, ..., sample2_ch8],  # Second time point
+                    ...
+                    [sample1000_ch1, sample1000_ch2, ..., sample1000_ch8]  # Last time point
+                ]
+                
     Raises:
         CSVDataError: If transformed rows are empty
     """

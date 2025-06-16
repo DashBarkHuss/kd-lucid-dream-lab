@@ -3,6 +3,18 @@ Data Manager for handling data export and validation of brainflow data.
 
 This module provides functionality for saving and validating data from brainflow streaming to a csv file with sleep stage integration.
 It implements a memory-efficient buffer management system that prevents memory overflow during long recordings.
+
+Data Shape Conventions:
+    - Input data (new_data): Shape (n_channels, n_samples)
+        - Each row represents a channel
+        - Each column represents a time point
+        - Example: For 8 channels and 1000 samples: shape (8, 1000)
+        - This is the raw data format from the board
+    
+    - Internal processing: All internal processing maintains (n_channels, n_samples) format
+        - ETDBufferManager maintains data in this format
+        - SignalProcessor expects and returns data in this format
+        - Only transformed to (samples, channels) at final CSV writing stage
 """
 
 import numpy as np
@@ -218,14 +230,6 @@ class DataManager:
         Returns:
             bool: True if data was added successfully, False if validation failed
         """
-        # Debug logging to verify native BrainFlow data shape
-        print(f"\n[DEBUG] add_to_data_processing_buffer:")
-        print(f"Native BrainFlow data shape: {new_data.shape}")
-        print(f"Number of rows (from shape[0]): {new_data.shape[0]}")
-        print(f"Number of columns (from shape[1]): {new_data.shape[1]}")
-        print(f"First sample data (first 5 channels): {new_data[0][:5]}")
-        print(f"Second sample data (first 5 channels): {new_data[1][:5]}")
-        
         # Validate data values
         if np.any(np.isnan(new_data)) or np.any(np.isinf(new_data)):
             logging.warning("Data contains NaN or infinite values!")
