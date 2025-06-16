@@ -26,27 +26,55 @@ import numpy as np
 from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.etd_buffer_manager import ETDBufferManager
 from gssc_local.tests.test_utils import create_brainflow_test_data
-from brainflow.board_shim import BoardShim, BoardIds
-from unittest.mock import MagicMock
+from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
+import tempfile
+import os
 
 class TestEpochBuffer:
     @pytest.fixture
     def data_manager(self):
-        """Create a DataManager instance with mock board."""
-        board_id = BoardIds.CYTON_DAISY_BOARD
-        sampling_rate = BoardShim.get_sampling_rate(board_id)
-        eeg_channels = BoardShim.get_eeg_channels(board_id)
-        timestamp_channel = BoardShim.get_timestamp_channel(board_id)
-        num_rows = BoardShim.get_num_rows(board_id)
+        """Create a DataManager instance with playback board."""
+        master_board_id = BoardIds.CYTON_DAISY_BOARD
+        playback_board_id = BoardIds.PLAYBACK_FILE_BOARD
+        sampling_rate = BoardShim.get_sampling_rate(master_board_id)
         
-        # Create a mock board with the real board's channel configuration
-        mock_board = MagicMock()
-        mock_board.get_board_id.return_value = board_id
-        mock_board.get_exg_channels.return_value = eeg_channels
-        mock_board.get_timestamp_channel.return_value = timestamp_channel
-        mock_board.get_num_rows.return_value = num_rows
+        # Create a temporary file for playback data
+        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as temp_file:
+            # Generate test data and save it to the temp file
+            data, metadata = create_brainflow_test_data(
+                duration_seconds=120,
+                sampling_rate=sampling_rate,
+                add_noise=False,
+                board_id=master_board_id
+            )
+            # Save data in BrainFlow format
+            np.savetxt(temp_file.name, data, delimiter=',')
+            
+        # Create BrainFlowInputParams for playback
+        params = BrainFlowInputParams()
+        params.file = temp_file.name
+        params.master_board = master_board_id
+        params.file_operation = 'read'
+        params.file_data_type = 'timestamp'
         
-        return DataManager(mock_board, sampling_rate)
+        # Initialize the playback board
+        board = BoardShim(playback_board_id, params)
+        board.prepare_session()
+        board.start_stream()
+        
+        # Create DataManager with the playback board
+        data_manager = DataManager(board, sampling_rate)
+        
+        # Clean up the temp file after the test
+        def cleanup():
+            board.stop_stream()
+            board.release_session()
+            os.unlink(temp_file.name)
+            
+        # Register cleanup
+        data_manager.cleanup = cleanup
+        
+        return data_manager
 
     @pytest.fixture
     def buffer_manager(self, test_data):
@@ -88,7 +116,7 @@ class TestEpochBuffer:
         initial_data_size = 40 * sampling_rate  # 40 seconds of data to start
         
         # Add initial data to buffer (40 seconds worth)
-        initial_data = data[:initial_data_size, :].T  # shape: (n_channels, n_samples)
+        initial_data = data[:initial_data_size, :]  # shape: (n_samples, n_channels)
         data_manager.add_to_data_processing_buffer(initial_data)
         
         # Verify initial buffer size
@@ -97,7 +125,7 @@ class TestEpochBuffer:
             f"Initial buffer size should be {initial_data_size}, got {initial_buffer_size}"
             
         # Add more data to exceed 35 seconds
-        additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :].T  # shape: (n_channels, n_samples)
+        additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
         data_manager.add_to_data_processing_buffer(additional_data)
         
         # Call buffer trimming
@@ -154,51 +182,51 @@ class TestEpochBuffer:
         
         # Add initial data (40 seconds)
         initial_data_size = 40 * sampling_rate
-        initial_data = data[:, :initial_data_size]
+        initial_data = data[:initial_data_size, :]  # shape: (n_samples, n_channels)
         data_manager.add_to_data_processing_buffer(initial_data)
         
         # Test absolute to relative conversion before trimming
         test_absolute_idx = 20 * sampling_rate  # 20 seconds into the data
-        relative_idx = data_manager._adjust_index_with_etd_offset(test_absolute_idx, to_etd=True)
+        relative_idx = data_manager.etd_buffer_manager._adjust_index_with_offset(test_absolute_idx, to_etd=True)
         assert relative_idx == test_absolute_idx, \
             f"Before trimming: absolute index {test_absolute_idx} should map to relative index {test_absolute_idx}, got {relative_idx}"
             
         # Add more data and trim buffer
-        additional_data = data[:, initial_data_size:initial_data_size + 20 * sampling_rate]
+        additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
         data_manager.add_to_data_processing_buffer(additional_data)
-        data_manager._trim_etd_buffer()
+        data_manager.etd_buffer_manager.trim_buffer(points_to_remove=20 * sampling_rate)  # Trim 20 seconds of data
         
         # Test absolute to relative conversion after trimming
         # The absolute index should be adjusted by the offset
-        relative_idx = data_manager._adjust_index_with_etd_offset(test_absolute_idx, to_etd=True)
-        expected_relative_idx = test_absolute_idx - data_manager.etd_offset
+        relative_idx = data_manager.etd_buffer_manager._adjust_index_with_offset(test_absolute_idx, to_etd=True)
+        expected_relative_idx = test_absolute_idx - data_manager.etd_buffer_manager.offset
         assert relative_idx == expected_relative_idx, \
             f"After trimming: absolute index {test_absolute_idx} should map to relative index {expected_relative_idx}, got {relative_idx}"
             
         # Test relative to absolute conversion
-        absolute_idx = data_manager._adjust_index_with_etd_offset(relative_idx, to_etd=False)
+        absolute_idx = data_manager.etd_buffer_manager._adjust_index_with_offset(relative_idx, to_etd=False)
         assert absolute_idx == test_absolute_idx, \
             f"Relative index {relative_idx} should map back to absolute index {test_absolute_idx}, got {absolute_idx}"
             
         # Test edge cases
         # Test index at buffer start
-        start_relative = data_manager._adjust_index_with_etd_offset(data_manager.etd_offset, to_etd=True)
+        start_relative = data_manager.etd_buffer_manager._adjust_index_with_offset(data_manager.etd_buffer_manager.offset, to_etd=True)
         assert start_relative == 0, \
             f"Buffer start should map to relative index 0, got {start_relative}"
             
         # Test index at buffer end
         end_absolute = data_manager.total_streamed_samples_since_start - 1
-        end_relative = data_manager._adjust_index_with_etd_offset(end_absolute, to_etd=True)
+        end_relative = data_manager.etd_buffer_manager._adjust_index_with_offset(end_absolute, to_etd=True)
         expected_end_relative = data_manager._get_total_data_points_etd() - 1
         assert end_relative == expected_end_relative, \
             f"Buffer end should map to relative index {expected_end_relative}, got {end_relative}"
             
         # Test invalid indices
         with pytest.raises(ValueError):
-            data_manager._adjust_index_with_etd_offset(-1, to_etd=True)
+            data_manager.etd_buffer_manager._adjust_index_with_offset(-1, to_etd=True)
             
         with pytest.raises(ValueError):
-            data_manager._adjust_index_with_etd_offset(data_manager.total_streamed_samples_since_start, to_etd=True)
+            data_manager.etd_buffer_manager._adjust_index_with_offset(data_manager.total_streamed_samples_since_start, to_etd=True)
 
     def test_processing_continuity(self, data_manager, test_data):
         """Test that epoch processing continues correctly after buffer trimming."""
@@ -223,7 +251,7 @@ class TestEpochBuffer:
         # Add more data and trim buffer
         additional_data = data[:, initial_data_size:initial_data_size + 20 * sampling_rate]
         data_manager.add_to_data_processing_buffer(additional_data)
-        data_manager._trim_etd_buffer()
+        data_manager.etd_buffer_manager.trim_buffer(points_to_remove=20 * sampling_rate)  # Trim 20 seconds of data
         
         # Process second epoch after trimming
         second_epoch_start = points_per_epoch
@@ -324,7 +352,7 @@ class TestEpochBuffer:
         # Add more data and trim buffer
         additional_data = data[:, initial_data_size:initial_data_size + 20 * sampling_rate]
         data_manager.add_to_data_processing_buffer(additional_data)
-        data_manager._trim_etd_buffer()
+        data_manager.etd_buffer_manager.trim_buffer(points_to_remove=20 * sampling_rate)  # Trim 20 seconds of data
         
         # Process second round of epochs after trimming
         second_round_sleep_stages = []

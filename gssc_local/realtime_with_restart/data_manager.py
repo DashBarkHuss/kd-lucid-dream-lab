@@ -210,7 +210,16 @@ class DataManager:
         return True, "Data validated successfully"
 
     def add_to_data_processing_buffer(self, new_data, is_initial=False):
-        """Add new data to the buffer for epoch processing"""
+        """Add new data to the buffer for epoch processing.
+        
+        Args:
+            new_data: Array containing the data to add. Must be in (n_samples, n_channels) format.
+                      The method will transpose it to (n_channels, n_samples) for the buffer manager.
+            is_initial: Whether this is the initial data chunk
+            
+        Returns:
+            bool: True if data was added successfully, False if validation failed
+        """
         # Validate data values
         if np.any(np.isnan(new_data)) or np.any(np.isinf(new_data)):
             logging.warning("Data contains NaN or infinite values!")
@@ -220,22 +229,21 @@ class DataManager:
             is_valid, message = self.validate_consecutive_data(new_data)
             if not is_valid:
                 raise Exception(f"Consecutive value validation failed: {message}")
-        # Update points collected
-        self.total_streamed_samples_since_start += len(new_data[0])
+        # Validate data shape: must be (n_samples, n_channels)
+        total_channels = self.board_shim.get_num_rows(self.board_shim.get_board_id())
+        if new_data.shape[1] != total_channels:
+            raise ValueError(f"Expected data in (n_samples, n_channels) format with {total_channels} channels, got shape {new_data.shape}")
+        # Update points collected - new_data is (n_samples, n_channels)
+        self.total_streamed_samples_since_start += new_data.shape[0]
+        # Transpose to (n_channels, n_samples) for buffer manager
+        new_data_t = new_data.T
         # Update analysis ready data
-        self.etd_buffer_manager.add_data(new_data)
+        self.etd_buffer_manager.add_data(new_data_t)
         return True
 
     def queue_data_for_csv_write(self, new_data, is_initial=False):
         """Queue new data for CSV writing and handle buffer management."""
         self.csv_manager.queue_data_for_csv_write(new_data, is_initial)
-
-    def _adjust_index_with_etd_offset(self, index, to_etd=True):
-        """Helper method to adjust an index based on the etd_offset."""
-        if to_etd:
-            return index - self.etd_buffer_manager.offset
-        else:
-            return index + self.etd_buffer_manager.offset
 
     def validate_epoch_gaps(self, buffer_id, epoch_start_idx_abs, epoch_end_idx_abs):
         """Validate the epoch has no gaps

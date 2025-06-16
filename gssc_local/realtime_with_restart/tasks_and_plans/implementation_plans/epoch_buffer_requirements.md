@@ -164,7 +164,16 @@ Implement the tests
 - [x] Processing Continuity Tests
 - [x] Round-Robin Integration Test/
 
-- Triming Functionality
+Triming Functionality
 
 - [x] Implement `_trim_etd_buffer`
 - [x] Test `_trim_etd_buffer`
+
+Refactor the code to use an ETDBufferManager class
+
+- [x] Create ETDBufferManager class and move the code from DataManager to it
+
+Index Translation
+
+- [x] Implement the index translation methods
+- [x] Test the index translation methods

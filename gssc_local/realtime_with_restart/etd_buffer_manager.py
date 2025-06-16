@@ -164,7 +164,19 @@ class ETDBufferManager:
             
         Returns:
             int: The adjusted index
+            
+        Raises:
+            ValueError: If the index is negative or exceeds the total streamed samples
         """
+        if index < 0:
+            raise ValueError(f"Index cannot be negative, got {index}")
+            
+        if to_etd and index >= self.total_streamed_samples:
+            raise ValueError(f"Absolute index {index} exceeds total streamed samples {self.total_streamed_samples}")
+            
+        if not to_etd and index >= self._get_total_data_points():
+            raise ValueError(f"Relative index {index} exceeds buffer size {self._get_total_data_points()}")
+            
         if to_etd:
             return index - self.offset
         else:
