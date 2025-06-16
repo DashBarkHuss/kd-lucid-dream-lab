@@ -1,3 +1,10 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# Add workspace root to path
+workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(workspace_root)
+
 """
 Tests for the epoch buffer functionality in DataManager.
 
@@ -17,6 +24,7 @@ The tests verify that the buffer management system correctly handles:
 import pytest
 import numpy as np
 from gssc_local.realtime_with_restart.data_manager import DataManager
+from gssc_local.realtime_with_restart.etd_buffer_manager import ETDBufferManager
 from gssc_local.tests.test_utils import create_brainflow_test_data
 from brainflow.board_shim import BoardShim, BoardIds
 from unittest.mock import MagicMock
@@ -29,14 +37,34 @@ class TestEpochBuffer:
         sampling_rate = BoardShim.get_sampling_rate(board_id)
         eeg_channels = BoardShim.get_eeg_channels(board_id)
         timestamp_channel = BoardShim.get_timestamp_channel(board_id)
+        num_rows = BoardShim.get_num_rows(board_id)
         
         # Create a mock board with the real board's channel configuration
         mock_board = MagicMock()
         mock_board.get_board_id.return_value = board_id
         mock_board.get_exg_channels.return_value = eeg_channels
         mock_board.get_timestamp_channel.return_value = timestamp_channel
+        mock_board.get_num_rows.return_value = num_rows
         
         return DataManager(mock_board, sampling_rate)
+
+    @pytest.fixture
+    def buffer_manager(self, test_data):
+        """Create a buffer manager instance for testing."""
+        _, metadata = test_data
+        # Get channel information from the test data
+        eeg_channels = metadata['eeg_channels']
+        timestamp_channel = metadata['timestamp_channel']
+        electrode_and_timestamp_channels = list(eeg_channels)
+        if timestamp_channel not in electrode_and_timestamp_channels:
+            electrode_and_timestamp_channels.append(timestamp_channel)
+            
+        return ETDBufferManager(
+            max_buffer_size=35 * metadata['sampling_rate'],  # 35 seconds of data
+            timestamp_channel_index=len(electrode_and_timestamp_channels) - 1,  # Timestamp is last channel
+            channel_count=len(electrode_and_timestamp_channels),
+            electrode_and_timestamp_channels=electrode_and_timestamp_channels
+        )
 
     @pytest.fixture
     def test_data(self):
@@ -64,7 +92,7 @@ class TestEpochBuffer:
         data_manager.add_to_data_processing_buffer(initial_data)
         
         # Verify initial buffer size
-        initial_buffer_size = data_manager._get_total_data_points_etd()
+        initial_buffer_size = data_manager.etd_buffer_manager._get_total_data_points()
         assert initial_buffer_size == initial_data_size, \
             f"Initial buffer size should be {initial_data_size}, got {initial_buffer_size}"
             
@@ -73,24 +101,51 @@ class TestEpochBuffer:
         data_manager.add_to_data_processing_buffer(additional_data)
         
         # Call buffer trimming
-        data_manager._trim_etd_buffer()
+        points_to_remove = initial_buffer_size + 20 * sampling_rate - min_buffer_size
+        data_manager.etd_buffer_manager.trim_buffer(points_to_remove)
         
         # Verify buffer was trimmed to correct size
-        final_buffer_size = data_manager._get_total_data_points_etd()
+        final_buffer_size = data_manager.etd_buffer_manager._get_total_data_points()
         assert final_buffer_size == min_buffer_size, \
             f"Buffer should be trimmed to {min_buffer_size}, got {final_buffer_size}"
             
         # Verify data continuity
         # Get timestamps from buffer
-        timestamps = data_manager._get_etd_timestamps()
-        data_manager._verify_timestamp_continuity(timestamps)
+        timestamps = data_manager.etd_buffer_manager.electrode_and_timestamp_data[data_manager.etd_buffer_manager.timestamp_channel_index]
+        data_manager.etd_buffer_manager._verify_timestamp_continuity(timestamps)
         
         # Verify offset tracking
-        assert data_manager.etd_offset > 0, "Buffer offset should be updated after trimming"
+        assert data_manager.etd_buffer_manager.offset > 0, "Buffer offset should be updated after trimming"
         
         # Verify total streamed samples tracking
-        assert data_manager.total_streamed_samples_since_start == initial_data_size + 20 * sampling_rate, \
+        assert data_manager.etd_buffer_manager.total_streamed_samples == initial_data_size + 20 * sampling_rate, \
             "Total streamed samples should include all data, even after trimming"
+        
+        # assert that the last channel is the timestamp channel
+        assert data_manager.etd_buffer_manager.electrode_and_timestamp_channels[-1] == metadata['timestamp_channel'], \
+            "Last channel should be the timestamp channel"
+        # assert that the last channels first value is a timestamp
+        first_timestamp = data_manager.etd_buffer_manager.electrode_and_timestamp_data[-1][0]
+        assert first_timestamp > 1700000000, \
+            f"First value of last channel should be a Unix timestamp after 2023, got {first_timestamp}"
+            
+        # Calculate theoretical voltage range based on Cyton Daisy board specifications
+        # 24-bit ADC, 4.5V reference, gain of 24, zero point at 8192
+        min_adc = 0
+        max_adc = 2**24 - 1  # 24-bit ADC
+        zero_point = 8192
+        ref_voltage = 4.5
+        gain = 24
+        
+        # Calculate theoretical voltage range in microvolts
+        min_voltage = (min_adc - zero_point) * (ref_voltage / gain) / gain
+        max_voltage = (max_adc - zero_point) * (ref_voltage / gain) / gain
+        
+        # assert that the last channels first value is not an eeg value (should be outside theoretical range)
+        theoretical_range = max(abs(min_voltage), abs(max_voltage))
+        assert abs(first_timestamp) > theoretical_range, \
+            f"First value of last channel should be outside theoretical EEG range (±{theoretical_range:.2f} µV), got {first_timestamp}"
+        
 
     def test_index_translation(self, data_manager, test_data):
         """Test that index translation works correctly with buffer trimming."""
@@ -325,4 +380,8 @@ class TestEpochBuffer:
         # Verify total streamed samples tracking
         expected_total_samples = initial_data_size + 20 * sampling_rate
         assert data_manager.total_streamed_samples_since_start == expected_total_samples, \
-            f"Total streamed samples should be {expected_total_samples}, got {data_manager.total_streamed_samples_since_start}" 
+            f"Total streamed samples should be {expected_total_samples}, got {data_manager.total_streamed_samples_since_start}"
+
+if __name__ == '__main__':
+    import pytest
+    pytest.main([__file__, '-v']) 

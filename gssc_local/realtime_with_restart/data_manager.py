@@ -19,6 +19,7 @@ from gssc_local.realtime_with_restart.export.csv.manager import CSVManager
 from gssc_local.realtime_with_restart.export.csv.test_utils import compare_csv_files
 from gssc_local.realtime_with_restart.export.csv.validation import validate_file_path
 from gssc_local.realtime_with_restart.export.csv.exceptions import CSVExportError, CSVDataError
+from .etd_buffer_manager import ETDBufferManager
 import pandas as pd
 import time
 import os
@@ -43,13 +44,19 @@ class DataManager:
         
         # Initialize channels and buffers
         self.electrode_channels, self.board_timestamp_channel, self.electrode_and_timestamp_channels = self._init_channels()
-        self.electrode_and_timestamp_data = [[] for _ in range(len(self.electrode_and_timestamp_channels))]  # Buffer containing electrode and timestamp data
+        
+        # Initialize buffer manager
+        self.etd_buffer_manager = ETDBufferManager(
+            max_buffer_size=35 * sampling_rate,  # 35 seconds of data
+            timestamp_channel_index=self.electrode_and_timestamp_data_timestamp_index,
+            channel_count=len(self.electrode_and_timestamp_channels),
+            electrode_and_timestamp_channels=self.electrode_and_timestamp_channels
+        )
         
         # Buffer tracking
         self.total_streamed_samples_since_start = 0
         self.last_processed_buffer = -1
         
-     
         # List of lists tracking where each buffer has started processing epochs
         # Example structure after processing some epochs:
         # [
@@ -84,7 +91,6 @@ class DataManager:
         self.last_validated_value_for_consecutive_data_validation = None  # Track last validated value
         self.output_csv_path = None
         self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
-        self.etd_offset = 0 # offset to account for memory management of electrode_and_timestamp_data
         
         # Initialize CSVManager
         self.csv_manager = CSVManager(
@@ -206,57 +212,32 @@ class DataManager:
         return True, "Data validated successfully"
 
     def add_to_data_processing_buffer(self, new_data, is_initial=False):
-        
         """Add new data to the buffer for epoch processing"""
         # Validate data values
         if np.any(np.isnan(new_data)) or np.any(np.isinf(new_data)):
             logging.warning("Data contains NaN or infinite values!")
             return False
-            
         # Validate consecutive values if enabled
         if self.validate_consecutive_values:
             is_valid, message = self.validate_consecutive_data(new_data)
             if not is_valid:
-                #  throw an exception
                 raise Exception(f"Consecutive value validation failed: {message}")
-            
         # Update points collected
         self.total_streamed_samples_since_start += len(new_data[0])
-        
         # Update analysis ready data
-        for i, channel in enumerate(self.electrode_and_timestamp_channels):
-            self.electrode_and_timestamp_data[i].extend(new_data[channel].tolist())
-                
+        self.etd_buffer_manager.add_data(new_data)
         return True
 
     def queue_data_for_csv_write(self, new_data, is_initial=False):
         """Queue new data for CSV writing and handle buffer management."""
         self.csv_manager.queue_data_for_csv_write(new_data, is_initial)
 
-    def _get_etd_timestamps(self):
-        """Helper method to get timestamp data from electrode_and_timestamp_data.
-        
-        Returns:
-            The timestamp data array from electrode_and_timestamp_data
-        """
-        return self.electrode_and_timestamp_data[self.electrode_and_timestamp_data_timestamp_index]
-
-
-
     def _adjust_index_with_etd_offset(self, index, to_etd=True):
-        """Place holder method for when we add memory management to electrode_and_timestamp_data.
-        
-        Args:
-            index: index of sample
-            to_etd: True if the index is relative to the total streamed data, False if the index is relative to the electrode_and_timestamp_data
-            
-        Returns:
-            int: Adjusted index to be relative to the total streamed data or electrode_and_timestamp_data
-        """
-        
-        return index - self.etd_offset if to_etd else index + self.etd_offset
-    
-
+        """Helper method to adjust an index based on the etd_offset."""
+        if to_etd:
+            return index - self.etd_buffer_manager.offset
+        else:
+            return index + self.etd_buffer_manager.offset
 
     def validate_epoch_gaps(self, buffer_id, epoch_start_idx_abs, epoch_end_idx_abs):
         """Validate the epoch has no gaps
@@ -272,11 +253,11 @@ class DataManager:
             - gap_size: Size of the gap if one was detected, otherwise 0
         """
         # Get timestamp data
-        timestamp_data = np.array(self._get_etd_timestamps())
+        timestamp_data = self.etd_buffer_manager.get_timestamps()
 
         # Adjust the epoch indices to account for the buffer delay
-        epoch_start_idx_rel = self._adjust_index_with_etd_offset(epoch_start_idx_abs)
-        epoch_end_idx_rel = self._adjust_index_with_etd_offset(epoch_end_idx_abs)
+        epoch_start_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(epoch_start_idx_abs)
+        epoch_end_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(epoch_end_idx_abs)
         
         # Use GapHandler to validate gaps
         has_gap, gap_size = self.gap_handler.validate_epoch_gaps(
@@ -299,7 +280,7 @@ class DataManager:
         epoch_start_idx_abs = epoch_end_idx_abs - self.points_per_epoch
         
         # Get timestamps from the data
-        timestamp_data = self._get_etd_timestamps()
+        timestamp_data = self.etd_buffer_manager.get_timestamps()
         timestamp_start = timestamp_data[epoch_start_idx_abs]
         timestamp_end = timestamp_data[epoch_end_idx_abs - 1]  # epoch_end_idx_abs is exclusive, so use -1
 
@@ -314,14 +295,12 @@ class DataManager:
         )
 
     def _get_total_data_points_etd(self):
-        """Get the total number of data points currently in the buffer.
+        """Get the total number of data points currently in the electrode_and_timestamp_data buffer.
         
         Returns:
             int: The number of data points across all channels (they all have the same length).
         """
-        if not self.electrode_and_timestamp_data:
-            return 0
-        return len(self.electrode_and_timestamp_data[0])
+        return self.etd_buffer_manager._get_total_data_points()
 
     def _get_data_point_delay_for_buffer(self, buffer_id):
         """Calculate the data point delay in the round robin for a given buffer.
@@ -403,9 +382,9 @@ class DataManager:
         Returns:
             bool: True if enough time has passed since last epoch
         """
-        last_etd_timestamp = self._get_etd_timestamps()[-1]
+        last_etd_timestamp = self.etd_buffer_manager.get_timestamps()[-1]
         last_epoch_timestamp = max(
-            self._get_etd_timestamps()[indices[-1]]
+            self.etd_buffer_manager.get_timestamps()[indices[-1]]
             for indices in self.matrix_of_round_robin_processed_epoch_start_indices_abs
             if indices
         )
@@ -494,7 +473,7 @@ class DataManager:
         if has_gap:
             # Handle the gap
             self.handle_gap(
-                prev_timestamp=self._get_etd_timestamps()[epoch_start_idx_abs-1],
+                prev_timestamp=self.etd_buffer_manager.get_timestamps()[epoch_start_idx_abs-1],
                 gap_size=gap_size, buffer_id=buffer_id
             )
        
@@ -529,7 +508,7 @@ class DataManager:
         
         # Extract EXACTLY points_per_epoch data points from the correct slice
         epoch_data = np.array([
-            self.electrode_and_timestamp_data[channel][start_idx_abs:end_idx_abs]
+            self.etd_buffer_manager.electrode_and_timestamp_data[channel][start_idx_abs:end_idx_abs]
             for channel in self.electrode_channels
         ])
         
@@ -537,7 +516,7 @@ class DataManager:
         assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
         
         # Get the timestamp data for this epoch
-        timestamp_data = self._get_etd_timestamps()[start_idx_abs:end_idx_abs]
+        timestamp_data = self.etd_buffer_manager.get_timestamps()[start_idx_abs:end_idx_abs]
         epoch_start_time = timestamp_data[0]  # First timestamp in the epoch
         
         # Get index combinations for EEG and EOG channels
@@ -697,7 +676,7 @@ class DataManager:
             self.last_saved_timestamp = None
             
             # Clear data buffers
-            self.electrode_and_timestamp_data = [[] for _ in range(len(self.electrode_and_timestamp_channels))]
+            self.etd_buffer_manager.electrode_and_timestamp_data = [[] for _ in range(len(self.electrode_and_timestamp_channels))]
             self.matrix_of_round_robin_processed_epoch_start_indices_abs = [[] for _ in range(6)]
             
             # Reset hidden states
@@ -715,139 +694,6 @@ class DataManager:
             logging.error(f"Error during DataManager cleanup: {str(e)}")
             raise
 
-    def _get_max_edt_buffer_size(self):
-        """Get the maximum allowed buffer size in data points.
-        
-        The buffer must maintain 35 seconds of data to ensure all overlapping epochs
-        have access to their required data:
-        - Latest unprocessed data: 25-55s (30 seconds)
-        - Plus the 5-second step size
-        - Total: 35 seconds
-        
-        Returns:
-            int: Maximum number of data points allowed in the buffer
-        """
-        return 35 * self.sampling_rate
-
-    def _verify_timestamp_continuity(self, timestamps):
-        """Verify that timestamps in the buffer are continuous.
-        
-        Args:
-            timestamps: List of timestamps to verify
-            
-        Raises:
-            AssertionError: If any timestamp interval deviates from expected
-        """
-        expected_interval = 1.0 / self.sampling_rate
-        for i in range(1, len(timestamps)):
-            actual_interval = timestamps[i] - timestamps[i-1]
-            if abs(actual_interval - expected_interval) >= 1e-6:
-                raise AssertionError(
-                    f"Timestamp discontinuity at index {i}: "
-                    f"expected interval {expected_interval}, got {actual_interval}"
-                )
-
-    def _remove_etd_oldest_data(self, points_to_remove):
-        """Remove the oldest data points from each channel in the buffer.
-        
-        Args:
-            points_to_remove: Number of points to remove from the start of each channel
-        """
-        for channel_data in self.electrode_and_timestamp_data:
-            channel_data[:points_to_remove] = []
-
-    def _validate_edt_buffer_after_trim(self, expected_size):
-        """Validate the buffer state after trimming.
-        
-        This method performs comprehensive validation of the buffer state:
-        1. Verifies buffer size matches expected size
-        2. Checks timestamp continuity
-        3. Validates channel synchronization
-        4. Ensures offset tracking is correct
-        
-        Args:
-            expected_size: Expected number of data points in buffer
-            
-        Raises:
-            ValueError: If any validation check fails
-        """
-        # Verify buffer size
-        actual_size = self._get_total_data_points_etd()
-        if actual_size != expected_size:
-            raise ValueError(
-                f"Buffer size validation failed: expected {expected_size}, got {actual_size}"
-            )
-            
-        # Verify all channels have the same length
-        channel_lengths = [len(channel) for channel in self.electrode_and_timestamp_data]
-        if not all(length == expected_size for length in channel_lengths):
-            raise ValueError(
-                f"Channel synchronization failed: lengths {channel_lengths} should all be {expected_size}"
-            )
-            
-        # Verify timestamp continuity
-        timestamps = self._get_etd_timestamps()
-        self._verify_timestamp_continuity(timestamps)
-        
-        # Verify offset tracking
-        if self.etd_offset < 0:
-            raise ValueError(f"Invalid offset: {self.etd_offset} should be non-negative")
-            
-        # Verify total streamed samples tracking
-        if self.total_streamed_samples_since_start < self.etd_offset:
-            raise ValueError(
-                f"Invalid total samples: {self.total_streamed_samples_since_start} "
-                f"should be >= offset {self.etd_offset}"
-            )
-
-    def _update_edt_offset_tracking(self, points_removed):
-        """Update the offset tracking to maintain absolute position references.
-        
-        This method updates the etd_offset to account for data points that have been
-        removed from the buffer. This ensures that absolute position references remain
-        valid even after buffer trimming.
-        
-        Args:
-            points_removed: Number of data points that were removed from the buffer
-        """
-        self.etd_offset += points_removed
-
-    def _trim_etd_buffer(self):
-        """Trim the electrode_and_timestamp_data buffer to maintain a maximum size of 35 seconds.
-        
-        This method ensures the buffer never grows beyond 35 seconds of data while
-        maintaining data continuity and proper offset tracking. The 35-second limit
-        is critical for the round-robin processing system to ensure all overlapping
-        epochs have access to their required data.
-        
-        The method:
-        1. Checks if buffer length exceeds 35 seconds × sampling_rate
-        2. If yes, removes oldest data to bring buffer back to 35 seconds
-        3. Updates offset tracking to maintain absolute position references
-        4. Validates buffer state after trimming
-        
-        Raises:
-            ValueError: If buffer validation fails after trimming
-        """
-        # Get maximum allowed buffer size
-        max_buffer_size = self._get_max_edt_buffer_size()
-        current_size = self._get_total_data_points_etd()
-        
-        # Only proceed with trimming if we exceed the maximum size
-        if current_size <= max_buffer_size:
-            return
-            
-        # Calculate how many points to remove
-        points_to_remove = current_size - max_buffer_size
-        
-        # Update offset tracking to maintain absolute position references
-        self._update_edt_offset_tracking(points_to_remove)
-        
-        # Remove oldest data from each channel
-        self._remove_etd_oldest_data(points_to_remove)
-        
-        # Validate buffer state after trimming
-        self._validate_edt_buffer_after_trim(max_buffer_size)
 
 
 
