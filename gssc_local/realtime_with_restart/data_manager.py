@@ -43,14 +43,14 @@ class DataManager:
         self.round_robin_delay = self.seconds_per_step
         
         # Initialize channels and buffers
-        self.electrode_channels, self.board_timestamp_channel, self.electrode_and_timestamp_channels = self._init_channels()
+        self.electrode_channels, self.board_timestamp_channel, electrode_and_timestamp_channels = self._init_channels()
         
         # Initialize buffer manager
         self.etd_buffer_manager = ETDBufferManager(
             max_buffer_size=35 * sampling_rate,  # 35 seconds of data
-            timestamp_channel_index=self.electrode_and_timestamp_data_timestamp_index,
-            channel_count=len(self.electrode_and_timestamp_channels),
-            electrode_and_timestamp_channels=self.electrode_and_timestamp_channels
+            timestamp_channel_index=electrode_and_timestamp_channels.index(self.board_timestamp_channel),
+            channel_count=len(electrode_and_timestamp_channels),
+            electrode_and_timestamp_channels=electrode_and_timestamp_channels
         )
         
         # Buffer tracking
@@ -83,7 +83,6 @@ class DataManager:
         self.interpolation_threshold = 0.1  # Maximum gap to interpolate (seconds)
         self.current_epoch_start_time = None
         # Index position of timestamp within electrode_and_timestamp_data array
-        self.electrode_and_timestamp_data_timestamp_index = self.electrode_and_timestamp_channels.index(self.board_timestamp_channel)
         
         # Add validation settings
         self.validate_consecutive_values = False  # Set to True to enable consecutive value validation
@@ -159,7 +158,6 @@ class DataManager:
         
         if timestamp_channel is not None and timestamp_channel not in electrode_channels:
             all_channels.append(timestamp_channel)
-            self.electrode_and_timestamp_data_timestamp_index = len(all_channels) - 1
             
         return all_channels
 
@@ -676,7 +674,7 @@ class DataManager:
             self.last_saved_timestamp = None
             
             # Clear data buffers
-            self.etd_buffer_manager.electrode_and_timestamp_data = [[] for _ in range(len(self.electrode_and_timestamp_channels))]
+            self.etd_buffer_manager.electrode_and_timestamp_data = [[] for _ in range(len(self.etd_buffer_manager.electrode_and_timestamp_channels))]
             self.matrix_of_round_robin_processed_epoch_start_indices_abs = [[] for _ in range(6)]
             
             # Reset hidden states
