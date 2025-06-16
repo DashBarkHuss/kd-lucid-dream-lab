@@ -25,7 +25,7 @@ import pytest
 import numpy as np
 from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.etd_buffer_manager import ETDBufferManager
-from gssc_local.tests.test_utils import create_brainflow_test_data
+from gssc_local.tests.test_utils import create_brainflow_test_data, transform_to_stream_format
 from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
 import tempfile
 import os
@@ -47,6 +47,8 @@ class TestEpochBuffer:
                 add_noise=False,
                 board_id=master_board_id
             )
+            # Update metadata to use exg_channels instead of eeg_channels
+            metadata['eeg_channels'] = BoardShim.get_exg_channels(master_board_id)
             # Save data in BrainFlow format
             np.savetxt(temp_file.name, data, delimiter=',')
             
@@ -95,15 +97,23 @@ class TestEpochBuffer:
         )
 
     @pytest.fixture
-    def test_data(self):
-        """Create test data with known characteristics."""
-        # Create 2 minutes of data to test buffer trimming
+    def test_data(self, data_manager):
+        """Create test data with the correct number of channels."""
+        master_board_id = BoardIds.CYTON_DAISY_BOARD
+        sampling_rate = BoardShim.get_sampling_rate(master_board_id)
+        
+        # Generate test data
         data, metadata = create_brainflow_test_data(
             duration_seconds=120,
-            sampling_rate=125,  # Cyton Daisy sampling rate
+            sampling_rate=sampling_rate,
             add_noise=False,
-            board_id=BoardIds.CYTON_DAISY_BOARD
+            board_id=master_board_id
         )
+        
+        # Update metadata
+        metadata['eeg_channels'] = data_manager.electrode_channels
+        metadata['timestamp_channel'] = data_manager.board_timestamp_channel
+        
         return data, metadata
 
     def test_buffer_trimming(self, data_manager, test_data):
@@ -117,7 +127,8 @@ class TestEpochBuffer:
         
         # Add initial data to buffer (40 seconds worth)
         initial_data = data[:initial_data_size, :]  # shape: (n_samples, n_channels)
-        data_manager.add_to_data_processing_buffer(initial_data)
+        initial_data_stream = transform_to_stream_format(initial_data)  # transform to (n_channels, n_samples)
+        data_manager.add_to_data_processing_buffer(initial_data_stream)
         
         # Verify initial buffer size
         initial_buffer_size = data_manager.etd_buffer_manager._get_total_data_points()
@@ -126,7 +137,8 @@ class TestEpochBuffer:
             
         # Add more data to exceed 35 seconds
         additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
-        data_manager.add_to_data_processing_buffer(additional_data)
+        additional_data_stream = transform_to_stream_format(additional_data)  # transform to (n_channels, n_samples)
+        data_manager.add_to_data_processing_buffer(additional_data_stream)
         
         # Call buffer trimming
         points_to_remove = initial_buffer_size + 20 * sampling_rate - min_buffer_size
@@ -173,7 +185,6 @@ class TestEpochBuffer:
         theoretical_range = max(abs(min_voltage), abs(max_voltage))
         assert abs(first_timestamp) > theoretical_range, \
             f"First value of last channel should be outside theoretical EEG range (±{theoretical_range:.2f} µV), got {first_timestamp}"
-        
 
     def test_index_translation(self, data_manager, test_data):
         """Test that index translation works correctly with buffer trimming."""
@@ -183,7 +194,8 @@ class TestEpochBuffer:
         # Add initial data (40 seconds)
         initial_data_size = 40 * sampling_rate
         initial_data = data[:initial_data_size, :]  # shape: (n_samples, n_channels)
-        data_manager.add_to_data_processing_buffer(initial_data)
+        initial_data_stream = transform_to_stream_format(initial_data)  # transform to (n_channels, n_samples)
+        data_manager.add_to_data_processing_buffer(initial_data_stream)
         
         # Test absolute to relative conversion before trimming
         test_absolute_idx = 20 * sampling_rate  # 20 seconds into the data
@@ -193,7 +205,8 @@ class TestEpochBuffer:
             
         # Add more data and trim buffer
         additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
-        data_manager.add_to_data_processing_buffer(additional_data)
+        additional_data_stream = transform_to_stream_format(additional_data)  # transform to (n_channels, n_samples)
+        data_manager.add_to_data_processing_buffer(additional_data_stream)
         data_manager.etd_buffer_manager.trim_buffer(points_to_remove=20 * sampling_rate)  # Trim 20 seconds of data
         
         # Test absolute to relative conversion after trimming
@@ -236,8 +249,9 @@ class TestEpochBuffer:
         
         # Add initial data (40 seconds)
         initial_data_size = 40 * sampling_rate
-        initial_data = data[:, :initial_data_size]
-        data_manager.add_to_data_processing_buffer(initial_data)
+        initial_data = data[:initial_data_size, :]  # shape: (n_samples, n_channels)
+        initial_data_stream = transform_to_stream_format(initial_data)  # transform to (n_channels, n_samples)
+        data_manager.add_to_data_processing_buffer(initial_data_stream)
         
         # Process first epoch
         first_epoch_start = 0
@@ -249,8 +263,9 @@ class TestEpochBuffer:
         )
         
         # Add more data and trim buffer
-        additional_data = data[:, initial_data_size:initial_data_size + 20 * sampling_rate]
-        data_manager.add_to_data_processing_buffer(additional_data)
+        additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
+        additional_data_stream = transform_to_stream_format(additional_data)  # transform to (n_channels, n_samples)
+        data_manager.add_to_data_processing_buffer(additional_data_stream)
         data_manager.etd_buffer_manager.trim_buffer(points_to_remove=20 * sampling_rate)  # Trim 20 seconds of data
         
         # Process second epoch after trimming
@@ -277,7 +292,8 @@ class TestEpochBuffer:
         )
         
         # Add gap data
-        data_manager.add_to_data_processing_buffer(gap_data)
+        gap_data_stream = transform_to_stream_format(gap_data)  # transform to (n_channels, n_samples)
+        data_manager.add_to_data_processing_buffer(gap_data_stream)
         
         # Test gap detection
         has_gap, gap_size = data_manager.validate_epoch_gaps(
@@ -319,8 +335,9 @@ class TestEpochBuffer:
         
         # Add initial data (60 seconds to ensure enough data for all buffers)
         initial_data_size = 60 * sampling_rate
-        initial_data = data[:, :initial_data_size]
-        data_manager.add_to_data_processing_buffer(initial_data)
+        initial_data = data[:initial_data_size, :]  # shape: (n_samples, n_channels)
+        initial_data_stream = transform_to_stream_format(initial_data)  # transform to (n_channels, n_samples)
+        data_manager.add_to_data_processing_buffer(initial_data_stream)
         
         # Process each buffer in sequence
         sleep_stages = []
@@ -350,8 +367,9 @@ class TestEpochBuffer:
                 f"Buffer {buffer_id} should track correct start index {epoch_start}, got {processed_idx}"
         
         # Add more data and trim buffer
-        additional_data = data[:, initial_data_size:initial_data_size + 20 * sampling_rate]
-        data_manager.add_to_data_processing_buffer(additional_data)
+        additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
+        additional_data_stream = transform_to_stream_format(additional_data)  # transform to (n_channels, n_samples)
+        data_manager.add_to_data_processing_buffer(additional_data_stream)
         data_manager.etd_buffer_manager.trim_buffer(points_to_remove=20 * sampling_rate)  # Trim 20 seconds of data
         
         # Process second round of epochs after trimming

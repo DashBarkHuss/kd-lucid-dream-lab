@@ -1,9 +1,29 @@
 """
-Buffer Manager for handling data buffer management and trimming.
+ETD Buffer Manager for handling the elctrode and timestamp buffer management and trimming.
 
 This module provides functionality for managing the electrode_and_timestamp_data buffer,
 including trimming, validation, and index tracking to maintain memory efficiency while
 preserving data continuity for overlapping epoch processing.
+
+Data Shape Conventions:
+- Input data (new_data, brainflow stream data): Shape (n_channels, n_samples)
+    - Each row represents a channel
+    - Each column represents a time point
+    - Example: For 8 channels and 1000 samples: shape (8, 1000)
+    - This is the raw data format from the board
+
+- Internal buffer (electrode_and_timestamp_data): List of lists
+    - Each inner list represents one channel
+    - Each inner list contains values for all time points for that channel
+    - Example: For 8 channels and 1000 samples:
+        [
+            [ch1_t1, ch1_t2, ..., ch1_t1000],  # Channel 1
+            [ch2_t1, ch2_t2, ..., ch2_t1000],  # Channel 2
+            ...
+            [ch8_t1, ch8_t2, ..., ch8_t1000]  # Channel 8
+        ]
+
+See individual method docstrings for detailed documentation.
 """
 
 import numpy as np
@@ -17,6 +37,24 @@ class ETDBufferManager:
     
     This class handles all buffer-related operations for the electrode_and_timestamp_data,
     including trimming, validation, and offset tracking.
+
+    Data Shape Conventions:
+        - Input data (new_data, brainflow stream data): Shape (n_channels, n_samples)
+            - Each row represents a channel
+            - Each column represents a time point
+            - Example: For 8 channels and 1000 samples: shape (8, 1000)
+            - This is the raw data format from the board
+        
+        - Internal buffer (electrode_and_timestamp_data): List of lists
+            - Each inner list represents one channel
+            - Each inner list contains values for all time points for that channel
+            - Example: For 8 channels and 1000 samples:
+                [
+                    [ch1_t1, ch1_t2, ..., ch1_t1000],  # Channel 1
+                    [ch2_t1, ch2_t2, ..., ch2_t1000],  # Channel 2
+                    ...
+                    [ch8_t1, ch8_t2, ..., ch8_t1000]  # Channel 8
+                ]
     """
     
     def __init__(self, max_buffer_size: int, timestamp_channel_index: int, channel_count: int, electrode_and_timestamp_channels: List[int]):
@@ -39,7 +77,7 @@ class ETDBufferManager:
         """Get total number of data points in buffer.
         
         Returns:
-            Number of data points in buffer
+            Number of data points in buffer (length of any channel's data list)
         """
         return len(self.electrode_and_timestamp_data[0]) if self.electrode_and_timestamp_data else 0
         
@@ -47,7 +85,7 @@ class ETDBufferManager:
         """Get timestamps from electrode_and_timestamp_data buffer.
         
         Returns:
-            List of timestamps from the buffer
+            List of timestamps from the buffer (from the timestamp channel)
         """
         return self.electrode_and_timestamp_data[self.timestamp_channel_index]  # Use correct timestamp channel index
         
@@ -204,7 +242,19 @@ class ETDBufferManager:
         
         Args:
             new_data: Array of shape (n_channels, n_samples) containing the data to add
+                - Each row represents a channel
+                - Each column represents a time point
+                - Example: For 8 channels and 1000 samples: shape (8, 1000)
+                - This is the raw data format from the board
         """
+        # Validate data shape: must be (n_channels, n_samples) BrainFlow's native format
+        if new_data.shape[0] < len(self.electrode_and_timestamp_channels):
+            raise ValueError(
+                f"Input data has {new_data.shape[0]} channels but we need {len(self.electrode_and_timestamp_channels)} "
+                f"channels to select from. Expected data in (n_channels, n_samples) format with at least "
+                f"{len(self.electrode_and_timestamp_channels)} channels, got shape {new_data.shape}"
+            )
+        
         # Only store channels we want in the correct order
         for i, channel in enumerate(self.electrode_and_timestamp_channels):
             self.electrode_and_timestamp_data[i].extend(new_data[channel].tolist() if hasattr(new_data[channel], 'tolist') else new_data[channel])

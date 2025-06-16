@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 
 def create_brainflow_test_data(duration_seconds=1.0, sampling_rate=None, add_noise=False, board_id=None, start_time=1700000000.1, random_seed=42):
     """
-    Create BrainFlow-compatible test data.
+    Create BrainFlow-compatible test data. This creates data in the format that is generated when brainflow saves data to csv via openbci-python-sdk.
+    However, the shape in csv is (n_samples, n_channels) but the boardshim streams in (n_channels, n_samples)
     
     Args:
         duration_seconds: Duration of data in seconds
@@ -109,6 +110,19 @@ def save_brainflow_data_to_csv(data, filepath):
     """
     df = pd.DataFrame(data)
     df.to_csv(filepath, sep='\t', index=False, header=False, float_format='%.6f')
+
+def transform_to_stream_format(data):
+    """
+    Transform data from OpenBCI BrainFlow CSV format (n_samples, n_channels) to stream format (n_channels, n_samples).
+    This is useful for testing streaming functionality since BrainFlow streams data in (n_channels, n_samples) format.
+    
+    Args:
+        data: numpy array of shape (n_samples, n_channels)
+        
+    Returns:
+        numpy array of shape (n_channels, n_samples)
+    """
+    return data.T
 
 class TestBrainFlowDataGeneration(unittest.TestCase):
     def setUp(self):

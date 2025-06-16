@@ -212,13 +212,20 @@ class DataManager:
         """Add new data to the buffer for epoch processing.
         
         Args:
-            new_data: Array containing the data to add. Must be in (n_samples, n_channels) format.
-                      The method will transpose it to (n_channels, n_samples) for the buffer manager.
+            new_data: Array containing the data to add. Must be in (n_channels, n_samples) format.
             is_initial: Whether this is the initial data chunk
             
         Returns:
             bool: True if data was added successfully, False if validation failed
         """
+        # Debug logging to verify native BrainFlow data shape
+        print(f"\n[DEBUG] add_to_data_processing_buffer:")
+        print(f"Native BrainFlow data shape: {new_data.shape}")
+        print(f"Number of rows (from shape[0]): {new_data.shape[0]}")
+        print(f"Number of columns (from shape[1]): {new_data.shape[1]}")
+        print(f"First sample data (first 5 channels): {new_data[0][:5]}")
+        print(f"Second sample data (first 5 channels): {new_data[1][:5]}")
+        
         # Validate data values
         if np.any(np.isnan(new_data)) or np.any(np.isinf(new_data)):
             logging.warning("Data contains NaN or infinite values!")
@@ -228,14 +235,12 @@ class DataManager:
             is_valid, message = self.validate_consecutive_data(new_data)
             if not is_valid:
                 raise Exception(f"Consecutive value validation failed: {message}")
-        # Validate data shape: must be (n_samples, n_channels)
+        # Validate data shape: must be (n_channels, n_samples)
         total_channels = self.board_shim.get_num_rows(self.board_shim.get_board_id())
-        if new_data.shape[1] != total_channels:
-            raise ValueError(f"Expected data in (n_samples, n_channels) format with {total_channels} channels, got shape {new_data.shape}")
-        # Transpose to (n_channels, n_samples) for buffer manager
-        new_data_t = new_data.T
+        if new_data.shape[0] != total_channels:
+            raise ValueError(f"Expected data in (n_channels, n_samples) format with {total_channels} channels, got shape {new_data.shape}")
         # Update analysis ready data
-        self.etd_buffer_manager.add_data(new_data_t)
+        self.etd_buffer_manager.add_data(new_data)
         return True
 
     def queue_data_for_csv_write(self, new_data, is_initial=False):

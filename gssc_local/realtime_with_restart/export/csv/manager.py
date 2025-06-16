@@ -12,6 +12,32 @@ Key Features:
 - Exact format preservation for compatibility
 - Comprehensive validation and error handling
 
+Data Shape Conventions:
+    - Input data (new_data): Shape (n_channels, n_samples)
+        - Each row represents a channel
+        - Each column represents a time point
+        - Example: For 8 channels and 1000 samples: shape (8, 1000)
+        - This is the raw data format from the board
+    
+    - Internal buffer (main_csv_buffer): List of lists
+        - Each inner list represents one time point
+        - Each inner list contains values for all channels at that time point
+        - Example: For 8 channels and 1000 samples:
+            [
+                [sample1_ch1, sample1_ch2, ..., sample1_ch8],  # First time point
+                [sample2_ch1, sample2_ch2, ..., sample2_ch8],  # Second time point
+                ...
+                [sample1000_ch1, sample1000_ch2, ..., sample1000_ch8]  # Last time point
+            ]
+    
+    - CSV file format:
+        - Each row represents one time point
+        - Each column represents one channel
+        - Example: For 8 channels and 1000 samples:
+            timestamp    ch1    ch2    ch3    ch4    ch5    ch6    ch7    ch8
+            1.234567    0.123  0.456  0.789  ...    ...    ...    ...    ...
+            1.234575    0.124  0.457  0.790  ...    ...    ...    ...    ...
+            ...
 
 See individual method docstrings for detailed documentation.
 """
@@ -65,6 +91,33 @@ class CSVManager:
     - Saving BrainFlow data to CSV files with exact format preservation
     - Managing sleep stage data integration with BrainFlow data
     - Testing CSV format against original BrainFlow source (test only) TODO: Move to a test
+    
+    Data Shape Conventions:
+        - Input data (new_data): Shape (n_channels, n_samples)
+            - Each row represents a channel
+            - Each column represents a time point
+            - Example: For 8 channels and 1000 samples: shape (8, 1000)
+            - This is the raw data format from the board
+        
+        - Internal buffer (main_csv_buffer): List of lists
+            - Each inner list represents one time point
+            - Each inner list contains values for all channels at that time point
+            - Example: For 8 channels and 1000 samples:
+                [
+                    [sample1_ch1, sample1_ch2, ..., sample1_ch8],  # First time point
+                    [sample2_ch1, sample2_ch2, ..., sample2_ch8],  # Second time point
+                    ...
+                    [sample1000_ch1, sample1000_ch2, ..., sample1000_ch8]  # Last time point
+                ]
+        
+        - CSV file format:
+            - Each row represents one time point
+            - Each column represents one channel
+            - Example: For 8 channels and 1000 samples:
+                timestamp    ch1    ch2    ch3    ch4    ch5    ch6    ch7    ch8
+                1.234567    0.123  0.456  0.789  ...    ...    ...    ...    ...
+                1.234575    0.124  0.457  0.790  ...    ...    ...    ...    ...
+                ...
     
     See individual method docstrings for detailed documentation.
     
@@ -198,7 +251,11 @@ class CSVManager:
         - Buffer clearing when necessary
         
         Args:
-            new_data (np.ndarray): New data to add (channels x samples). In practice, this comes from raw brainflow data.
+            new_data (np.ndarray): New data to add in (n_channels, n_samples) format.
+                - Each row represents a channel
+                - Each column represents a time point
+                - Example: For 8 channels and 1000 samples: shape (8, 1000)
+                - This is the raw data format from the board
             is_initial (bool): Whether this is the initial data chunk
             
         Returns:
