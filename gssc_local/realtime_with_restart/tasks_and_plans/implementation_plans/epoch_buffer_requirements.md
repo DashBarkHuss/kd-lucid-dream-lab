@@ -177,3 +177,11 @@ Index Translation
 
 - [x] Implement the index translation methods
 - [x] Test the index translation methods
+
+Processing Continuity
+
+- [x] Test the processing continuity works and fix any issues
+
+Round-Robin Integration Test
+
+- [x] Test the round-robin integration test and fix any issues

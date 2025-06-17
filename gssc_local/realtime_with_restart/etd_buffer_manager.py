@@ -236,7 +236,8 @@ class ETDBufferManager:
         """Helper method to adjust an index based on the etd_offset.
         
         Args:
-            index: The index to adjust
+            index: The index to adjust. For absolute indices, valid range is [0, total_streamed_samples].
+                   The value total_streamed_samples is allowed for exclusive end slicing (e.g., data[start:end]).
             to_etd: If True, convert from absolute to relative index. If False, convert from relative to absolute.
             
         Returns:
@@ -248,7 +249,7 @@ class ETDBufferManager:
         if index < 0:
             raise ValueError(f"Index cannot be negative, got {index}")
             
-        if to_etd and index >= self.total_streamed_samples:
+        if to_etd and index > self.total_streamed_samples:
             raise ValueError(f"Absolute index {index} exceeds total streamed samples {self.total_streamed_samples}")
             
         if not to_etd and index >= self._get_total_data_points():

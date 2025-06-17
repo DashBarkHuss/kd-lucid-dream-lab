@@ -297,10 +297,12 @@ class DataManager:
         # Calculate timestamps for this epoch
         epoch_start_idx_abs = epoch_end_idx_abs - self.points_per_epoch
         
-        # Get timestamps from the data
+        # Get timestamps from the data - convert absolute indices to relative first
         timestamp_data = self.etd_buffer_manager._get_timestamps()
-        timestamp_start = timestamp_data[epoch_start_idx_abs]
-        timestamp_end = timestamp_data[epoch_end_idx_abs - 1]  # epoch_end_idx_abs is exclusive, so use -1
+        epoch_start_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(epoch_start_idx_abs, to_etd=True)
+        epoch_end_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(epoch_end_idx_abs - 1, to_etd=True)  # epoch_end_idx_abs is exclusive, so use -1
+        timestamp_start = timestamp_data[epoch_start_idx_rel]
+        timestamp_end = timestamp_data[epoch_end_idx_rel]
 
         
         # Use the new method signature with timestamps
@@ -524,9 +526,13 @@ class DataManager:
         print(f"Epoch range: {start_idx_abs} to {end_idx_abs}")
         print(f"Buffer {buffer_id}: Epoch range: {start_idx_abs * self.expected_interval} to {end_idx_abs * self.expected_interval} seconds")
         
+        # Convert absolute indices to relative indices for buffer access
+        start_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(start_idx_abs, to_etd=True)
+        end_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(end_idx_abs, to_etd=True)
+        
         # Extract EXACTLY points_per_epoch data points from the correct slice
         epoch_data = np.array([
-            self.etd_buffer_manager.electrode_and_timestamp_data[channel][start_idx_abs:end_idx_abs]
+            self.etd_buffer_manager.electrode_and_timestamp_data[channel][start_idx_rel:end_idx_rel]
             for channel in self.electrode_channels
         ])
         
@@ -534,7 +540,7 @@ class DataManager:
         assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
         
         # Get the timestamp data for this epoch
-        timestamp_data = self.etd_buffer_manager._get_timestamps()[start_idx_abs:end_idx_abs]
+        timestamp_data = self.etd_buffer_manager._get_timestamps()[start_idx_rel:end_idx_rel]
         epoch_start_time = timestamp_data[0]  # First timestamp in the epoch
         
         # Get index combinations for EEG and EOG channels
