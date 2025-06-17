@@ -161,28 +161,67 @@ class ETDBufferManager:
         """
         self.offset += points_removed
         
-    def trim_buffer(self, points_to_remove: int) -> None:
-        """Trim the buffer by removing the oldest data points.
+    def trim_buffer(self, processed_epoch_indices: List[List[int]] = None, points_per_step: int = None) -> None:
+        """Trim the buffer to maintain max_buffer_size, but only if data has been processed.
+        
+        This method will:
+        1. Calculate how many points can be safely removed based on processed epochs
+        2. Remove only the oldest data points that have been fully processed
+        3. Update offset tracking
+        4. Validate buffer state after trim
         
         Args:
-            points_to_remove: Number of points to remove from start of buffer
-            
+            processed_epoch_indices: List of lists containing the absolute start indices
+                of processed epochs for each round-robin buffer. If None, no trimming occurs.
+            points_per_step: Number of points between epoch starts. If None, no trimming occurs.
+                
         Raises:
             ValueError: If validation fails after trim
         """
-        if not self.electrode_and_timestamp_data or points_to_remove <= 0:
+        if not self.electrode_and_timestamp_data or not processed_epoch_indices:
+            return
+            
+        current_size = self._get_total_data_points()
+        if current_size <= self.max_buffer_size:
+            return
+            
+        # Find the earliest unprocessed epoch start index across all buffers
+        earliest_unprocessed = float('inf')
+        for buffer_epochs in processed_epoch_indices:
+            if not buffer_epochs:  # If buffer hasn't processed any epochs
+                earliest_unprocessed = 0
+                break
+            # Find the next expected epoch start after the last processed one
+            last_processed = max(buffer_epochs)
+            next_expected = last_processed + points_per_step
+            earliest_unprocessed = min(earliest_unprocessed, next_expected)
+            
+        # Calculate how many points we can safely remove
+        # We can only remove points up to the earliest unprocessed epoch
+        safe_remove_points = min(
+            current_size - self.max_buffer_size,  # How many we want to remove
+            earliest_unprocessed - self.offset     # How many we can safely remove
+        )
+        
+        if safe_remove_points <= 0:
             return
             
         # Remove oldest data points from each channel
         for channel in self.electrode_and_timestamp_data:
-            channel[:points_to_remove] = []
+            channel[:safe_remove_points] = []
             
-        # Update offset tracking
-        self._update_offset_tracking(points_to_remove)
+        # Update offset tracking - this must happen after removing the data
+        self._update_offset_tracking(safe_remove_points)
         
         # Validate buffer state after trim
-        expected_size = self._get_total_data_points()
-        self._validate_buffer_after_trim(expected_size)
+        self._validate_buffer_after_trim(current_size - safe_remove_points)
+        
+        # Log the trim operation for debugging
+        logger.debug(
+            f"Trimmed buffer: removed {safe_remove_points} points, "
+            f"new size: {self._get_total_data_points()}, "
+            f"new offset: {self.offset}"
+        )
 
     def update_total_streamed_samples(self, new_samples: int) -> None:
         """Update the total number of samples streamed.
@@ -216,6 +255,9 @@ class ETDBufferManager:
             raise ValueError(f"Relative index {index} exceeds buffer size {self._get_total_data_points()}")
             
         if to_etd:
+            # When converting from absolute to relative, we need to check if the index is before our offset
+            if index < self.offset:
+                raise ValueError(f"Absolute index {index} is before buffer start (offset: {self.offset})")
             return index - self.offset
         else:
             return index + self.offset

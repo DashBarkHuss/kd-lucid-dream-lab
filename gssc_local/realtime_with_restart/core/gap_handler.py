@@ -6,7 +6,7 @@ Unix timestamps (seconds since epoch) as provided by BrainFlow's timestamp colum
 
 import logging
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union, List
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +87,14 @@ class GapHandler:
             logger.error(f"Error during GapHandler cleanup: {e}")
             raise GapError(f"Failed to cleanup GapHandler: {e}")
         
-    def _validate_timestamps(self, timestamps: np.ndarray) -> None:
+    def _validate_timestamps(self, timestamps: Union[np.ndarray, List[float]]) -> np.ndarray:
         """Validate timestamp array for basic integrity.
         
         Args:
             timestamps: Array of Unix timestamps (seconds since epoch) from BrainFlow
+            
+        Returns:
+            np.ndarray: Validated timestamps as numpy array
             
         Raises:
             EmptyTimestampError: If timestamps array is empty
@@ -100,8 +103,11 @@ class GapHandler:
         if len(timestamps) == 0:
             raise EmptyTimestampError("Timestamp array cannot be empty")
             
-        if not isinstance(timestamps, np.ndarray):
-            raise InvalidTimestampError(f"Timestamps must be numpy array, got {type(timestamps)}")
+        # Convert to numpy array if it's a list
+        if isinstance(timestamps, list):
+            timestamps = np.array(timestamps)
+        elif not isinstance(timestamps, np.ndarray):
+            raise InvalidTimestampError(f"Timestamps must be numpy array or list, got {type(timestamps)}")
             
         if not np.issubdtype(timestamps.dtype, np.number):
             raise InvalidTimestampError(f"Timestamps must be numeric, got {timestamps.dtype}")
@@ -111,6 +117,8 @@ class GapHandler:
             
         if not np.all(np.diff(timestamps) >= 0):
             raise InvalidTimestampError("Timestamps must be monotonically increasing")
+            
+        return timestamps
             
     def _validate_epoch_indices(self, timestamps: np.ndarray, start_idx_rel: int, end_idx_rel: int) -> None:
         """Validate epoch indices.
@@ -154,7 +162,7 @@ class GapHandler:
             EmptyTimestampError: If timestamps array is empty
             InvalidTimestampError: If timestamps are invalid or malformed
         """
-        self._validate_timestamps(timestamps)
+        timestamps = self._validate_timestamps(timestamps)
         
         has_gap = False
         max_gap = 0

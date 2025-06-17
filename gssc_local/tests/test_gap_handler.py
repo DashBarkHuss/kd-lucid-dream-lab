@@ -57,9 +57,12 @@ def test_validate_timestamps(gap_handler):
     with pytest.raises(EmptyTimestampError):
         gap_handler._validate_timestamps(np.array([]))
 
-    # Test non-numpy array
+    # Test valid list (should be converted to numpy array)
+    gap_handler._validate_timestamps([BASE_TIME, BASE_TIME + EXPECTED_INTERVAL])  # Should not raise
+    
+    # Test invalid type (neither list nor numpy array)
     with pytest.raises(InvalidTimestampError):
-        gap_handler._validate_timestamps([BASE_TIME, BASE_TIME + EXPECTED_INTERVAL])
+        gap_handler._validate_timestamps("not_a_valid_type")
 
     # Test non-numeric timestamps
     with pytest.raises(InvalidTimestampError):

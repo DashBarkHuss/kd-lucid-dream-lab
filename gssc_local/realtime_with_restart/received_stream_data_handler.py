@@ -40,9 +40,17 @@ class ReceivedStreamedDataHandler:
             # Only process when we have a complete epoch ready
             self.logger.info(f"Processing epoch on buffer {next_buffer_id}")
             self.logger.info(f"Epoch indices: {epoch_start_idx} to {epoch_end_idx}")
+            
+            # Process the epoch
             self.data_manager.manage_epoch(buffer_id=next_buffer_id, 
                                     epoch_start_idx_abs=epoch_start_idx, 
                                     epoch_end_idx_abs=epoch_end_idx)
+            
+            # Only trim buffer after successful epoch processing
+            # This ensures we don't trim data that hasn't been processed yet
+            self.data_manager.etd_buffer_manager.trim_buffer(
+                self.data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs
+            )
         
         # Log processing statistics
         self.logger.info(f"Processed {self.sample_count} samples")        

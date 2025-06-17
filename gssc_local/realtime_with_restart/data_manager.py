@@ -265,12 +265,18 @@ class DataManager:
             - gap_size: Size of the gap if one was detected, otherwise 0
         """
         # Get timestamp data
-        timestamp_data = self.etd_buffer_manager.get_timestamps()
+        timestamp_data = self.etd_buffer_manager._get_timestamps()
 
         # Adjust the epoch indices to account for the buffer delay
         epoch_start_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(epoch_start_idx_abs)
         epoch_end_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(epoch_end_idx_abs)
-        
+
+        # Log the relevant information for debugging
+        logging.warning(f"[validate_epoch_gaps] buffer_id={buffer_id}, abs=({epoch_start_idx_abs},{epoch_end_idx_abs}), rel=({epoch_start_idx_rel},{epoch_end_idx_rel}), timestamps shape={getattr(timestamp_data, 'shape', None)}")
+        logging.warning(f"[validate_epoch_gaps] timestamps rel slice: {timestamp_data[epoch_start_idx_rel:epoch_end_idx_rel]}")
+        if epoch_start_idx_rel > 0:
+            logging.warning(f"[validate_epoch_gaps] prev_timestamp: {timestamp_data[epoch_start_idx_rel-1]}")
+
         # Use GapHandler to validate gaps
         has_gap, gap_size = self.gap_handler.validate_epoch_gaps(
             timestamps=timestamp_data,
@@ -292,7 +298,7 @@ class DataManager:
         epoch_start_idx_abs = epoch_end_idx_abs - self.points_per_epoch
         
         # Get timestamps from the data
-        timestamp_data = self.etd_buffer_manager.get_timestamps()
+        timestamp_data = self.etd_buffer_manager._get_timestamps()
         timestamp_start = timestamp_data[epoch_start_idx_abs]
         timestamp_end = timestamp_data[epoch_end_idx_abs - 1]  # epoch_end_idx_abs is exclusive, so use -1
 
@@ -394,9 +400,9 @@ class DataManager:
         Returns:
             bool: True if enough time has passed since last epoch
         """
-        last_etd_timestamp = self.etd_buffer_manager.get_timestamps()[-1]
+        last_etd_timestamp = self.etd_buffer_manager._get_timestamps()[-1]
         last_epoch_timestamp = max(
-            self.etd_buffer_manager.get_timestamps()[indices[-1]]
+            self.etd_buffer_manager._get_timestamps()[indices[-1]]
             for indices in self.matrix_of_round_robin_processed_epoch_start_indices_abs
             if indices
         )
@@ -485,7 +491,7 @@ class DataManager:
         if has_gap:
             # Handle the gap
             self.handle_gap(
-                prev_timestamp=self.etd_buffer_manager.get_timestamps()[epoch_start_idx_abs-1],
+                prev_timestamp=self.etd_buffer_manager._get_timestamps()[epoch_start_idx_abs-1],
                 gap_size=gap_size, buffer_id=buffer_id
             )
        
@@ -528,7 +534,7 @@ class DataManager:
         assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
         
         # Get the timestamp data for this epoch
-        timestamp_data = self.etd_buffer_manager.get_timestamps()[start_idx_abs:end_idx_abs]
+        timestamp_data = self.etd_buffer_manager._get_timestamps()[start_idx_abs:end_idx_abs]
         epoch_start_time = timestamp_data[0]  # First timestamp in the epoch
         
         # Get index combinations for EEG and EOG channels
