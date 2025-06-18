@@ -83,7 +83,7 @@ To safely implement buffer trimming, we need to ensure compatibility with:
 
 2. State tracking:
 
-   - Update `matrix_of_round_robin_processed_epoch_start_indices_abs` to account for trimmed data
+   - Update `matrix_of_round_robin_processed_epoch_indices` to account for trimmed data (now stores (start, end) tuples)
    - Maintain `total_streamed_samples_since_start` for absolute position tracking
    - Add `etd_offset` to track how much data has been trimmed
 
@@ -190,5 +190,6 @@ Test Main.py and main_speed_controlled_stream.py
 
 - [x] Test Main.py and fix any issues
 - [x] Test main_speed_controlled_stream.py and fix any issues
+- [ ] Test main_speed_controlled_stream.py with long data file and fix any issues
 
 Write performans and memory tests

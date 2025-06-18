@@ -71,14 +71,14 @@ class DataManager:
         # List of lists tracking where each buffer has started processing epochs
         # Example structure after processing some epochs:
         # [
-        #     [0, 6000, 12000],      # Buffer 0 processed epochs starting at indices 0, 6000, 12000
-        #     [1000, 7000, 13000],   # Buffer 1 processed epochs starting at indices 1000, 7000, 13000
-        #     [2000, 8000, 14000],   # Buffer 2 processed epochs starting at indices 2000, 8000, 14000
-        #     [],                    # Buffer 3 hasn't processed any epochs yet
-        #     [],                    # Buffer 4 hasn't processed any epochs yet
-        #     []                     # Buffer 5 hasn't processed any epochs yet
+        #     [(0, 3750), (6000, 9750), (12000, 15750)],      # Buffer 0 processed epochs with (start, end) indices
+        #     [(1000, 4750), (7000, 10750), (13000, 16750)],  # Buffer 1 processed epochs with (start, end) indices
+        #     [(2000, 5750), (8000, 11750), (14000, 17750)],  # Buffer 2 processed epochs with (start, end) indices
+        #     [],                                              # Buffer 3 hasn't processed any epochs yet
+        #     [],                                              # Buffer 4 hasn't processed any epochs yet
+        #     []                                               # Buffer 5 hasn't processed any epochs yet
         # ]
-        self.matrix_of_round_robin_processed_epoch_start_indices_abs = [[] for _ in range(6)]
+        self.matrix_of_round_robin_processed_epoch_indices = [[] for _ in range(6)]
         
         # Initialize hidden states for each buffer
         self.buffer_hidden_states = [
@@ -271,11 +271,7 @@ class DataManager:
         epoch_start_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(epoch_start_idx_abs)
         epoch_end_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(epoch_end_idx_abs)
 
-        # Log the relevant information for debugging
-        logging.warning(f"[validate_epoch_gaps] buffer_id={buffer_id}, abs=({epoch_start_idx_abs},{epoch_end_idx_abs}), rel=({epoch_start_idx_rel},{epoch_end_idx_rel}), timestamps shape={getattr(timestamp_data, 'shape', None)}")
-        logging.warning(f"[validate_epoch_gaps] timestamps rel slice: {timestamp_data[epoch_start_idx_rel:epoch_end_idx_rel]}")
-        if epoch_start_idx_rel > 0:
-            logging.warning(f"[validate_epoch_gaps] prev_timestamp: {timestamp_data[epoch_start_idx_rel-1]}")
+
 
         # Use GapHandler to validate gaps
         has_gap, gap_size = self.gap_handler.validate_epoch_gaps(
@@ -345,10 +341,11 @@ class DataManager:
             - epoch_end_idx_abs: The absolute ending index for the epoch in the total streamed data
         """
         buffer_start_offset = self._get_data_point_delay_for_buffer(buffer_id)
-        last_epoch_start_idx_abs = None
+        last_epoch_tuple = None
         
         try:
-            last_epoch_start_idx_abs = self.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id][-1]
+            last_epoch_tuple = self.matrix_of_round_robin_processed_epoch_indices[buffer_id][-1]
+            last_epoch_start_idx_abs = last_epoch_tuple[0]  # Extract start index from tuple
         except (IndexError, KeyError):
             pass
 
@@ -389,8 +386,8 @@ class DataManager:
         Returns:
             bool: True if no epochs have been processed yet in any buffer
         """
-        has_processed_epochs = (self.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id] or 
-                              any(len(indices) > 0 for indices in self.matrix_of_round_robin_processed_epoch_start_indices_abs))
+        has_processed_epochs = (self.matrix_of_round_robin_processed_epoch_indices[buffer_id] or 
+                              any(len(indices) > 0 for indices in self.matrix_of_round_robin_processed_epoch_indices))
         return not has_processed_epochs
 
     def _has_enough_delay_since_last_epoch(self):
@@ -404,8 +401,8 @@ class DataManager:
         """
         last_etd_timestamp = self.etd_buffer_manager._get_timestamps()[-1]
         last_epoch_timestamp = max(
-            self.etd_buffer_manager._get_timestamps()[indices[-1]]
-            for indices in self.matrix_of_round_robin_processed_epoch_start_indices_abs
+            self.etd_buffer_manager._get_timestamps()[indices[-1][0]]  # Extract start index from tuple
+            for indices in self.matrix_of_round_robin_processed_epoch_indices
             if indices
         )
         return last_etd_timestamp - last_epoch_timestamp >= self.round_robin_delay
@@ -498,7 +495,7 @@ class DataManager:
             )
        
         # Update buffer status
-        self.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id].append(epoch_start_idx_abs)
+        self.matrix_of_round_robin_processed_epoch_indices[buffer_id].append((epoch_start_idx_abs, epoch_end_idx_abs))
         self.last_processed_buffer = buffer_id  
 
         if has_gap:
@@ -700,7 +697,7 @@ class DataManager:
             
             # Clear data buffers
             self.etd_buffer_manager.electrode_and_timestamp_data = [[] for _ in range(len(self.etd_buffer_manager.electrode_and_timestamp_channels))]
-            self.matrix_of_round_robin_processed_epoch_start_indices_abs = [[] for _ in range(6)]
+            self.matrix_of_round_robin_processed_epoch_indices = [[] for _ in range(6)]
             
             # Reset hidden states
             self.buffer_hidden_states = [

@@ -161,7 +161,7 @@ class ETDBufferManager:
         """
         self.offset += points_removed
         
-    def trim_buffer(self, processed_epoch_indices: List[List[int]] = None, points_per_step: int = None) -> None:
+    def trim_buffer(self, processed_epoch_indices: List[List[Tuple[int, int]]] = None, points_per_step: int = None) -> None:
         """Trim the buffer to maintain max_buffer_size, but only if data has been processed.
         
         This method will:
@@ -171,7 +171,7 @@ class ETDBufferManager:
         4. Validate buffer state after trim
         
         Args:
-            processed_epoch_indices: List of lists containing the absolute start indices
+            processed_epoch_indices: List of lists containing the absolute (start, end) indices
                 of processed epochs for each round-robin buffer. If None, no trimming occurs.
             points_per_step: Number of points between epoch starts. If None, no trimming occurs.
                 
@@ -185,22 +185,29 @@ class ETDBufferManager:
         if current_size <= self.max_buffer_size:
             return
             
-        # Find the earliest unprocessed epoch start index across all buffers
-        earliest_unprocessed = float('inf')
+        # Find the latest point where all buffers have processed their data
+        # This is the maximum next_expected value across all buffers
+        max_next_expected = float('-inf')
         for buffer_epochs in processed_epoch_indices:
             if not buffer_epochs:  # If buffer hasn't processed any epochs
-                earliest_unprocessed = 0
-                break
-            # Find the next expected epoch start after the last processed one
-            last_processed = max(buffer_epochs)
-            next_expected = last_processed + points_per_step
-            earliest_unprocessed = min(earliest_unprocessed, next_expected)
+                # Skip empty buffers - we can't trim any data until they process something
+                continue
+            # For each buffer, find where its next epoch should start
+            # Note: max(buffer_epochs, key=lambda x: x[0]) gets the LAST processed start index for this buffer
+            last_processed_tuple_for_this_buffer = max(buffer_epochs, key=lambda x: x[0])
+            last_processed_start_idx_for_this_buffer = last_processed_tuple_for_this_buffer[0]
+            next_epoch_start_idx_for_this_buffer = last_processed_start_idx_for_this_buffer + points_per_step
+            max_next_expected = max(max_next_expected, next_epoch_start_idx_for_this_buffer)
+            
+        # If no buffers have processed any epochs, we can't trim anything
+        if max_next_expected == float('-inf'):
+            max_next_expected = 0
             
         # Calculate how many points we can safely remove
-        # We can only remove points up to the earliest unprocessed epoch
+        # We can only remove points up to the maximum next_expected value
         safe_remove_points = min(
             current_size - self.max_buffer_size,  # How many we want to remove
-            earliest_unprocessed - self.offset     # How many we can safely remove
+            max_next_expected - self.offset       # How many we can safely remove
         )
         
         if safe_remove_points <= 0:
@@ -215,13 +222,28 @@ class ETDBufferManager:
         
         # Validate buffer state after trim
         self._validate_buffer_after_trim(current_size - safe_remove_points)
+
+        new_size = self._get_total_data_points()
         
         # Log the trim operation for debugging
         logger.debug(
             f"Trimmed buffer: removed {safe_remove_points} points, "
-            f"new size: {self._get_total_data_points()}, "
+            f"new size: {new_size}, "
             f"new offset: {self.offset}"
         )
+
+        # Below are just logs to monitor the buffer size. They are not entirely necessary.
+
+        if new_size > self.max_buffer_size:
+            logger.warning(f"Buffer size {new_size} is greater than max buffer size {self.max_buffer_size}")
+
+        size_in_seconds = new_size / 125
+        size_in_minutes = size_in_seconds / 60
+        # through error if the buffer is very large
+        if new_size > self.max_buffer_size * 10:
+            logger.warning(f"Buffer size {new_size} is greater than 10x max buffer size {self.max_buffer_size}")
+        
+        logger.info(f"Buffer size in seconds: {size_in_seconds}, in minutes: {size_in_minutes}")
 
     def update_total_streamed_samples(self, new_samples: int) -> None:
         """Update the total number of samples streamed.
@@ -263,22 +285,7 @@ class ETDBufferManager:
         else:
             return index + self.offset
 
-    def _get_max_buffer_size(self, sampling_rate: int) -> int:
-        """Get the maximum allowed buffer size in data points.
-        
-        The buffer must maintain 35 seconds of data to ensure all overlapping epochs
-        have access to their required data:
-        - Latest unprocessed data: 25-55s (30 seconds)
-        - Plus the 5-second step size
-        - Total: 35 seconds
-        
-        Args:
-            sampling_rate: The sampling rate in Hz
-            
-        Returns:
-            int: Maximum number of data points allowed in the buffer
-        """
-        return 35 * sampling_rate 
+
 
     def add_data(self, new_data):
         """Add new data to the buffer (expects shape: (n_channels, n_samples)).

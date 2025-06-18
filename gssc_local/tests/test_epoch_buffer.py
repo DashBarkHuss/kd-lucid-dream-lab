@@ -143,7 +143,7 @@ class TestEpochBuffer:
         data_manager.add_to_data_processing_buffer(additional_data_stream)
         
         # Try to trim buffer before processing any epochs - should not trim
-        data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs, data_manager.points_per_step)
+        data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_indices, data_manager.points_per_step)
         assert data_manager.etd_buffer_manager._get_total_data_points() == initial_data_size + 20 * sampling_rate, \
             "Buffer should not be trimmed before any epochs are processed"
             
@@ -158,7 +158,7 @@ class TestEpochBuffer:
             )
             
             # After each epoch is processed, trim buffer
-            data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs, data_manager.points_per_step)
+            data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_indices, data_manager.points_per_step)
             
             # Verify buffer size after each trim
             current_buffer_size = data_manager.etd_buffer_manager._get_total_data_points()
@@ -225,7 +225,7 @@ class TestEpochBuffer:
         additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
         additional_data_stream = transform_to_stream_format(additional_data)  # transform to (n_channels, n_samples)
         data_manager.add_to_data_processing_buffer(additional_data_stream)
-        data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs, data_manager.points_per_step)  # Trim buffer to max_buffer_size
+        data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_indices, data_manager.points_per_step)  # Trim buffer to max_buffer_size
         
         # After trimming, test_absolute_idx may have been trimmed away
         if test_absolute_idx < data_manager.etd_buffer_manager.offset:
@@ -284,7 +284,7 @@ class TestEpochBuffer:
         first_epoch_start = 0
         first_epoch_end = points_per_epoch
         initial_epochs_count = data_manager.epochs_scored
-        initial_matrix_length = len(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[0])
+        initial_matrix_length = len(data_manager.matrix_of_round_robin_processed_epoch_indices[0])
         
         data_manager.manage_epoch(
             buffer_id=0,
@@ -308,10 +308,10 @@ class TestEpochBuffer:
         )
     
         # Now trim buffer (after all epochs that need the old data have been processed)
-        data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs, data_manager.points_per_step)
+        data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_indices, data_manager.points_per_step)
     
         # Verify sleep stage processing continues by checking tracking matrix and epoch count
-        assert len(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[0]) == initial_matrix_length + 2, \
+        assert len(data_manager.matrix_of_round_robin_processed_epoch_indices[0]) == initial_matrix_length + 2, \
             "Both epochs should be tracked in the processing matrix"
         assert data_manager.epochs_scored == initial_epochs_count + 2, \
             "Both epochs should have been scored successfully"
@@ -377,12 +377,14 @@ class TestEpochBuffer:
         assert abs(detected_gap_size - gap_size) < 0.1, f"Detected gap size {detected_gap_size} should be close to actual gap size {gap_size}"
         
         # Verify matrix of processed epochs is updated correctly  
-        assert len(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[0]) == 2, \
+        assert len(data_manager.matrix_of_round_robin_processed_epoch_indices[0]) == 2, \
             "Should track both processed epochs"
             
         # Verify epoch indices are correct after trimming
-        first_epoch_idx = data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[0][0]
-        second_epoch_idx = data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[0][1]
+        first_epoch_tuple = data_manager.matrix_of_round_robin_processed_epoch_indices[0][0]
+        second_epoch_tuple = data_manager.matrix_of_round_robin_processed_epoch_indices[0][1]
+        first_epoch_idx = first_epoch_tuple[0]  # Extract start index from tuple
+        second_epoch_idx = second_epoch_tuple[0]  # Extract start index from tuple
         assert first_epoch_idx == first_epoch_start, \
             f"First epoch start index should be {first_epoch_start}, got {first_epoch_idx}"
         assert second_epoch_idx == second_epoch_start, \
@@ -439,14 +441,14 @@ class TestEpochBuffer:
                     
                     # Verify tracking
                     expected_epochs = epochs_processed_per_buffer[buffer_id]
-                    actual_epochs = len(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id])
+                    actual_epochs = len(data_manager.matrix_of_round_robin_processed_epoch_indices[buffer_id])
                     assert actual_epochs == expected_epochs, \
                         f"Buffer {buffer_id} should track {expected_epochs} epochs, got {actual_epochs}"
                     
                     # Try to trim buffer after each epoch is processed (realistic streaming)
                     pre_trim_size = data_manager._get_total_data_points_etd()
                     data_manager.etd_buffer_manager.trim_buffer(
-                        data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs, 
+                        data_manager.matrix_of_round_robin_processed_epoch_indices, 
                         data_manager.points_per_step
                     )
                     post_trim_size = data_manager._get_total_data_points_etd()
@@ -478,18 +480,21 @@ class TestEpochBuffer:
             expected_epochs = epochs_processed_per_buffer[buffer_id]
             if expected_epochs > 0:
                 # Check first epoch index
-                first_epoch_start = data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id][0]
+                first_epoch_tuple = data_manager.matrix_of_round_robin_processed_epoch_indices[buffer_id][0]
+                first_epoch_idx = first_epoch_tuple[0]  # Extract start index from tuple
                 expected_first_start = buffer_id * points_per_step
-                assert first_epoch_start == expected_first_start, \
-                    f"Buffer {buffer_id} first epoch should start at {expected_first_start}, got {first_epoch_start}"
+                assert first_epoch_idx == expected_first_start, \
+                    f"Buffer {buffer_id} first epoch should start at {expected_first_start}, got {first_epoch_idx}"
                 
                 # Check that epochs are spaced correctly
                 if expected_epochs > 1:
                     for i in range(1, expected_epochs):
-                        epoch_start = data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id][i]
-                        prev_epoch_start = data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id][i-1]
+                        epoch_tuple = data_manager.matrix_of_round_robin_processed_epoch_indices[buffer_id][i]
+                        epoch_idx = epoch_tuple[0]  # Extract start index from tuple
+                        prev_epoch_tuple = data_manager.matrix_of_round_robin_processed_epoch_indices[buffer_id][i-1]
+                        prev_epoch_idx = prev_epoch_tuple[0]  # Extract start index from tuple
                         expected_spacing = points_per_epoch
-                        actual_spacing = epoch_start - prev_epoch_start
+                        actual_spacing = epoch_idx - prev_epoch_idx
                         assert actual_spacing == expected_spacing, \
                             f"Buffer {buffer_id} epochs should be spaced by {expected_spacing}, got {actual_spacing}"
         
