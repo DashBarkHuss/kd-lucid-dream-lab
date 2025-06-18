@@ -49,12 +49,13 @@ class ReceivedStreamedDataHandler:
             next_epoch_to_process = self.data_manager._get_next_epoch_indices(self.data_manager.last_processed_buffer+1)
             self.logger.info(f"Next epoch to process: {next_epoch_to_process}")
 
-            last_epoch_processed = self.data_manager._get_next_epoch_indices(self.data_manager.last_processed_buffer)
+            # Get the next epoch start index - this is the earliest point we need to keep
+            next_epoch_start_idx_abs, _ = next_epoch_to_process
 
             # Only trim buffer after successful epoch processing
             # This ensures we don't trim data that hasn't been processed yet
             self.data_manager.etd_buffer_manager.trim_buffer(
-                self.data_manager.matrix_of_round_robin_processed_epoch_indices, self.data_manager.points_per_step
+                max_next_expected=next_epoch_start_idx_abs
             )
 
         # Log processing statistics

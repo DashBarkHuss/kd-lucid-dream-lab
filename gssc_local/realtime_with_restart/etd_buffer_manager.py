@@ -161,47 +161,28 @@ class ETDBufferManager:
         """
         self.offset += points_removed
         
-    def trim_buffer(self, processed_epoch_indices: List[List[Tuple[int, int]]] = None, points_per_step: int = None) -> None:
+    def trim_buffer(self, max_next_expected: int = None) -> None:
         """Trim the buffer to maintain max_buffer_size, but only if data has been processed.
         
         This method will:
-        1. Calculate how many points can be safely removed based on processed epochs
+        1. Calculate how many points can be safely removed based on the next expected epoch
         2. Remove only the oldest data points that have been fully processed
         3. Update offset tracking
         4. Validate buffer state after trim
         
         Args:
-            processed_epoch_indices: List of lists containing the absolute (start, end) indices
-                of processed epochs for each round-robin buffer. If None, no trimming occurs.
-            points_per_step: Number of points between epoch starts. If None, no trimming occurs.
+            max_next_expected: The maximum next epoch start index across all buffers.
+                If None or 0, no trimming occurs.
                 
         Raises:
             ValueError: If validation fails after trim
         """
-        if not self.electrode_and_timestamp_data or not processed_epoch_indices:
+        if not self.electrode_and_timestamp_data or max_next_expected is None or max_next_expected <= 0:
             return
             
         current_size = self._get_total_data_points()
         if current_size <= self.max_buffer_size:
             return
-            
-        # Find the latest point where all buffers have processed their data
-        # This is the maximum next_expected value across all buffers
-        max_next_expected = float('-inf')
-        for buffer_epochs in processed_epoch_indices:
-            if not buffer_epochs:  # If buffer hasn't processed any epochs
-                # Skip empty buffers - we can't trim any data until they process something
-                continue
-            # For each buffer, find where its next epoch should start
-            # Note: max(buffer_epochs, key=lambda x: x[0]) gets the LAST processed start index for this buffer
-            last_processed_tuple_for_this_buffer = max(buffer_epochs, key=lambda x: x[0])
-            last_processed_start_idx_for_this_buffer = last_processed_tuple_for_this_buffer[0]
-            next_epoch_start_idx_for_this_buffer = last_processed_start_idx_for_this_buffer + points_per_step
-            max_next_expected = max(max_next_expected, next_epoch_start_idx_for_this_buffer)
-            
-        # If no buffers have processed any epochs, we can't trim anything
-        if max_next_expected == float('-inf'):
-            max_next_expected = 0
             
         # Calculate how many points we can safely remove
         # We can only remove points up to the maximum next_expected value

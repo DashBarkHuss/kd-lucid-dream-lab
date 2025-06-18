@@ -143,7 +143,8 @@ class TestEpochBuffer:
         data_manager.add_to_data_processing_buffer(additional_data_stream)
         
         # Try to trim buffer before processing any epochs - should not trim
-        data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_indices, data_manager.points_per_step)
+        next_epoch_start_idx_abs, _ = data_manager._get_next_epoch_indices(0)  # Next buffer to process
+        data_manager.etd_buffer_manager.trim_buffer(next_epoch_start_idx_abs)
         assert data_manager.etd_buffer_manager._get_total_data_points() == initial_data_size + 20 * sampling_rate, \
             "Buffer should not be trimmed before any epochs are processed"
             
@@ -158,7 +159,8 @@ class TestEpochBuffer:
             )
             
             # After each epoch is processed, trim buffer
-            data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_indices, data_manager.points_per_step)
+            next_epoch_start_idx_abs, _ = data_manager._get_next_epoch_indices(data_manager.last_processed_buffer + 1)
+            data_manager.etd_buffer_manager.trim_buffer(next_epoch_start_idx_abs)
             
             # Verify buffer size after each trim
             current_buffer_size = data_manager.etd_buffer_manager._get_total_data_points()
@@ -225,7 +227,8 @@ class TestEpochBuffer:
         additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
         additional_data_stream = transform_to_stream_format(additional_data)  # transform to (n_channels, n_samples)
         data_manager.add_to_data_processing_buffer(additional_data_stream)
-        data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_indices, data_manager.points_per_step)  # Trim buffer to max_buffer_size
+        next_epoch_start_idx_abs, _ = data_manager._get_next_epoch_indices(data_manager.last_processed_buffer + 1)
+        data_manager.etd_buffer_manager.trim_buffer(next_epoch_start_idx_abs)  # Trim buffer to max_buffer_size
         
         # After trimming, test_absolute_idx may have been trimmed away
         if test_absolute_idx < data_manager.etd_buffer_manager.offset:
@@ -308,7 +311,8 @@ class TestEpochBuffer:
         )
     
         # Now trim buffer (after all epochs that need the old data have been processed)
-        data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_indices, data_manager.points_per_step)
+        next_epoch_start_idx_abs, _ = data_manager._get_next_epoch_indices(data_manager.last_processed_buffer + 1)
+        data_manager.etd_buffer_manager.trim_buffer(next_epoch_start_idx_abs)
     
         # Verify sleep stage processing continues by checking tracking matrix and epoch count
         assert len(data_manager.matrix_of_round_robin_processed_epoch_indices[0]) == initial_matrix_length + 2, \
@@ -447,10 +451,8 @@ class TestEpochBuffer:
                     
                     # Try to trim buffer after each epoch is processed (realistic streaming)
                     pre_trim_size = data_manager._get_total_data_points_etd()
-                    data_manager.etd_buffer_manager.trim_buffer(
-                        data_manager.matrix_of_round_robin_processed_epoch_indices, 
-                        data_manager.points_per_step
-                    )
+                    next_epoch_start_idx_abs, _ = data_manager._get_next_epoch_indices(data_manager.last_processed_buffer + 1)
+                    data_manager.etd_buffer_manager.trim_buffer(next_epoch_start_idx_abs)
                     post_trim_size = data_manager._get_total_data_points_etd()
                     
                     if post_trim_size < pre_trim_size:
