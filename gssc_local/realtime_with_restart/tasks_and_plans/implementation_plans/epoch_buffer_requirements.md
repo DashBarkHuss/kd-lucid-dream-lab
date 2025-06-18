@@ -185,3 +185,10 @@ Processing Continuity
 Round-Robin Integration Test
 
 - [x] Test the round-robin integration test and fix any issues
+
+Test Main.py and main_speed_controlled_stream.py
+
+- [x] Test Main.py and fix any issues
+- [x] Test main_speed_controlled_stream.py and fix any issues
+
+Write performans and memory tests

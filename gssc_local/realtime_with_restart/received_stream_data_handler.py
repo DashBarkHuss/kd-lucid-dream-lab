@@ -49,7 +49,7 @@ class ReceivedStreamedDataHandler:
             # Only trim buffer after successful epoch processing
             # This ensures we don't trim data that hasn't been processed yet
             self.data_manager.etd_buffer_manager.trim_buffer(
-                self.data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs
+                self.data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs, self.data_manager.points_per_step
             )
         
         # Log processing statistics
