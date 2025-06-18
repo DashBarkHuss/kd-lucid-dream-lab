@@ -342,6 +342,7 @@ class DataManager:
         """
         buffer_start_offset = self._get_data_point_delay_for_buffer(buffer_id)
         last_epoch_tuple = None
+        last_epoch_start_idx_abs = None
         
         try:
             last_epoch_tuple = self.matrix_of_round_robin_processed_epoch_indices[buffer_id][-1]

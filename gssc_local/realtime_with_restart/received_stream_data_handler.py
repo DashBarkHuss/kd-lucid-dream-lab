@@ -46,10 +46,10 @@ class ReceivedStreamedDataHandler:
                                     epoch_start_idx_abs=epoch_start_idx, 
                                     epoch_end_idx_abs=epoch_end_idx)
             
-            next_epoch_to_process = self.data_manager._get_next_epoch_indices(self.data_manager.last_processed_buffer_index+1)
+            next_epoch_to_process = self.data_manager._get_next_epoch_indices(self.data_manager.last_processed_buffer+1)
             self.logger.info(f"Next epoch to process: {next_epoch_to_process}")
 
-            last_epoch_processed = self.data_manager._get_last_epoch_processed_indices(self.data_manager.last_processed_buffer_index)
+            last_epoch_processed = self.data_manager._get_next_epoch_indices(self.data_manager.last_processed_buffer)
 
             # Only trim buffer after successful epoch processing
             # This ensures we don't trim data that hasn't been processed yet
@@ -59,8 +59,7 @@ class ReceivedStreamedDataHandler:
 
         # Log processing statistics
         self.logger.info(f"Collected {self.sample_count} streamed samples")
-        # log the last processed buffer index
-        self.logger.info(f"Last processed buffer index: {self.data_manager.last_processed_buffer_index}")
+
 
         # Calculate and log basic statistics for monitoring
         
