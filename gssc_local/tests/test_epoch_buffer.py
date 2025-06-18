@@ -389,86 +389,115 @@ class TestEpochBuffer:
             f"Second epoch start index should be {second_epoch_start}, got {second_epoch_idx}"
 
     def test_round_robin_integration(self, data_manager, test_data):
-        """Test full round-robin cycle with buffer trimming.
-        Trimming should only happen after all round-robin epochs that need the oldest data have been processed.
+        """Test realistic streaming with round-robin processing and buffer trimming.
+        Simulates how epochs would be processed in real-time streaming scenarios.
         """
         data, metadata = test_data
         sampling_rate = metadata['sampling_rate']
         points_per_epoch = data_manager.points_per_epoch
         points_per_step = data_manager.points_per_step
         
-        # Add initial data (60 seconds to ensure enough data for all buffers)
-        initial_data_size = 60 * sampling_rate
-        initial_data = data[:initial_data_size, :]  # shape: (n_samples, n_channels)
-        initial_data_stream = transform_to_stream_format(initial_data)  # transform to (n_channels, n_samples)
-        data_manager.add_to_data_processing_buffer(initial_data_stream)
+        # Track processed epochs per buffer
+        epochs_processed_per_buffer = [0] * 6
+        data_start_idx = 0
+        chunk_size = 10 * sampling_rate  # Add data in 10-second chunks
         
-        # Process each buffer in sequence before trimming
-        for buffer_id in range(6):
-            # Calculate epoch indices for this buffer
-            epoch_start = buffer_id * points_per_step
-            epoch_end = epoch_start + points_per_epoch
-            # Process epoch using manage_epoch (which handles the full pipeline)
-            data_manager.manage_epoch(
-                buffer_id=buffer_id,
-                epoch_start_idx_abs=epoch_start,
-                epoch_end_idx_abs=epoch_end
-            )
-            # Verify buffer tracking
-            assert len(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id]) == 1, \
-                f"Buffer {buffer_id} should track its processed epoch"
-            # Verify epoch indices
-            processed_idx = data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id][0]
-            assert processed_idx == epoch_start, \
-                f"Buffer {buffer_id} should track correct start index {epoch_start}, got {processed_idx}"
-        
-        # Now trim buffer (after all round-robin epochs that need the old data have been processed)
-        additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
-        additional_data_stream = transform_to_stream_format(additional_data)  # transform to (n_channels, n_samples)
-        data_manager.add_to_data_processing_buffer(additional_data_stream)
-        data_manager.etd_buffer_manager.trim_buffer(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs, data_manager.points_per_step)  # Trim buffer to max_buffer_size
-        
-        # Process second round of epochs after trimming - only process buffers that have enough data
-        for buffer_id in range(6):
-            # Calculate epoch indices for second round - continue from where the first epoch ended
-            # Each buffer processes epochs separated by points_per_epoch
-            first_epoch_start = buffer_id * points_per_step
-            epoch_start = first_epoch_start + points_per_epoch  # Move to next epoch for this buffer
-            epoch_end = epoch_start + points_per_epoch
+        # Simulate streaming: add data chunks and process epochs as they become available
+        for cycle in range(8):  # 8 cycles = 80 seconds of streaming
+            # Simulate getting new data from the stream
+            chunk_end_idx = data_start_idx + chunk_size
+            if chunk_end_idx > len(data):
+                break
+                
+            chunk_data = data[data_start_idx:chunk_end_idx, :]
+            chunk_data_stream = transform_to_stream_format(chunk_data)
+
+            # add simulated stream data to buffer
+            data_manager.add_to_data_processing_buffer(chunk_data_stream)
+            data_start_idx = chunk_end_idx
             
-            # Only process if we have enough data for this epoch
-            total_available_samples = data_manager.etd_buffer_manager.total_streamed_samples
-            if epoch_end <= total_available_samples:
-                # Process epoch using manage_epoch
-                data_manager.manage_epoch(
-                    buffer_id=buffer_id,
-                    epoch_start_idx_abs=epoch_start,
-                    epoch_end_idx_abs=epoch_end
-                )
-                # Verify buffer tracking
-                assert len(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id]) == 2, \
-                    f"Buffer {buffer_id} should track both processed epochs"
-                # Verify epoch indices after trimming
-                second_processed_idx = data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id][1]
-                assert second_processed_idx == epoch_start, \
-                    f"Buffer {buffer_id} should track correct second start index {epoch_start}, got {second_processed_idx}"
-            else:
-                # Skip this buffer as we don't have enough data - this is expected for later buffers
-                print(f"Skipping buffer {buffer_id} second epoch: not enough data ({epoch_end} > {total_available_samples})")
+            print(f"\nCycle {cycle + 1}: Added data chunk, total samples: {data_manager.etd_buffer_manager.total_streamed_samples}")
+            
+            # Check which buffers are ready to process their next epoch
+            for buffer_id in range(6):
+                # Calculate the next epoch for this buffer
+                epoch_number = epochs_processed_per_buffer[buffer_id]
+                epoch_start = buffer_id * points_per_step + epoch_number * points_per_epoch
+                epoch_end = epoch_start + points_per_epoch
+                
+                # Process epoch if we have enough data
+                if epoch_end <= data_manager.etd_buffer_manager.total_streamed_samples:
+                    print(f"  Processing buffer {buffer_id}, epoch {epoch_number + 1} (samples {epoch_start}-{epoch_end})")
+                    
+                    data_manager.manage_epoch(
+                        buffer_id=buffer_id,
+                        epoch_start_idx_abs=epoch_start,
+                        epoch_end_idx_abs=epoch_end
+                    )
+                    
+                    epochs_processed_per_buffer[buffer_id] += 1
+                    
+                    # Verify tracking
+                    expected_epochs = epochs_processed_per_buffer[buffer_id]
+                    actual_epochs = len(data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id])
+                    assert actual_epochs == expected_epochs, \
+                        f"Buffer {buffer_id} should track {expected_epochs} epochs, got {actual_epochs}"
+                    
+                    # Try to trim buffer after each epoch is processed (realistic streaming)
+                    pre_trim_size = data_manager._get_total_data_points_etd()
+                    data_manager.etd_buffer_manager.trim_buffer(
+                        data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs, 
+                        data_manager.points_per_step
+                    )
+                    post_trim_size = data_manager._get_total_data_points_etd()
+                    
+                    if post_trim_size < pre_trim_size:
+                        print(f"    Trimmed buffer after epoch: {pre_trim_size} -> {post_trim_size} samples")
+                    
+                    # Monitor buffer size after each epoch (realistic streaming)
+                    max_buffer_size = data_manager.etd_buffer_manager.max_buffer_size
+                    if post_trim_size > max_buffer_size * 2:
+                        print(f"    Warning: Buffer size {post_trim_size} exceeds 2x max ({max_buffer_size * 2})")
         
-        # Verify buffer size is reasonable 
-        # Note: Buffer may exceed max_buffer_size temporarily before trimming can safely remove all old data
+        # Verify final state
+        print(f"\nFinal state:")
+        print(f"  Epochs processed per buffer: {epochs_processed_per_buffer}")
+        print(f"  Total buffer size: {data_manager._get_total_data_points_etd()}")
+        print(f"  Total streamed samples: {data_manager.etd_buffer_manager.total_streamed_samples}")
+        
+        # All buffers should have processed at least one epoch
+        assert all(count > 0 for count in epochs_processed_per_buffer), \
+            f"All buffers should process at least one epoch, got {epochs_processed_per_buffer}"
+        
+        # Buffer 0 should have processed the most epochs (starts first)
+        assert epochs_processed_per_buffer[0] >= max(epochs_processed_per_buffer), \
+            f"Buffer 0 should process the most epochs, got {epochs_processed_per_buffer}"
+        
+        # Verify epoch indices are tracked correctly
+        for buffer_id in range(6):
+            expected_epochs = epochs_processed_per_buffer[buffer_id]
+            if expected_epochs > 0:
+                # Check first epoch index
+                first_epoch_start = data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id][0]
+                expected_first_start = buffer_id * points_per_step
+                assert first_epoch_start == expected_first_start, \
+                    f"Buffer {buffer_id} first epoch should start at {expected_first_start}, got {first_epoch_start}"
+                
+                # Check that epochs are spaced correctly
+                if expected_epochs > 1:
+                    for i in range(1, expected_epochs):
+                        epoch_start = data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id][i]
+                        prev_epoch_start = data_manager.matrix_of_round_robin_processed_epoch_start_indices_abs[buffer_id][i-1]
+                        expected_spacing = points_per_epoch
+                        actual_spacing = epoch_start - prev_epoch_start
+                        assert actual_spacing == expected_spacing, \
+                            f"Buffer {buffer_id} epochs should be spaced by {expected_spacing}, got {actual_spacing}"
+        
+        # Verify final buffer state
         final_buffer_size = data_manager._get_total_data_points_etd()
-        max_buffer_size = data_manager.etd_buffer_manager.max_buffer_size
-        # Allow some flexibility since trimming can only remove data that's been fully processed by all buffers
-        assert final_buffer_size <= max_buffer_size * 3, \
-            f"Buffer should not exceed 3x max size {max_buffer_size * 3}, got {final_buffer_size}"
-        # Should also have some reasonable amount of data
         assert final_buffer_size > 0, "Buffer should contain some data"
-        # Test total streamed samples tracking
-        expected_total_samples = initial_data_size + 20 * sampling_rate
-        assert data_manager.etd_buffer_manager.total_streamed_samples == expected_total_samples, \
-            f"Total streamed samples should be {expected_total_samples}, got {data_manager.etd_buffer_manager.total_streamed_samples}"
+        assert final_buffer_size <= data_manager.etd_buffer_manager.max_buffer_size * 3, \
+            f"Buffer should not exceed 3x max size, got {final_buffer_size}"
 
 if __name__ == '__main__':
     import pytest
