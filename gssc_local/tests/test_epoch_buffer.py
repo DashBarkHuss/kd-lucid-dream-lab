@@ -506,6 +506,157 @@ class TestEpochBuffer:
         assert final_buffer_size <= data_manager.etd_buffer_manager.max_buffer_size * 3, \
             f"Buffer should not exceed 3x max size, got {final_buffer_size}"
 
+    def test_realistic_streaming_integration(self, test_data):
+        """Integration test using ReceivedStreamedDataHandler - tests the actual production code path.
+        
+        This test simulates realistic streaming by:
+        1. Using the same ReceivedStreamedDataHandler pattern as production
+        2. Adding data in small chunks (like real OpenBCI streaming)
+        3. Validating buffer constraints and processing outcomes
+        4. Catching bugs that only manifest in the real integration path
+        """
+        from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
+        from gssc_local.realtime_with_restart.board_manager import BoardManager
+        import logging
+        
+        data, metadata = test_data
+        sampling_rate = metadata['sampling_rate']
+        
+        # Create a mock board manager for the handler
+        class MockBoardManager:
+            def __init__(self, board_shim, sampling_rate):
+                self.board_shim = board_shim
+                self.sampling_rate = sampling_rate
+        
+        # Create mock logger
+        logger = logging.getLogger(__name__)
+        
+        # Use the same board setup as the data_manager fixture
+        master_board_id = BoardIds.CYTON_DAISY_BOARD
+        playback_board_id = BoardIds.PLAYBACK_FILE_BOARD
+        
+        # Create a temporary file for playback data
+        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as temp_file:
+            # Save test data to temp file
+            np.savetxt(temp_file.name, data.T, delimiter=',')  # Transpose for BrainFlow format
+            
+        try:
+            # Create BrainFlowInputParams for playback
+            params = BrainFlowInputParams()
+            params.file = temp_file.name
+            params.master_board = master_board_id
+            params.file_operation = 'read'
+            params.file_data_type = 'timestamp'
+            
+            # Initialize the playback board
+            board = BoardShim(playback_board_id, params)
+            board.prepare_session()
+            board.start_stream()
+            
+            # Create mock board manager and handler
+            mock_board_manager = MockBoardManager(board, sampling_rate)
+            handler = ReceivedStreamedDataHandler(mock_board_manager, logger)
+            
+            # Track metrics
+            initial_buffer_size = handler.data_manager.etd_buffer_manager.max_buffer_size
+            max_observed_buffer_size = 0
+            epochs_processed_count = 0
+            trim_operations = 0
+            
+            # Simulate realistic streaming: add data in small chunks
+            chunk_size = int(0.5 * sampling_rate)  # 0.5 second chunks (realistic for OpenBCI)
+            total_chunks = min(len(data) // chunk_size, 120)  # Limit to ~60 seconds of data
+            
+            print(f"\nRunning realistic streaming simulation:")
+            print(f"  Chunk size: {chunk_size} samples ({chunk_size/sampling_rate:.1f}s)")
+            print(f"  Total chunks: {total_chunks}")
+            print(f"  Max buffer size: {initial_buffer_size}")
+            
+            for chunk_idx in range(total_chunks):
+                # Get chunk data
+                start_idx = chunk_idx * chunk_size
+                end_idx = min(start_idx + chunk_size, len(data))
+                chunk_data = data[start_idx:end_idx, :].T  # Transpose to (n_channels, n_samples)
+                
+                # Track buffer size before processing
+                pre_process_buffer_size = handler.data_manager._get_total_data_points_etd()
+                pre_process_epochs = handler.data_manager.epochs_scored
+                
+                # Process chunk using production code path
+                handler.process_board_data(chunk_data)
+                
+                # Track metrics after processing
+                post_process_buffer_size = handler.data_manager._get_total_data_points_etd()
+                post_process_epochs = handler.data_manager.epochs_scored
+                max_observed_buffer_size = max(max_observed_buffer_size, post_process_buffer_size)
+                
+                # Count trim operations
+                if post_process_buffer_size < pre_process_buffer_size:
+                    trim_operations += 1
+                
+                # Count epochs processed
+                if post_process_epochs > pre_process_epochs:
+                    epochs_processed_count += 1
+                    print(f"  Chunk {chunk_idx+1}: Processed epoch, buffer size: {post_process_buffer_size}")
+                
+                # CRITICAL ASSERTIONS - These would have caught the bugs
+                assert post_process_buffer_size <= initial_buffer_size * 2.0, \
+                    f"Buffer size {post_process_buffer_size} exceeds 2x max ({initial_buffer_size * 2.0}) at chunk {chunk_idx+1}"
+                
+                assert handler.data_manager.etd_buffer_manager.offset >= 0, \
+                    f"Buffer offset should be non-negative, got {handler.data_manager.etd_buffer_manager.offset}"
+                
+                assert handler.data_manager.etd_buffer_manager.total_streamed_samples >= handler.data_manager.etd_buffer_manager.offset, \
+                    f"Total streamed samples ({handler.data_manager.etd_buffer_manager.total_streamed_samples}) should be >= offset ({handler.data_manager.etd_buffer_manager.offset})"
+                
+                # Verify index consistency
+                if post_process_buffer_size > 0:
+                    # Test that we can still access valid indices
+                    try:
+                        last_valid_abs_idx = handler.data_manager.etd_buffer_manager.total_streamed_samples - 1
+                        relative_idx = handler.data_manager.etd_buffer_manager._adjust_index_with_offset(last_valid_abs_idx, to_etd=True)
+                        assert 0 <= relative_idx < post_process_buffer_size, \
+                            f"Index translation failed: abs {last_valid_abs_idx} -> rel {relative_idx}, buffer size {post_process_buffer_size}"
+                    except ValueError as e:
+                        pytest.fail(f"Index translation error at chunk {chunk_idx+1}: {e}")
+            
+            # Final validation
+            print(f"\nSimulation completed successfully:")
+            print(f"  Epochs processed: {epochs_processed_count}")
+            print(f"  Trim operations: {trim_operations}")
+            print(f"  Max buffer size observed: {max_observed_buffer_size}")
+            print(f"  Final buffer size: {handler.data_manager._get_total_data_points_etd()}")
+            
+            # Verify we processed some epochs
+            assert epochs_processed_count > 0, "Should have processed at least one epoch"
+            
+            # Verify trimming occurred (indicates buffer management is working)
+            assert trim_operations > 0, "Should have performed buffer trimming operations"
+            
+            # Verify buffer stayed within reasonable bounds
+            assert max_observed_buffer_size <= initial_buffer_size * 2.5, \
+                f"Max buffer size {max_observed_buffer_size} should stay within 2.5x limit ({initial_buffer_size * 2.5})"
+            
+            # Test round-robin progression by checking that multiple buffers processed epochs
+            buffers_with_epochs = sum(1 for buffer_epochs in handler.data_manager.matrix_of_round_robin_processed_epoch_indices if len(buffer_epochs) > 0)
+            assert buffers_with_epochs >= 2, f"Expected at least 2 buffers to process epochs, got {buffers_with_epochs}"
+            
+        finally:
+            # Cleanup
+            try:
+                board.stop_stream()
+                board.release_session()
+            except:
+                pass
+            try:
+                os.unlink(temp_file.name)
+            except:
+                pass
+            try:
+                handler.data_manager.cleanup()
+            except:
+                pass
+
 if __name__ == '__main__':
     import pytest
     pytest.main([__file__, '-v']) 

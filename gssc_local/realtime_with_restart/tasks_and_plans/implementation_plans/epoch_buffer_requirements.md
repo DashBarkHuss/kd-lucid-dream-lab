@@ -190,6 +190,11 @@ Test Main.py and main_speed_controlled_stream.py
 
 - [x] Test Main.py and fix any issues
 - [x] Test main_speed_controlled_stream.py and fix any issues
-- [ ] Test main_speed_controlled_stream.py with long data file and fix any issues
+- [x] Test main_speed_controlled_stream.py with long data file and fix any issues
+
+Add integration test
+
+- [x] Add integration test
+- [x] Test the integration test and fix any issues
 
 Write performans and memory tests
