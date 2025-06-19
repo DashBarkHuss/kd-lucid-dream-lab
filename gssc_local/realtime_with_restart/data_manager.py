@@ -375,7 +375,9 @@ class DataManager:
         Returns:
             bool: True if we have enough points to start processing, False otherwise
         """
-        return (epoch_end_idx_abs < total_etd_points and 
+        # Use total_streamed_samples for absolute index comparison since epoch_end_idx_abs is absolute
+        total_streamed_samples = self.etd_buffer_manager.total_streamed_samples
+        return (epoch_end_idx_abs <= total_streamed_samples and 
                 total_etd_points >= buffer_data_point_delay)
 
     def _is_first_epoch_in_round_robin(self, buffer_id):
@@ -401,11 +403,10 @@ class DataManager:
             bool: True if enough time has passed since last epoch
         """
         last_etd_timestamp = self.etd_buffer_manager._get_timestamps()[-1]
-        last_epoch_timestamp = max(
-            self.etd_buffer_manager._get_timestamps()[indices[-1][0]]  # Extract start index from tuple
-            for indices in self.matrix_of_round_robin_processed_epoch_indices
-            if indices
-        )
+        last_epoch = self.matrix_of_round_robin_processed_epoch_indices[self.last_processed_buffer][-1]
+        last_epoch_end_ind_abs = last_epoch[1]
+        last_epoch_end_ind_rel = self.etd_buffer_manager._adjust_index_with_offset(last_epoch_end_ind_abs, to_etd=True)
+        last_epoch_timestamp = self.etd_buffer_manager._get_timestamps()[last_epoch_end_ind_rel]
         return last_etd_timestamp - last_epoch_timestamp >= self.round_robin_delay
 
     def _calculate_next_buffer_id_to_process(self):

@@ -38,24 +38,20 @@ class ReceivedStreamedDataHandler:
 
         if can_process:
             # Only process when we have a complete epoch ready
-            self.logger.info(f"Processing epoch on buffer {next_buffer_id}")
-            self.logger.info(f"Epoch indices: {epoch_start_idx} to {epoch_end_idx}")
-            
+
             # Process the epoch
             self.data_manager.manage_epoch(buffer_id=next_buffer_id, 
                                     epoch_start_idx_abs=epoch_start_idx, 
                                     epoch_end_idx_abs=epoch_end_idx)
             
-            next_epoch_to_process = self.data_manager._get_next_epoch_indices(self.data_manager.last_processed_buffer+1)
-            self.logger.info(f"Next epoch to process: {next_epoch_to_process}")
 
-            # Get the next epoch start index - this is the earliest point we need to keep
-            next_epoch_start_idx_abs, _ = next_epoch_to_process
-
+          
+            before_trim_size = self.data_manager.etd_buffer_manager._get_total_data_points()
+            epoch_start_idx_abs, _ = self.data_manager._get_next_epoch_indices(self.data_manager._calculate_next_buffer_id_to_process())
             # Only trim buffer after successful epoch processing
             # This ensures we don't trim data that hasn't been processed yet
             self.data_manager.etd_buffer_manager.trim_buffer(
-                max_next_expected=next_epoch_start_idx_abs
+                max_next_expected=epoch_start_idx_abs,
             )
 
         # Log processing statistics

@@ -29,8 +29,8 @@ See individual method docstrings for detailed documentation.
 import numpy as np
 import logging
 from typing import List, Tuple
-
 logger = logging.getLogger(__name__)
+
 
 class ETDBufferManager:
     """Manages the electrode_and_timestamp_data buffer operations.
@@ -161,7 +161,7 @@ class ETDBufferManager:
         """
         self.offset += points_removed
         
-    def trim_buffer(self, max_next_expected: int = None) -> None:
+    def trim_buffer(self, max_next_expected: int = None) -> None: 
         """Trim the buffer to maintain max_buffer_size, but only if data has been processed.
         
         This method will:
@@ -183,12 +183,18 @@ class ETDBufferManager:
         current_size = self._get_total_data_points()
         if current_size <= self.max_buffer_size:
             return
+        
             
         # Calculate how many points we can safely remove
         # We can only remove points up to the maximum next_expected value
+
+        points_greater_than_max_buffer_size = current_size - self.max_buffer_size
+
+        relative_max_next_expected = self._adjust_index_with_offset(max_next_expected)
+
         safe_remove_points = min(
-            current_size - self.max_buffer_size,  # How many we want to remove
-            max_next_expected - self.offset       # How many we can safely remove
+            points_greater_than_max_buffer_size,  # How many we want to remove
+            relative_max_next_expected       # How many we can safely remove
         )
         
         if safe_remove_points <= 0:
@@ -204,37 +210,22 @@ class ETDBufferManager:
         # Validate buffer state after trim
         self._validate_buffer_after_trim(current_size - safe_remove_points)
 
-        new_size = self._get_total_data_points()
-        
-        # Log the trim operation for debugging
-        logger.debug(
-            f"Trimmed buffer: removed {safe_remove_points} points, "
-            f"new size: {new_size}, "
-            f"new offset: {self.offset}"
-        )
 
-        # Below are just logs to monitor the buffer size. They are not entirely necessary.
 
-        if new_size > self.max_buffer_size:
-            logger.warning(f"Buffer size {new_size} is greater than max buffer size {self.max_buffer_size}")
 
-        size_in_seconds = new_size / 125
-        size_in_minutes = size_in_seconds / 60
-        # through error if the buffer is very large
-        if new_size > self.max_buffer_size * 10:
-            logger.warning(f"Buffer size {new_size} is greater than 10x max buffer size {self.max_buffer_size}")
-        
-        logger.info(f"Buffer size in seconds: {size_in_seconds}, in minutes: {size_in_minutes}")
-
-    def update_total_streamed_samples(self, new_samples: int) -> None:
+    def update_total_streamed_samples(self, new_data) -> None:
         """Update the total number of samples streamed.
         
         Args:
-            new_samples: Number of new samples to add to the total
+            new_data: Array of shape (n_channels, n_samples) containing the data
+                - Each row represents a channel
+                - Each column represents a time point
+                - The number of samples is extracted from the data shape
         """
-        self.total_streamed_samples += new_samples 
+        # Extract number of samples from the data shape (second dimension)
+        new_samples = len(new_data[0]) if len(new_data) > 0 else 0
+        self.total_streamed_samples += new_samples
 
-  
     def _adjust_index_with_offset(self, index: int, to_etd: bool = True) -> int:
         """Helper method to adjust an index based on the etd_offset.
         
@@ -266,8 +257,6 @@ class ETDBufferManager:
         else:
             return index + self.offset
 
-
-
     def add_data(self, new_data):
         """Add new data to the buffer (expects shape: (n_channels, n_samples)).
         
@@ -290,4 +279,6 @@ class ETDBufferManager:
         for i, channel in enumerate(self.electrode_and_timestamp_channels):
             self.electrode_and_timestamp_data[i].extend(new_data[channel].tolist() if hasattr(new_data[channel], 'tolist') else new_data[channel])
                 
-        self.total_streamed_samples += len(new_data[0]) if len(new_data) > 0 else 0 
+        # Update total streamed samples using the dedicated method
+        self.update_total_streamed_samples(new_data) 
+
