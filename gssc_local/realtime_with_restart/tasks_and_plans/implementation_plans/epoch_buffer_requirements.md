@@ -198,3 +198,9 @@ Add integration test
 - [x] Test the integration test and fix any issues
 
 Write performans and memory tests
+
+Update matrix_of_round_robin_processed_epoch_indices to store only the start and end indices of the last epoch of each buffer or something. basically we do not need to store the entire history of the epochs and this will save memory.
+
+- [x] Update matrix_of_round_robin_processed_epoch_indices to save memory
+- [x] Update the tests to use the new last epoch indices variable
+- [x] regression test the code

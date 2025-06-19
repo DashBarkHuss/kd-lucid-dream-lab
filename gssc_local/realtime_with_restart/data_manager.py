@@ -68,17 +68,11 @@ class DataManager:
         # Buffer tracking
         self.last_processed_buffer = -1
         
-        # List of lists tracking where each buffer has started processing epochs
-        # Example structure after processing some epochs:
-        # [
-        #     [(0, 3750), (6000, 9750), (12000, 15750)],      # Buffer 0 processed epochs with (start, end) indices
-        #     [(1000, 4750), (7000, 10750), (13000, 16750)],  # Buffer 1 processed epochs with (start, end) indices
-        #     [(2000, 5750), (8000, 11750), (14000, 17750)],  # Buffer 2 processed epochs with (start, end) indices
-        #     [],                                              # Buffer 3 hasn't processed any epochs yet
-        #     [],                                              # Buffer 4 hasn't processed any epochs yet
-        #     []                                               # Buffer 5 hasn't processed any epochs yet
-        # ]
-        self.matrix_of_round_robin_processed_epoch_indices = [[] for _ in range(6)]
+        # Optimized tracking of processed epochs - only store last epoch per buffer instead of full history
+        # Each element is either None (no epochs processed) or (start_idx_abs, end_idx_abs) tuple for last epoch
+        # Memory efficient: O(1) instead of O(total_epochs_processed)
+        self.last_processed_epoch_per_buffer = [None] * 6  # Last processed epoch per buffer
+        self.epochs_processed_count_per_buffer = [0] * 6   # Count of epochs processed per buffer (for monitoring)
         
         # Initialize hidden states for each buffer
         self.buffer_hidden_states = [
@@ -345,9 +339,10 @@ class DataManager:
         last_epoch_start_idx_abs = None
         
         try:
-            last_epoch_tuple = self.matrix_of_round_robin_processed_epoch_indices[buffer_id][-1]
-            last_epoch_start_idx_abs = last_epoch_tuple[0]  # Extract start index from tuple
-        except (IndexError, KeyError):
+            last_epoch_tuple = self.last_processed_epoch_per_buffer[buffer_id]
+            if last_epoch_tuple is not None:
+                last_epoch_start_idx_abs = last_epoch_tuple[0]  # Extract start index from tuple
+        except (IndexError, KeyError, TypeError):
             pass
 
         # If this is the first epoch for this buffer, start at the buffer's offset
@@ -389,8 +384,8 @@ class DataManager:
         Returns:
             bool: True if no epochs have been processed yet in any buffer
         """
-        has_processed_epochs = (self.matrix_of_round_robin_processed_epoch_indices[buffer_id] or 
-                              any(len(indices) > 0 for indices in self.matrix_of_round_robin_processed_epoch_indices))
+        has_processed_epochs = (self.last_processed_epoch_per_buffer[buffer_id] is not None or 
+                              any(epoch is not None for epoch in self.last_processed_epoch_per_buffer))
         return not has_processed_epochs
 
     def _has_enough_delay_since_last_epoch(self):
@@ -403,7 +398,7 @@ class DataManager:
             bool: True if enough time has passed since last epoch
         """
         last_etd_timestamp = self.etd_buffer_manager._get_timestamps()[-1]
-        last_epoch = self.matrix_of_round_robin_processed_epoch_indices[self.last_processed_buffer][-1]
+        last_epoch = self.last_processed_epoch_per_buffer[self.last_processed_buffer]
         last_epoch_end_ind_abs = last_epoch[1]
         last_epoch_end_ind_rel = self.etd_buffer_manager._adjust_index_with_offset(last_epoch_end_ind_abs, to_etd=True)
         last_epoch_timestamp = self.etd_buffer_manager._get_timestamps()[last_epoch_end_ind_rel]
@@ -497,7 +492,8 @@ class DataManager:
             )
        
         # Update buffer status
-        self.matrix_of_round_robin_processed_epoch_indices[buffer_id].append((epoch_start_idx_abs, epoch_end_idx_abs))
+        self.last_processed_epoch_per_buffer[buffer_id] = (epoch_start_idx_abs, epoch_end_idx_abs)
+        self.epochs_processed_count_per_buffer[buffer_id] += 1
         self.last_processed_buffer = buffer_id  
 
         if has_gap:
@@ -699,7 +695,8 @@ class DataManager:
             
             # Clear data buffers
             self.etd_buffer_manager.electrode_and_timestamp_data = [[] for _ in range(len(self.etd_buffer_manager.electrode_and_timestamp_channels))]
-            self.matrix_of_round_robin_processed_epoch_indices = [[] for _ in range(6)]
+            self.last_processed_epoch_per_buffer = [None] * 6
+            self.epochs_processed_count_per_buffer = [0] * 6
             
             # Reset hidden states
             self.buffer_hidden_states = [

@@ -287,7 +287,7 @@ class TestEpochBuffer:
         first_epoch_start = 0
         first_epoch_end = points_per_epoch
         initial_epochs_count = data_manager.epochs_scored
-        initial_matrix_length = len(data_manager.matrix_of_round_robin_processed_epoch_indices[0])
+        initial_buffer_epoch_count = data_manager.epochs_processed_count_per_buffer[0]
         
         data_manager.manage_epoch(
             buffer_id=0,
@@ -314,9 +314,9 @@ class TestEpochBuffer:
         next_epoch_start_idx_abs, _ = data_manager._get_next_epoch_indices(data_manager.last_processed_buffer + 1)
         data_manager.etd_buffer_manager.trim_buffer(next_epoch_start_idx_abs)
     
-        # Verify sleep stage processing continues by checking tracking matrix and epoch count
-        assert len(data_manager.matrix_of_round_robin_processed_epoch_indices[0]) == initial_matrix_length + 2, \
-            "Both epochs should be tracked in the processing matrix"
+        # Verify sleep stage processing continues by checking epoch count
+        assert data_manager.epochs_processed_count_per_buffer[0] == initial_buffer_epoch_count + 2, \
+            "Both epochs should be tracked in buffer 0"
         assert data_manager.epochs_scored == initial_epochs_count + 2, \
             "Both epochs should have been scored successfully"
     
@@ -380,19 +380,16 @@ class TestEpochBuffer:
         # The detected gap size should be close to the actual gap size
         assert abs(detected_gap_size - gap_size) < 0.1, f"Detected gap size {detected_gap_size} should be close to actual gap size {gap_size}"
         
-        # Verify matrix of processed epochs is updated correctly  
-        assert len(data_manager.matrix_of_round_robin_processed_epoch_indices[0]) == 2, \
-            "Should track both processed epochs"
+        # Verify processed epochs count is updated correctly  
+        assert data_manager.epochs_processed_count_per_buffer[0] == 2, \
+            "Should track both processed epochs in buffer 0"
             
-        # Verify epoch indices are correct after trimming
-        first_epoch_tuple = data_manager.matrix_of_round_robin_processed_epoch_indices[0][0]
-        second_epoch_tuple = data_manager.matrix_of_round_robin_processed_epoch_indices[0][1]
-        first_epoch_idx = first_epoch_tuple[0]  # Extract start index from tuple
-        second_epoch_idx = second_epoch_tuple[0]  # Extract start index from tuple
-        assert first_epoch_idx == first_epoch_start, \
-            f"First epoch start index should be {first_epoch_start}, got {first_epoch_idx}"
-        assert second_epoch_idx == second_epoch_start, \
-            f"Second epoch start index should be {second_epoch_start}, got {second_epoch_idx}"
+        # Verify last epoch indices are correct after trimming
+        last_epoch_tuple = data_manager.last_processed_epoch_per_buffer[0]
+        assert last_epoch_tuple is not None, "Buffer 0 should have a last processed epoch"
+        last_epoch_start_idx = last_epoch_tuple[0]  # Extract start index from tuple
+        assert last_epoch_start_idx == second_epoch_start, \
+            f"Last epoch start index should be {second_epoch_start}, got {last_epoch_start_idx}"
 
     def test_round_robin_integration(self, data_manager, test_data):
         """Test realistic streaming with round-robin processing and buffer trimming.
@@ -445,7 +442,7 @@ class TestEpochBuffer:
                     
                     # Verify tracking
                     expected_epochs = epochs_processed_per_buffer[buffer_id]
-                    actual_epochs = len(data_manager.matrix_of_round_robin_processed_epoch_indices[buffer_id])
+                    actual_epochs = data_manager.epochs_processed_count_per_buffer[buffer_id]
                     assert actual_epochs == expected_epochs, \
                         f"Buffer {buffer_id} should track {expected_epochs} epochs, got {actual_epochs}"
                     
@@ -480,25 +477,26 @@ class TestEpochBuffer:
         # Verify epoch indices are tracked correctly
         for buffer_id in range(6):
             expected_epochs = epochs_processed_per_buffer[buffer_id]
+            actual_epochs = data_manager.epochs_processed_count_per_buffer[buffer_id]
+            assert actual_epochs == expected_epochs, \
+                f"Buffer {buffer_id} should have processed {expected_epochs} epochs, got {actual_epochs}"
+            
             if expected_epochs > 0:
-                # Check first epoch index
-                first_epoch_tuple = data_manager.matrix_of_round_robin_processed_epoch_indices[buffer_id][0]
-                first_epoch_idx = first_epoch_tuple[0]  # Extract start index from tuple
-                expected_first_start = buffer_id * points_per_step
-                assert first_epoch_idx == expected_first_start, \
-                    f"Buffer {buffer_id} first epoch should start at {expected_first_start}, got {first_epoch_idx}"
+                # Check that last processed epoch exists and has reasonable indices
+                last_epoch_tuple = data_manager.last_processed_epoch_per_buffer[buffer_id]
+                assert last_epoch_tuple is not None, f"Buffer {buffer_id} should have a last processed epoch"
                 
-                # Check that epochs are spaced correctly
-                if expected_epochs > 1:
-                    for i in range(1, expected_epochs):
-                        epoch_tuple = data_manager.matrix_of_round_robin_processed_epoch_indices[buffer_id][i]
-                        epoch_idx = epoch_tuple[0]  # Extract start index from tuple
-                        prev_epoch_tuple = data_manager.matrix_of_round_robin_processed_epoch_indices[buffer_id][i-1]
-                        prev_epoch_idx = prev_epoch_tuple[0]  # Extract start index from tuple
-                        expected_spacing = points_per_epoch
-                        actual_spacing = epoch_idx - prev_epoch_idx
-                        assert actual_spacing == expected_spacing, \
-                            f"Buffer {buffer_id} epochs should be spaced by {expected_spacing}, got {actual_spacing}"
+                last_epoch_start = last_epoch_tuple[0]
+                last_epoch_end = last_epoch_tuple[1]
+                
+                # Verify epoch is properly sized (30 seconds worth of data)
+                assert last_epoch_end - last_epoch_start == points_per_epoch, \
+                    f"Buffer {buffer_id} last epoch should span {points_per_epoch} points, got {last_epoch_end - last_epoch_start}"
+                
+                # Verify epoch start is reasonable for this buffer (accounting for processed epochs)
+                expected_last_start = buffer_id * points_per_step + (expected_epochs - 1) * points_per_epoch
+                assert last_epoch_start == expected_last_start, \
+                    f"Buffer {buffer_id} last epoch should start at {expected_last_start}, got {last_epoch_start}"
         
         # Verify final buffer state
         final_buffer_size = data_manager._get_total_data_points_etd()
@@ -638,7 +636,7 @@ class TestEpochBuffer:
                 f"Max buffer size {max_observed_buffer_size} should stay within 2.5x limit ({initial_buffer_size * 2.5})"
             
             # Test round-robin progression by checking that multiple buffers processed epochs
-            buffers_with_epochs = sum(1 for buffer_epochs in handler.data_manager.matrix_of_round_robin_processed_epoch_indices if len(buffer_epochs) > 0)
+            buffers_with_epochs = sum(1 for count in handler.data_manager.epochs_processed_count_per_buffer if count > 0)
             assert buffers_with_epochs >= 2, f"Expected at least 2 buffers to process epochs, got {buffers_with_epochs}"
             
         finally:
