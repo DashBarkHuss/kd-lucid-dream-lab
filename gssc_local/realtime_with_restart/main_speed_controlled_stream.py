@@ -33,7 +33,7 @@ sys.path.append(workspace_root)
 from gssc_local.montage import Montage
 from gssc_local.realtime_with_restart.speed_controlled_board_manager import SpeedControlledBoardManager
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
-from gssc_local.realtime_with_restart.utils.timestamp_utils import format_timestamp, format_elapsed_time
+# Note: timestamp utilities available if needed for future logging
 
 import time
 import pandas as pd

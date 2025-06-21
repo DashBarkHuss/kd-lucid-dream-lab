@@ -12,7 +12,7 @@ from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.board_manager import BoardManager
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 from gssc_local.realtime_with_restart.core.stream_manager import StreamManager
-from gssc_local.realtime_with_restart.utils.timestamp_utils import format_timestamp, format_elapsed_time
+from gssc_local.realtime_with_restart.utils.timestamp_utils import format_elapsed_time
 
 import time
 import multiprocessing
