@@ -148,7 +148,7 @@ Starting/stopping the stream
         - updated the visualizer to show there is a gap
     - understand why pytqt visualizer had to implement threads
     - understand why we need to cleanup the csv manager
-    - handle large variables likethe previous buffer and the saved data for csv
+    - ✅handle large variables likethe previous buffer and the saved data for csv
     - ✅ validate csv after gap handling
     - delete offset files
     - handle the reconstructed files better- better naming etc
@@ -157,7 +157,7 @@ Starting/stopping the stream
     - replace the old processor with the new processor_improved.py
   - do we need to add filtering? i believe so. i think set sinclude filtering in them and csv raws do not.
   - add brainflow specific format validations to the csv manager
-  - warn if bad channel isbeing used for inference- like all the same value
+  - ✅ warn if bad channel isbeing used for inference- like all the same value
   - ✅ remove harded coded combinations from gssc_array_with_fif
   - need to test a 35 second exact consecutive data- bug
   - see what changes need to be made for working with streamed data vs playback from file

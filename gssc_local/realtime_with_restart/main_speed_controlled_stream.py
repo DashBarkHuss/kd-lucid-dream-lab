@@ -31,14 +31,13 @@ sys.path.append(workspace_root)
 
 # Now use absolute imports
 from gssc_local.montage import Montage
-from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.speed_controlled_board_manager import SpeedControlledBoardManager
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
+from gssc_local.realtime_with_restart.utils.timestamp_utils import format_timestamp, format_elapsed_time
 
 import time
 import pandas as pd
 import numpy as np
-from datetime import datetime, timezone, timedelta
 from brainflow.board_shim import BoardShim, BoardIds
 import logging
 
@@ -95,37 +94,7 @@ logger.addHandler(console_handler)
 # Disable BrainFlow's internal logging to avoid interference with our logging
 BoardShim.disable_board_logger()
 
-def format_timestamp(ts):
-    """Convert Unix timestamp to human-readable format in HST (Hawaii Standard Time).
-    
-    Args:
-        ts (float): Unix timestamp to convert
-        
-    Returns:
-        str: Formatted timestamp string in HST
-    """
-    if ts is None:
-        return "None"
-    # Convert Unix timestamp to datetime in UTC
-    utc_time = datetime.fromtimestamp(ts, timezone.utc)
-    # Convert to Hawaii time (UTC-10)
-    hawaii_time = utc_time - timedelta(hours=10)
-    return hawaii_time.strftime('%Y-%m-%d %I:%M:%S %p HST')
-
-def format_elapsed_time(seconds):
-    """Format elapsed time in HH:MM:SS.mmm format.
-    
-    Args:
-        seconds (float): Elapsed time in seconds
-        
-    Returns:
-        str: Formatted time string
-    """
-    # Convert seconds to hours, minutes, and remaining seconds
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    seconds = seconds % 60
-    return f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
+# Timestamp utility functions moved to gssc_local.realtime_with_restart.utils.timestamp_utils
 
 def create_trimmed_csv(input_file, output_file, skip_samples):
     """Create a new CSV file starting from the specified sample offset"""
@@ -150,8 +119,8 @@ def main():
     - An error occurs
     """
     # Initialize playback file and timestamp tracking
-    # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
-    original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
+    original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
+    # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     playback_file = original_data_file
     
