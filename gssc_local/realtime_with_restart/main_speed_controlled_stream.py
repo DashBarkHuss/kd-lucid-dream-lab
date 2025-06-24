@@ -103,7 +103,7 @@ def create_trimmed_csv(input_file, output_file, skip_samples):
             if idx >= skip_samples:
                 outfile.write(line)
 
-def main():
+def main(handler_class=ReceivedStreamedDataHandler):
     """Main function that manages the data acquisition and processing.
     
     This function:
@@ -139,7 +139,7 @@ def main():
     board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=2000.0)
     board_manager.setup_board()
     board_timestamp_channel = board_manager.board_timestamp_channel
-    received_streamed_data_handler = ReceivedStreamedDataHandler(board_manager, logger)
+    received_streamed_data_handler = handler_class(board_manager, logger)
 
     # Configure buffer sizes and file paths for periodic saving
     # Get the PyQt application instance from the visualizer

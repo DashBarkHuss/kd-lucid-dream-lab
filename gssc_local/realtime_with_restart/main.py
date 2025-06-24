@@ -33,26 +33,30 @@ class LogColors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-# Custom formatter that adds colors
 class ColoredFormatter(logging.Formatter):
+    """Custom formatter that adds colors to log messages based on level."""
+    
     def format(self, record):
-        # Color the process name
-        if 'MainProcess' in record.processName:
-            record.processName = f"{LogColors.BLUE}{record.processName}{LogColors.ENDC}"
+        """Format the log record with appropriate colors.
+        
+        Args:
+            record: LogRecord object containing the log message
+            
+        Returns:
+            str: Formatted log message with color codes
+        """
+        # Choose color based on log level
+        if record.levelno >= logging.ERROR:
+            color = LogColors.RED
+        elif record.levelno >= logging.WARNING:
+            color = LogColors.YELLOW
+        elif record.levelno >= logging.INFO:
+            color = LogColors.GREEN
         else:
-            record.processName = f"{LogColors.CYAN}{record.processName}{LogColors.ENDC}"
-        
-        # Color the log level
-        if record.levelno == logging.INFO:
-            record.levelname = f"{LogColors.GREEN}{record.levelname}{LogColors.ENDC}"
-        elif record.levelno == logging.WARNING:
-            record.levelname = f"{LogColors.YELLOW}{record.levelname}{LogColors.ENDC}"
-        elif record.levelno == logging.ERROR:
-            record.levelname = f"{LogColors.RED}{record.levelname}{LogColors.ENDC}"
-        
-        # Add line number in yellow
-        record.lineno = f"{LogColors.YELLOW}L{record.lineno}{LogColors.ENDC}"
-        
+            color = LogColors.BLUE
+            
+        # Apply color to the message
+        record.msg = f"{color}{record.msg}{LogColors.ENDC}"
         return super().format(record)
 
 # Set up logging with colors
@@ -98,7 +102,7 @@ def main(handler_class=ReceivedStreamedDataHandler): #TODO: LLM said we needed t
     board_id = BoardIds.CYTON_DAISY_BOARD
     board_manager = BoardManager(playback_file, board_id)
     board_manager.setup_board()
-    timestamp_channel = board_manager.board_shim.get_timestamp_channel(board_id)
+    board_timestamp_channel = board_manager.board_shim.get_timestamp_channel(board_id)
     received_streamed_data_handler = handler_class(board_manager, logger)
 
     # Get the PyQt application instance from the visualizer
@@ -161,7 +165,7 @@ def main(handler_class=ReceivedStreamedDataHandler): #TODO: LLM said we needed t
                 break
 
             # Calculate new offset after gap
-            timestamps = original_playback_data.iloc[:, timestamp_channel]
+            timestamps = original_playback_data.iloc[:, board_timestamp_channel]
             next_rows = timestamps[timestamps > last_good_ts]
 
             if next_rows.empty:
@@ -175,8 +179,8 @@ def main(handler_class=ReceivedStreamedDataHandler): #TODO: LLM said we needed t
 
             # Create new trimmed file starting from the gap
             offset = int(next_rows.index[0])
-            elapsed_from_start = original_playback_data.iloc[offset, timestamp_channel] - start_first_data_ts  # Use stored timestamp
-            elapsed_from_last_good_ts = original_playback_data.iloc[offset, timestamp_channel] - last_good_ts
+            elapsed_from_start = original_playback_data.iloc[offset, board_timestamp_channel] - start_first_data_ts  # Use stored timestamp
+            elapsed_from_last_good_ts = original_playback_data.iloc[offset, board_timestamp_channel] - last_good_ts
             logger.info(f"Restarting from: {offset} | Time from start: {format_elapsed_time(elapsed_from_start)} | Time from last good ts: {format_elapsed_time(elapsed_from_last_good_ts)}")
 
             trimmed_file = os.path.join(workspace_root, f"data/offset_files/offset_{offset}_{os.path.basename(playback_file)}")
