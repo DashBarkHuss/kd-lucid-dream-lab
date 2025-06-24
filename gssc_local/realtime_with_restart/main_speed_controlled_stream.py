@@ -15,7 +15,7 @@ Key Features:
 - Colored logging for better debugging
 
 Usage:
-    python main_mock_board_stream.py
+    python main_speed_controlled_stream.py
 
 Configuration:
     - Modify playback_file path to use different data files

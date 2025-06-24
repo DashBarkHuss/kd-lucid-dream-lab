@@ -1,14 +1,34 @@
 #!/usr/bin/env python3
 
+"""
+Main script for running the multiprocessing board stream with gap handling.
+
+This script provides a complete implementation of the multiprocessing board streaming system,
+using StreamManager for real-time data acquisition with inter-process communication.
+It handles data streaming with gap detection and automatic restart functionality.
+
+Key Features:
+- Multiprocessing data acquisition via StreamManager
+- Inter-process communication for robust gap detection
+- Automatic stream restart after gaps
+- File trimming for gap continuation
+- Colored logging for better debugging
+
+Usage:
+    python main.py
+
+Configuration:
+    - Modify playback_file path to use different data files
+    - Configure logging level and format as needed
+"""
+
 import sys
 import os
-# Add the project root to Python path
+# Add the project root to Python path to enable absolute imports
 workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(workspace_root)
 
 # Now use absolute imports
-from gssc_local.montage import Montage
-from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.board_manager import BoardManager
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 from gssc_local.realtime_with_restart.core.stream_manager import StreamManager
@@ -17,7 +37,6 @@ from gssc_local.realtime_with_restart.utils.timestamp_utils import format_elapse
 import time
 import multiprocessing
 import pandas as pd
-import numpy as np
 from brainflow.board_shim import BoardShim, BoardIds
 import logging
 
@@ -76,15 +95,36 @@ BoardShim.disable_board_logger()
 # Timestamp utility functions moved to gssc_local.realtime_with_restart.utils.timestamp_utils
 
 def create_trimmed_csv(input_file, output_file, skip_samples):
-    """Create a new CSV file starting from the specified sample offset"""
+    """Create a new CSV file starting from the specified sample offset.
+    
+    Args:
+        input_file (str): Path to the input CSV file
+        output_file (str): Path to the output CSV file
+        skip_samples (int): Number of lines to skip from the beginning
+    """
     with open(input_file, 'r') as infile, open(output_file, 'w') as outfile:
         for idx, line in enumerate(infile):
             if idx >= skip_samples:
                 outfile.write(line)
 
-def main(handler_class=ReceivedStreamedDataHandler): #TODO: LLM said we needed to add this handler_class 
-    # argument to the main function for a test to pass, but we didn't add this to main_speed_controlled_stream.py... should we?
-    """Main function that manages the data acquisition and processing"""
+def main(handler_class=ReceivedStreamedDataHandler):
+    """Main function that manages the data acquisition and processing.
+    
+    This function:
+    1. Initializes the board with multiprocessing streaming via StreamManager
+    2. Sets up the data handler and visualization components
+    3. Manages the main processing loop with inter-process communication
+    4. Handles data streaming and gap detection through message passing
+    5. Manages cleanup on exit
+    
+    The function runs until either:
+    - No more data is available
+    - A gap is detected and handled
+    - An error occurs
+    
+    Args:
+        handler_class: The data handler class to instantiate (for dependency injection)
+    """
     # Initialize playback file and timestamp tracking
     original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
     # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
