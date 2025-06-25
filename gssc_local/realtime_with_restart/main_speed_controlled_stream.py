@@ -33,75 +33,23 @@ sys.path.append(workspace_root)
 from gssc_local.montage import Montage
 from gssc_local.realtime_with_restart.speed_controlled_board_manager import SpeedControlledBoardManager
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
+from gssc_local.realtime_with_restart.utils.logging_utils import setup_colored_logger
+from gssc_local.realtime_with_restart.utils.file_utils import create_trimmed_csv
 # Note: timestamp utilities available if needed for future logging
 
 import time
 import pandas as pd
 import numpy as np
 from brainflow.board_shim import BoardShim, BoardIds
-import logging
-
-# ANSI color codes for terminal output formatting
-class LogColors:
-    """ANSI color codes for terminal output formatting."""
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
-class ColoredFormatter(logging.Formatter):
-    """Custom formatter that adds colors to log messages based on level."""
-    
-    def format(self, record):
-        """Format the log record with appropriate colors.
-        
-        Args:
-            record: LogRecord object containing the log message
-            
-        Returns:
-            str: Formatted log message with color codes
-        """
-        # Choose color based on log level
-        if record.levelno >= logging.ERROR:
-            color = LogColors.RED
-        elif record.levelno >= logging.WARNING:
-            color = LogColors.YELLOW
-        elif record.levelno >= logging.INFO:
-            color = LogColors.GREEN
-        else:
-            color = LogColors.BLUE
-            
-        # Apply color to the message
-        record.msg = f"{color}{record.msg}{LogColors.ENDC}"
-        return super().format(record)
 
 # Set up logging with colors
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Create console handler with colored formatter
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(ColoredFormatter(
-    '%(processName)s - %(levelname)s - L%(lineno)s - %(message)s'
-))
-logger.addHandler(console_handler)
+logger = setup_colored_logger(__name__)
 
 # Disable BrainFlow's internal logging to avoid interference with our logging
 BoardShim.disable_board_logger()
 
 # Timestamp utility functions moved to gssc_local.realtime_with_restart.utils.timestamp_utils
 
-def create_trimmed_csv(input_file, output_file, skip_samples):
-    """Create a new CSV file starting from the specified sample offset"""
-    with open(input_file, 'r') as infile, open(output_file, 'w') as outfile:
-        for idx, line in enumerate(infile):
-            if idx >= skip_samples:
-                outfile.write(line)
 
 def main(handler_class=ReceivedStreamedDataHandler):
     """Main function that manages the data acquisition and processing.
@@ -134,7 +82,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
     original_playback_data = pd.read_csv(playback_file, sep='\t', header=None)
 
     # Initialize board and handler
-    board_id = BoardIds.CYTON_DAISY_BOARD
+    board_id = BoardIds.CYTON_DAISY_BOARD  # Keep for consistency with main.py
     # Use SpeedControlledBoardManager with 100x speed for fast testing
     board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=2000.0)
     board_manager.setup_board()
