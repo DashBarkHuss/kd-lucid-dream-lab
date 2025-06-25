@@ -126,8 +126,8 @@ def main(handler_class=ReceivedStreamedDataHandler):
         handler_class: The data handler class to instantiate (for dependency injection)
     """
     # Initialize playback file and timestamp tracking
-    original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
-    # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
+    # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
+    original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     playback_file = original_data_file
     
@@ -241,7 +241,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
             if 'board_manager' in locals():
                 board_manager.release()
             if 'stream_manager' in locals() and stream_manager is not None:
-                stream_manager.stop_stream()
+                stream_manager.stop_stream()  # Clean up multiprocessing streams
         except Exception as e:
             logger.error(f"Error during cleanup: {str(e)}")
 

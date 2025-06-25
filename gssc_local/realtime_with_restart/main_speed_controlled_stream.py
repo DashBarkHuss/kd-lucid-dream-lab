@@ -119,8 +119,8 @@ def main(handler_class=ReceivedStreamedDataHandler):
     - An error occurs
     """
     # Initialize playback file and timestamp tracking
-    original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
-    # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
+    # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
+    original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     playback_file = original_data_file
     
@@ -149,22 +149,21 @@ def main(handler_class=ReceivedStreamedDataHandler):
     try:
         # Main processing loop
         while True:
-            # Start the stream
+            # Create and start stream
             board_manager.start_stream()
-            logger.info("Started mock board stream")
+            logger.info("Started speed-controlled board stream")
             
-            # Initialize timestamp tracking
             last_good_ts = None
             start_first_data_ts = None
+            data_processed_successfully = False
             
-            # Main data processing loop
+            # Monitor stream and handle incoming data
             while True:
                 # Get new data chunk
                 new_data = board_manager.get_new_data()
                 
                 if new_data.size > 0:
                     # If this is the first data chunk, set the start timestamp
-                    # This is used for timing calculations
                     if start_first_data_ts is None and board_timestamp_channel is not None:
                         start_first_data_ts = float(new_data[board_timestamp_channel][0])
                         logger.info(f"Set start_first_data_ts to: {start_first_data_ts}")
@@ -177,8 +176,9 @@ def main(handler_class=ReceivedStreamedDataHandler):
                         last_good_ts = float(new_data[board_timestamp_channel][-1])
 
                 else:
-                    # No more data
+                    # No more data - equivalent to gap detection in main.py
                     logger.info("No more data to process")
+                    data_processed_successfully = True
                     break
                     
                 # Process Qt events to update the GUI
@@ -186,19 +186,25 @@ def main(handler_class=ReceivedStreamedDataHandler):
                 qt_app.processEvents()
                 # Small delay to prevent CPU overload
                 time.sleep(0.1)
+                
+            # Clean up stream (no StreamManager to clean up for direct board access)
+            # start_first_data_ts already stored as local variable
+            
+            # Handle processing status (similar to child_exited_normally in main.py)
+            if not data_processed_successfully:
+                logger.error("Data processing failed. Exiting program.")
+                break
 
-            # Check if we got any valid data
             if last_good_ts is None:
                 logger.error("No valid timestamp received. Exiting.")
                 break
 
             # Calculate new offset after gap
-            # Find the next valid data point after the gap
             timestamps = original_playback_data.iloc[:, board_timestamp_channel]
             next_rows = timestamps[timestamps > last_good_ts]
             
-            if len(next_rows) == 0:
-                logger.info("No more data after gap. Exiting.")
+            if next_rows.empty:
+                logger.info("No more data after last timestamp. Saving csv and exiting.")
                 # Validate the saved csv
                 logger.info(f"Main csv buffer path before final save: {received_streamed_data_handler.data_manager.csv_manager.main_csv_path}")        
                 output_csv_path = received_streamed_data_handler.data_manager.csv_manager.main_csv_path
@@ -237,11 +243,10 @@ def main(handler_class=ReceivedStreamedDataHandler):
         # Clean up resources
         try:
             if 'received_streamed_data_handler' in locals():
-                # Only cleanup, save_all_and_cleanup was already called
                 received_streamed_data_handler.data_manager.cleanup()
             if 'board_manager' in locals():
                 board_manager.release()
-            # No stream manager cleanup needed for mock board
+            # No stream_manager cleanup needed (uses SpeedControlledBoardManager directly)
         except Exception as e:
             logger.error(f"Error during cleanup: {str(e)}")
 
