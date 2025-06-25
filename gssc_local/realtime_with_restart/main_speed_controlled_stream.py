@@ -155,22 +155,15 @@ def main(handler_class=ReceivedStreamedDataHandler):
                 received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file, output_csv_path)
                 break
                 
-            # Create a new file for the remaining data
+            # Create new trimmed file starting from the gap
             # This simulates continuing after a gap
-            new_start_index = next_rows.index[0]
-            new_file_path = os.path.join(
-                os.path.dirname(playback_file),
-                f"gap_continuation_{new_start_index}.csv"
-            )
-            
-            # Save the remaining data to a new file
-            original_playback_data.iloc[new_start_index:].to_csv(
-                new_file_path, sep='\t', header=False, index=False
-            )
-            
-            # Update the playback file to continue from the gap
-            playback_file = new_file_path
-            logger.info(f"Created continuation file: {new_file_path}")
+            offset = int(next_rows.index[0])
+            trimmed_file = os.path.join(workspace_root, f"data/offset_files/offset_{offset}_{os.path.basename(playback_file)}")
+            create_trimmed_csv(playback_file, trimmed_file, offset)
+
+            # Update playback file for next iteration
+            playback_file = trimmed_file
+            logger.info(f"Updated playback file to: {playback_file}")
             
             # Reinitialize the board manager with the new file
             # This ensures we continue from the correct point
