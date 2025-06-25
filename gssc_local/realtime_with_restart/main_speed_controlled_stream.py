@@ -78,7 +78,6 @@ def main(handler_class=ReceivedStreamedDataHandler):
         return
 
     # Load the CSV file for offset calculation
-    # This is used to handle gaps in the data
     original_playback_data = pd.read_csv(playback_file, sep='\t', header=None)
 
     # Initialize board and handler
@@ -89,9 +88,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
     board_timestamp_channel = board_manager.board_timestamp_channel
     received_streamed_data_handler = handler_class(board_manager, logger)
 
-    # Configure buffer sizes and file paths for periodic saving
     # Get the PyQt application instance from the visualizer
-    # This is needed to process GUI events during streaming
     qt_app = received_streamed_data_handler.data_manager.visualizer.app
 
     try:
@@ -103,7 +100,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
             
             last_good_ts = None
             start_first_data_ts = None
-            data_processed_successfully = False
+            data_processing_completed = False
             
             # Monitor stream and handle incoming data
             while True:
@@ -126,20 +123,18 @@ def main(handler_class=ReceivedStreamedDataHandler):
                 else:
                     # No more data - equivalent to gap detection in main.py
                     logger.info("No more data to process")
-                    data_processed_successfully = True
+                    data_processing_completed = True
                     break
                     
                 # Process Qt events to update the GUI
-                # This ensures the visualization stays responsive
                 qt_app.processEvents()
-                # Small delay to prevent CPU overload
                 time.sleep(0.1)
                 
             # Clean up stream (no StreamManager to clean up for direct board access)
             # start_first_data_ts already stored as local variable
             
             # Handle processing status (similar to child_exited_normally in main.py)
-            if not data_processed_successfully:
+            if not data_processing_completed:
                 logger.error("Data processing failed. Exiting program.")
                 break
 
@@ -153,7 +148,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
             
             if next_rows.empty:
                 logger.info("No more data after last timestamp. Saving csv and exiting.")
-                # Validate the saved csv
+                # validate the saved csv
                 logger.info(f"Main csv buffer path before final save: {received_streamed_data_handler.data_manager.csv_manager.main_csv_path}")        
                 output_csv_path = received_streamed_data_handler.data_manager.csv_manager.main_csv_path
                 received_streamed_data_handler.data_manager.csv_manager.save_all_and_cleanup(merge_files=True, merge_output_path="merged_data.csv")
