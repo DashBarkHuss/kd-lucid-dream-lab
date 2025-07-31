@@ -43,6 +43,12 @@ class SpeedControlledBoardManager(BoardManager):
         self.current_position = 0
         self.start_time = None
         self.last_chunk_time = None
+        
+        # Gap simulation attributes
+        self.in_gap_mode = False
+        self.gap_start_real_time = None
+        self.gap_duration_seconds = None
+        self.expected_timestamp = None
 
     def setup_board(self):
         """Initialize the mock board for data collection.
@@ -93,6 +99,8 @@ class SpeedControlledBoardManager(BoardManager):
             
         self.start_time = float(self.file_data.iloc[0, self.board_timestamp_channel])
         self.last_chunk_time = self.start_time
+        # Initialize expected timestamp to None - will be set after first chunk
+        self.expected_timestamp = None
         
         # Return total available samples for progress tracking
         return len(self.file_data)
@@ -133,35 +141,76 @@ class SpeedControlledBoardManager(BoardManager):
         
         This method returns the next chunk of data based on the current position
         and sampling rate. It implements the speed multiplier by controlling the
-        timing between chunks.
+        timing between chunks and simulates gaps by detecting timestamp jumps.
         
         Returns:
-            numpy.ndarray: Next data chunk with shape (channels, samples)
+            numpy.ndarray: Next data chunk with shape (channels, samples), or empty array during gaps
         """
         # Calculate chunk size based on sampling rate (1 second of data)
         chunk_size = self.sampling_rate
+        
+        # Check if we're currently in gap simulation mode
+        if self.in_gap_mode:
+            # Check if the gap duration has elapsed (accounting for speed multiplier)
+            elapsed_real_time = time.time() - self.gap_start_real_time
+            gap_duration_real_time = self.gap_duration_seconds / self.speed_multiplier
+            
+            if elapsed_real_time >= gap_duration_real_time:
+                # Gap is over, exit gap mode
+                print(f"[DEBUG] Gap simulation complete. Elapsed: {elapsed_real_time:.3f}s, Expected: {gap_duration_real_time:.3f}s")
+                self.in_gap_mode = False
+                self.gap_start_real_time = None
+                self.gap_duration_seconds = None
+                # Reset expected timestamp so we don't re-detect the same gap
+                self.expected_timestamp = None
+                # Continue with normal data processing below
+            else:
+                # Still in gap, return empty array
+                print(f"[DEBUG] Still in gap mode. Elapsed: {elapsed_real_time:.3f}s / {gap_duration_real_time:.3f}s")
+                return np.array([])
         
         # Check if we've reached the end of the file
         if self.current_position >= len(self.file_data):
             return np.array([])
             
         # Calculate how many samples to return
-        # This ensures we don't try to read past the end of the file
         remaining_samples = len(self.file_data) - self.current_position
         samples_to_return = min(chunk_size, remaining_samples)
         
+        # Get the current timestamp to check for gaps
+        current_timestamp = float(self.file_data.iloc[self.current_position, self.board_timestamp_channel])
+        
+        # Reason: Gap detection - check if there's a significant jump in timestamps
+        if self.expected_timestamp is not None:
+            expected_sample_duration = samples_to_return / self.sampling_rate  # Duration of this chunk
+            timestamp_diff = current_timestamp - self.expected_timestamp
+            
+            # If timestamp jump is more than 1.5x the expected interval between samples, consider it a gap
+            expected_interval = 1.0 / self.sampling_rate  # Time between individual samples
+            if timestamp_diff > (expected_interval * 1.5):
+                # Gap detected! Enter gap simulation mode
+                print(f"[DEBUG] Gap detected! Expected: {self.expected_timestamp}, Got: {current_timestamp}, Diff: {timestamp_diff}")
+                self.in_gap_mode = True
+                self.gap_start_real_time = time.time()
+                self.gap_duration_seconds = timestamp_diff
+                
+                # Don't update expected_timestamp yet - let the gap mode handle it
+                # Return empty array to simulate gap
+                return np.array([])
+        
         # Get the data for this chunk and transpose to match real board format
-        # Real board returns data in shape (channels, samples)
         data = self.file_data.iloc[self.current_position:self.current_position + samples_to_return].values.T
         
         # Update position for next read
         self.current_position += samples_to_return
         
-        # Only sleep if we're not at the end and we got a full chunk
-        # This ensures proper timing between chunks
+        # Update expected timestamp for next chunk
+        if samples_to_return > 0:
+            sample_duration = samples_to_return / self.sampling_rate
+            self.expected_timestamp = current_timestamp + sample_duration
+        
+        # Sleep for timing control (normal playback speed)
         if self.current_position < len(self.file_data) and samples_to_return == chunk_size:
-            # Sleep for 1/speed_multiplier seconds between chunks
-            # This implements the speed control
             time.sleep(1.0 / self.speed_multiplier)
             
         return data

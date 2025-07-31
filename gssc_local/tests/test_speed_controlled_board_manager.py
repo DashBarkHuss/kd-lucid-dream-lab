@@ -64,12 +64,12 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         np.testing.assert_array_almost_equal(initial_data[:, 0], expected_first_sample)
         
         # Verify timestamp channel
-        timestamp_channel = self.mock.timestamp_channel
-        self.assertIsNotNone(timestamp_channel)
-        self.assertIn(timestamp_channel, range(initial_data.shape[0]))
+        board_timestamp_channel = self.mock.board_timestamp_channel
+        self.assertIsNotNone(board_timestamp_channel)
+        self.assertIn(board_timestamp_channel, range(initial_data.shape[0]))
         
         # Verify timestamps are increasing
-        timestamps = initial_data[timestamp_channel]
+        timestamps = initial_data[board_timestamp_channel]
         self.assertTrue(np.all(np.diff(timestamps) > 0))
 
     def test_streaming_speed(self):
@@ -176,12 +176,12 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         self.assertEqual(new_data.shape[0], len(self.mock.file_data.columns))
         
         # Verify timestamp channel exists and contains increasing values
-        timestamp_channel = self.mock.timestamp_channel
-        self.assertIsNotNone(timestamp_channel)
-        self.assertIn(timestamp_channel, range(initial_data.shape[0]))
+        board_timestamp_channel = self.mock.board_timestamp_channel
+        self.assertIsNotNone(board_timestamp_channel)
+        self.assertIn(board_timestamp_channel, range(initial_data.shape[0]))
         
         # Verify timestamps are increasing
-        timestamps = initial_data[timestamp_channel]
+        timestamps = initial_data[board_timestamp_channel]
         self.assertTrue(np.all(np.diff(timestamps) > 0))
         
         # Verify data types are float
@@ -354,6 +354,11 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         # Create DataManager
         data_manager = DataManager(self.mock.board_shim, self.sampling_rate)
         
+        # Set up CSV path BEFORE processing any data (following CSV manager test pattern)
+        output_file = 'test_output.csv'
+        data_manager.csv_manager.main_csv_path = output_file
+        print(f"[DEBUG] Set CSV path to: {output_file}")
+        
         # Start the stream
         self.mock.start_stream()
         
@@ -363,9 +368,10 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         print(f"[DEBUG] Current position after initial data: {self.mock.current_position}")
         
         if initial_data.size > 0:
-            data_manager.add_data(initial_data, is_initial=True)
-            data_manager.save_new_data(initial_data, is_initial=True)
-            print(f"[DEBUG] Saved initial data with shape: {initial_data.shape}")
+            data_manager.add_to_data_processing_buffer(initial_data, is_initial=True)
+            data_manager.queue_data_for_csv_write(initial_data, is_initial=True)
+            print(f"[DEBUG] Queued initial data with shape: {initial_data.shape} to CSV")
+            print(f"[DEBUG] CSV buffer length after initial: {len(data_manager.csv_manager.main_csv_buffer)}")
         
         # Process all data
         total_samples = initial_data.shape[1] if initial_data.size > 0 else 0
@@ -376,17 +382,18 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
             if data.size == 0:
                 break
             print(f"[DEBUG] Got new data chunk with shape: {data.shape}")
-            data_manager.add_data(data)
-            data_manager.save_new_data(data)
+            data_manager.add_to_data_processing_buffer(data)
+            data_manager.queue_data_for_csv_write(data)
             total_samples += data.shape[1]
             print(f"[DEBUG] Total samples processed: {total_samples}")
+            print(f"[DEBUG] CSV buffer length: {len(data_manager.csv_manager.main_csv_buffer)}")
         
         print(f"[DEBUG] Final total samples: {total_samples}")
         print(f"[DEBUG] Expected total samples: {len(self.mock.file_data)}")
         
-        # Save final data to CSV
-        output_file = 'test_output.csv'
-        data_manager.save_to_csv(output_file)
+        # Save any remaining buffered data (following CSV manager test pattern)
+        result = data_manager.csv_manager.save_all_data()
+        print(f"[DEBUG] save_all_data() result: {result}")
         
         try:
             # Verify the data matches exactly
@@ -395,6 +402,17 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
             
             print(f"\n[DEBUG] Original data shape: {original_data.shape}")
             print(f"[DEBUG] Saved data shape: {saved_data.shape}")
+            
+            # Check which samples are saved - first column is the sample index
+            if len(saved_data) > 0:
+                first_saved_idx = saved_data.iloc[0, 0]  # First column, first row
+                last_saved_idx = saved_data.iloc[-1, 0]  # First column, last row
+                print(f"[DEBUG] Saved data range: samples {first_saved_idx} to {last_saved_idx}")
+                print(f"[DEBUG] Original data range: samples {original_data.iloc[0, 0]} to {original_data.iloc[-1, 0]}")
+                
+                # Show first few and last few saved samples
+                print(f"[DEBUG] First 3 saved samples: {saved_data.iloc[0:3, 0].values}")
+                print(f"[DEBUG] Last 3 saved samples: {saved_data.iloc[-3:, 0].values}")
             
             # Compare line counts
             if len(original_data) != len(saved_data):
@@ -417,16 +435,16 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
             
             # Compare actual data
             try:
-                pd.testing.assert_frame_equal(original_data, saved_data.iloc[:, :-2], check_dtype=False)
+                pd.testing.assert_frame_equal(original_data, saved_data, check_dtype=False)
             except AssertionError as e:
                 print("Data mismatch detected:")
                 print(e)
                 # Print the first row where data differs
                 for i in range(len(saved_data)):
-                    if not original_data.iloc[i].equals(saved_data.iloc[i, :-2]):
+                    if not original_data.iloc[i].equals(saved_data.iloc[i]):
                         print(f"First data mismatch at row {i}:")
                         print(f"Original: {original_data.iloc[i].values}")
-                        print(f"Saved:    {saved_data.iloc[i, :-2].values}")
+                        print(f"Saved:    {saved_data.iloc[i].values}")
                         break
                 raise
             
@@ -518,6 +536,56 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         self.assertEqual(np_data.shape[0], len(pd_data),
             f"np.loadtxt loaded {np_data.shape[0]} rows, pd.read_csv loaded {len(pd_data)} rows")
 
+    def test_gap_detection_and_simulation(self):
+        """Test that gap detection and simulation work correctly."""
+        from create_data.create_gapped_data import create_gapped_data
+        
+        # Create test data with a gap using existing utility
+        gap_csv_path = 'test_gapped_data.csv'
+        create_gapped_data(gap_csv_path, duration=15, gap_position=8, gap_size=3)
+        
+        try:
+            # Test gap detection
+            board_manager = SpeedControlledBoardManager(
+                csv_file_path=gap_csv_path,
+                speed_multiplier=10.0
+            )
+            board_manager.setup_board()
+            board_manager.start_stream()
+            
+            # Process data until we hit the gap (around 8 seconds = 1000 samples)
+            total_samples = 0
+            gap_detected = False
+            
+            while total_samples < 1200:  # Should hit gap before this
+                chunk = board_manager.get_new_data()
+                if chunk.size == 0:
+                    gap_detected = True
+                    break
+                total_samples += chunk.shape[1]
+            
+            self.assertTrue(gap_detected, "Gap should have been detected")
+            self.assertTrue(board_manager.in_gap_mode, "Should be in gap mode")
+            
+            # Test gap simulation timing
+            expected_gap_duration = 3.0 / 10.0  # 3 seconds / 10x speed = 0.3 seconds
+            
+            # Wait for gap to complete
+            time.sleep(expected_gap_duration + 0.1)  # Wait a bit longer than expected
+            
+            # Should now return data again
+            post_gap_chunk = board_manager.get_new_data()
+            self.assertGreater(post_gap_chunk.size, 0, "Should return data after gap")
+            self.assertFalse(board_manager.in_gap_mode, "Should no longer be in gap mode")
+            
+            # Clean up
+            board_manager.release()
+            
+        finally:
+            # Clean up temp file
+            if os.path.exists(gap_csv_path):
+                os.unlink(gap_csv_path)
+
     def tearDown(self):
         """Clean up after each test method."""
         # Clean up test files
@@ -530,10 +598,6 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
                 self.mock.board_shim.release_session()
             except Exception as e:
                 print(f"Warning: Error releasing board session: {e}")
-
-class TestSpeedControlledBoardManager:
-    def setup_method(self):
-        self.board_manager = SpeedControlledBoardManager()
 
 if __name__ == '__main__':
     print("\nRunning tests directly...")

@@ -68,8 +68,8 @@ def main(handler_class=ReceivedStreamedDataHandler):
     """
     # Initialize playback file and timestamp tracking
     # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
-    original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
+    original_data_file = os.path.join(workspace_root, "data/test_data/gapped_data.csv")  # Test gap detection
     playback_file = original_data_file
     
     # Verify input file exists
@@ -82,8 +82,8 @@ def main(handler_class=ReceivedStreamedDataHandler):
 
     # Initialize board and handler
     board_id = BoardIds.CYTON_DAISY_BOARD  # Keep for consistency with main.py
-    # Use SpeedControlledBoardManager with 100x speed for fast testing
-    board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=2000.0)
+    # Use SpeedControlledBoardManager with moderate speed for gap testing
+    board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=10.0)
     board_manager.setup_board()
     board_timestamp_channel = board_manager.board_timestamp_channel
     received_streamed_data_handler = handler_class(board_manager, logger)
@@ -165,12 +165,22 @@ def main(handler_class=ReceivedStreamedDataHandler):
             playback_file = trimmed_file
             logger.info(f"Updated playback file to: {playback_file}")
             
-            # Reinitialize the board manager with the new file
+            # Update the board manager's file path (no need to create new instance like main.py)
             # This ensures we continue from the correct point
-            board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=100.0)
-            board_manager.setup_board()
-            received_streamed_data_handler = ReceivedStreamedDataHandler(board_manager, logger)
-            qt_app = received_streamed_data_handler.data_manager.visualizer.app
+            board_manager.file_path = playback_file
+            # Reload the data from the new file
+            board_manager.file_data = pd.read_csv(playback_file, sep='\t', header=None, dtype=float)
+            board_manager.current_position = 0
+            
+            # Reset gap detection state for clean restart
+            board_manager.in_gap_mode = False
+            board_manager.gap_start_real_time = None
+            board_manager.gap_duration_seconds = None
+            board_manager.expected_timestamp = None
+            
+            board_manager.start_stream()  # Reset stream position
+            
+            # No need to recreate handlers - they can reuse the same board manager
 
     except Exception as e:
         import traceback
