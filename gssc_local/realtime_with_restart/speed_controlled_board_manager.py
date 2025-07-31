@@ -50,12 +50,12 @@ class SpeedControlledBoardManager(BoardManager):
         self.gap_duration_seconds = None
         self.expected_timestamp = None
 
-    def setup_board(self):
+    def get_board_config(self):
         """Initialize the mock board for data collection.
         
         This method:
         1. Loads the CSV file data using pandas with tab separator and float data types
-        2. Calls the parent BoardManager's setup_board() method to handle actual board configuration
+        2. Calls the parent BoardManager's get_board_config() method to handle actual board configuration
         
         Returns:
             bool: True if setup was successful
@@ -67,14 +67,14 @@ class SpeedControlledBoardManager(BoardManager):
         # Using tab separator and no header to match real board format
         # dtype=float ensures consistent data type handling
         self.file_data = pd.read_csv(self.file_path, sep='\t', header=None, dtype=float)
-        print(f"[DEBUG] setup_board: After loading, shape: {self.file_data.shape}")
+        print(f"[DEBUG] get_board_config: After loading, shape: {self.file_data.shape}")
         print(f"[DEBUG] Last 3 rows:\n{self.file_data.tail(3)}")
         
         # Setup real board (but we won't use its streaming)
         # This ensures we have all the necessary board configuration
-        print(f"[DEBUG] setup_board: Before super().setup_board(), shape: {self.file_data.shape}")
-        result = super().setup_board()
-        print(f"[DEBUG] setup_board: After super().setup_board(), shape: {self.file_data.shape}")
+        print(f"[DEBUG] get_board_config: Before super().get_board_config(), shape: {self.file_data.shape}")
+        result = super().get_board_config()
+        print(f"[DEBUG] get_board_config: After super().get_board_config(), shape: {self.file_data.shape}")
         return result
 
     def start_stream(self):

@@ -19,7 +19,7 @@ class BoardManager:
         self.current_position = 0
         self.buffer_manager = None
         self.master_board_id = master_board_id  # Add master board ID
-        self.board_timestamp_channel = None  # Will be set in setup_board
+        self.board_timestamp_channel = None  # Will be set in get_board_config
         self.gap_threshold = 2.0  # Add gap threshold in seconds
         
 
@@ -38,7 +38,7 @@ class BoardManager:
         params.playback_speed = 1
         params.playback_file_offset = 0
 
-        self.board_shim = BoardShim(BoardIds.PLAYBACK_FILE_BOARD, params)
+        self.board_shim = BoardShim(self.master_board_id, params)
 
         # Get sampling rate and timestamp channel from master board, not playback board
         self.sampling_rate = BoardShim.get_sampling_rate(self.master_board_id)
@@ -46,33 +46,26 @@ class BoardManager:
         
         return self.board_shim
 
-    def setup_board(self):
-        """Initialize and setup the board for data collection"""
+    def get_board_config(self):
+        """Get board configuration information without starting a session"""
         self.set_board_shim()
         
         try:
-            self.board_shim.prepare_session()
             print(f"\nBoard Configuration:")
             print(f"Master board: {self.master_board_id}")
             print(f"Timestamp channel: {self.board_timestamp_channel}")
             print(f"Sampling rate: {self.sampling_rate}")
             
-            self.board_shim.config_board("old_timestamps")
-
-            # Load the entire file data at initialization
-            self.file_data = pd.read_csv(self.file_path, sep='\t', header=None, dtype=float)
-            print(f"Loaded file with {len(self.file_data)} samples")
-            
             return self.board_shim
             
         except Exception as e:
-            logging.error(f"Failed to setup board: {str(e)}")
+            logging.error(f"Failed to get board config: {str(e)}")
             raise
 
     def start_stream(self):
         """Start the data stream"""
         if not self.board_shim:
-            raise RuntimeError("Board not initialized. Call setup_board first.")
+            raise RuntimeError("Board not initialized. Call get_board_config first.")
         
         try:
             print("\nStarting data stream:")
@@ -99,7 +92,7 @@ class BoardManager:
     def get_initial_data(self):
         """Get initial data from the board"""
         if not self.board_shim:
-            raise RuntimeError("Board not initialized. Call setup_board first.")
+            raise RuntimeError("Board not initialized. Call get_board_config first.")
         
         try:
             # Log data count before getting data
@@ -133,7 +126,7 @@ class BoardManager:
     def get_channel_info(self):
         """Get information about board channels"""
         if not self.board_shim:
-            raise RuntimeError("Board not initialized. Call setup_board first.")
+            raise RuntimeError("Board not initialized. Call get_board_config first.")
             
         all_channels = self.board_shim.get_exg_channels(self.board_shim.get_board_id())
         timestamp_channel = self.board_shim.get_timestamp_channel(self.board_shim.get_board_id())

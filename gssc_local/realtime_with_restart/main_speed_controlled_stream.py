@@ -84,7 +84,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
     board_id = BoardIds.CYTON_DAISY_BOARD  # Keep for consistency with main.py
     # Use SpeedControlledBoardManager with moderate speed for gap testing
     board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=10.0)
-    board_manager.setup_board()
+    board_manager.get_board_config()     
     board_timestamp_channel = board_manager.board_timestamp_channel
     received_streamed_data_handler = handler_class(board_manager, logger)
 

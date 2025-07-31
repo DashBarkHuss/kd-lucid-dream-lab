@@ -44,7 +44,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
     def test_initial_data(self):
         """Test that initial data is returned correctly."""
         # Setup the board first
-        self.mock.setup_board()
+        self.mock.get_board_config()
         
         # Start the stream
         self.mock.start_stream()
@@ -76,7 +76,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         """Test that data is streamed at the correct speed."""
         try:
             # Setup the board first
-            self.mock.setup_board()
+            self.mock.get_board_config()
             
             # Start the stream
             self.mock.start_stream()
@@ -150,7 +150,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
     def test_data_format(self):
         """Test that returned data matches the format expected by the main pipeline."""
         # Setup the board first
-        self.mock.setup_board()
+        self.mock.get_board_config()
         
         # Start the stream
         self.mock.start_stream()
@@ -218,7 +218,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
             
             try:
                 # Setup and start stream
-                mock.setup_board()
+                mock.get_board_config()
                 mock.start_stream()
                 
                 # Get initial data
@@ -289,7 +289,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         BoardShim.release_all_sessions()
         try:
             # Setup the board first
-            self.mock.setup_board()
+            self.mock.get_board_config()
             
             # Start the stream
             self.mock.start_stream()
@@ -349,7 +349,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
     def test_csv_output(self):
         """Test that all data from the mock is correctly saved to CSV."""
         # Setup the board first
-        self.mock.setup_board()
+        self.mock.get_board_config()
         
         # Create DataManager
         data_manager = DataManager(self.mock.board_shim, self.sampling_rate)
@@ -483,10 +483,10 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         loaded_data = np.loadtxt(self.csv_path, delimiter='\t', dtype=float)
         print(f"[DEBUG] test_data_shape_through_flow: np.loadtxt loaded shape: {loaded_data.shape}")
         
-        # Initialize mock and check shape after setup_board
+        # Initialize mock and check shape after get_board_config
         mock = SpeedControlledBoardManager(csv_file_path=self.csv_path, speed_multiplier=1.0)
-        mock.setup_board()
-        print(f"[DEBUG] test_data_shape_through_flow: shape after setup_board: {mock.file_data.shape}")
+        mock.get_board_config()
+        print(f"[DEBUG] test_data_shape_through_flow: shape after get_board_config: {mock.file_data.shape}")
         
         # Start stream and check shape
         mock.start_stream()
@@ -499,7 +499,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         
         # Assertions
         self.assertEqual(csv_line_count, loaded_data.shape[0], "CSV line count doesn't match loaded data")
-        self.assertEqual(loaded_data.shape[0], mock.file_data.shape[0], "Data shape changed after setup_board")
+        self.assertEqual(loaded_data.shape[0], mock.file_data.shape[0], "Data shape changed after get_board_config")
         self.assertEqual(mock.file_data.shape[0], 2500, "Data shape should be 2500 rows")
 
     def test_csv_loading_methods(self):
@@ -550,7 +550,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
                 csv_file_path=gap_csv_path,
                 speed_multiplier=10.0
             )
-            board_manager.setup_board()
+            board_manager.get_board_config()
             board_manager.start_stream()
             
             # Process data until we hit the gap (around 8 seconds = 1000 samples)

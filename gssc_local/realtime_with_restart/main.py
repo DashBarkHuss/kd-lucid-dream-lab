@@ -84,8 +84,9 @@ def main(handler_class=ReceivedStreamedDataHandler):
 
     board_id = BoardIds.CYTON_DAISY_BOARD
     board_manager = BoardManager(playback_file, board_id)
-    board_manager.setup_board()
-    board_timestamp_channel = board_manager.board_shim.get_timestamp_channel(board_id)
+    board_manager.get_board_config()
+    board_timestamp_channel = board_manager.board_timestamp_channel
+    board_timestamp_channel_9 = board_manager.board_shim.get_timestamp_channel(board_id)
     received_streamed_data_handler = handler_class(board_manager, logger)
 
     # Get the PyQt application instance from the visualizer
