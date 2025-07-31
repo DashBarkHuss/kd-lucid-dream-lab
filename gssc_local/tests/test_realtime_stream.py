@@ -15,14 +15,14 @@ import time
 import logging
 from ..realtime_with_restart.export.csv.utils import MAIN_DATA_FMT
 from ..realtime_with_restart.export.csv.manager import CSVManager
-from ..realtime_with_restart.core.stream_manager import StreamManager
+from ..realtime_with_restart.core.brainflow_child_process_manager import BrainFlowChildProcessManager
 from ..realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 # Import the components we'll be testing
-from gssc_local.realtime_with_restart.main import main
+from gssc_local.realtime_with_restart.main_multiprocess import main
 from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.board_manager import BoardManager
 
@@ -248,11 +248,11 @@ class TestRealtimeStream(unittest.TestCase):
         print("✓ Logger mocked with info/error/warning methods")
         print("✓ Qt App and Visualizer mocked")
 
-    @patch('gssc_local.realtime_with_restart.main.os.path.isfile')
-    @patch('gssc_local.realtime_with_restart.main.create_trimmed_csv')
-    @patch('gssc_local.realtime_with_restart.main.BoardManager')
-    @patch('gssc_local.realtime_with_restart.main.StreamManager')
-    @patch('gssc_local.realtime_with_restart.main.logger')
+    @patch('gssc_local.realtime_with_restart.main_multiprocess.os.path.isfile')
+    @patch('gssc_local.realtime_with_restart.main_multiprocess.create_trimmed_csv')
+    @patch('gssc_local.realtime_with_restart.main_multiprocess.BoardManager')
+    @patch('gssc_local.realtime_with_restart.main_multiprocess.BrainFlowChildProcessManager')
+    @patch('gssc_local.realtime_with_restart.main_multiprocess.logger')
     def test_stream_restart_and_trim_flow(self, mock_logger, mock_stream_manager_class, 
                                         mock_board_manager_class, mock_create_trimmed, mock_isfile):
         """Test the complete flow of streaming, gap detection, and restart."""
@@ -263,7 +263,7 @@ class TestRealtimeStream(unittest.TestCase):
         mock_create_trimmed.return_value = None
         
         # Setup mock stream manager
-        mock_stream_manager = Mock(spec=StreamManager)
+        mock_stream_manager = Mock(spec=BrainFlowChildProcessManager)
         mock_stream_manager_class.return_value = mock_stream_manager
         
         # Setup message sequence
@@ -302,7 +302,7 @@ class TestRealtimeStream(unittest.TestCase):
         mock_df.iloc[:, self.mock_board_manager.board_timestamp_channel] = np.arange(1000) / 125.0  # timestamps
         
         # Run the pipeline
-        with patch('gssc_local.realtime_with_restart.main.pd.read_csv') as mock_read_csv:
+        with patch('gssc_local.realtime_with_restart.main_multiprocess.pd.read_csv') as mock_read_csv:
             mock_read_csv.return_value = mock_df
             main(handler_class=mock_handler_class)
         print(f"process_board_data call count: {mock_handler.process_board_data.call_count}")

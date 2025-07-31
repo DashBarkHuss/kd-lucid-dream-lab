@@ -35,10 +35,11 @@ class SpeedControlledBoardManager(BoardManager):
                 A value of 1.0 means real-time speed, 2.0 means twice as fast, etc.
         """
         # Initialize the real board manager first to get base functionality
-        super().__init__(file_path=csv_file_path)
+        super().__init__()
         
         # Add our mock-specific attributes
         self.speed_multiplier = speed_multiplier
+        self.file_path = csv_file_path
         self.file_data = None
         self.current_position = 0
         self.start_time = None
@@ -50,15 +51,15 @@ class SpeedControlledBoardManager(BoardManager):
         self.gap_duration_seconds = None
         self.expected_timestamp = None
 
-    def get_board_config(self):
+    def set_board_shim(self):
         """Initialize the mock board for data collection.
         
         This method:
         1. Loads the CSV file data using pandas with tab separator and float data types
-        2. Calls the parent BoardManager's get_board_config() method to handle actual board configuration
+        2. Calls the parent BoardManager's set_board_shim() method to handle actual board configuration
         
         Returns:
-            bool: True if setup was successful
+            BoardShim: The configured board shim object
         
         Raises:
             Exception: If file loading or board setup fails
@@ -67,14 +68,14 @@ class SpeedControlledBoardManager(BoardManager):
         # Using tab separator and no header to match real board format
         # dtype=float ensures consistent data type handling
         self.file_data = pd.read_csv(self.file_path, sep='\t', header=None, dtype=float)
-        print(f"[DEBUG] get_board_config: After loading, shape: {self.file_data.shape}")
+        print(f"[DEBUG] set_board_shim: After loading, shape: {self.file_data.shape}")
         print(f"[DEBUG] Last 3 rows:\n{self.file_data.tail(3)}")
         
         # Setup real board (but we won't use its streaming)
         # This ensures we have all the necessary board configuration
-        print(f"[DEBUG] get_board_config: Before super().get_board_config(), shape: {self.file_data.shape}")
-        result = super().get_board_config()
-        print(f"[DEBUG] get_board_config: After super().get_board_config(), shape: {self.file_data.shape}")
+        print(f"[DEBUG] set_board_shim: Before super().set_board_shim(), shape: {self.file_data.shape}")
+        result = super().set_board_shim()
+        print(f"[DEBUG] set_board_shim: After super().set_board_shim(), shape: {self.file_data.shape}")
         return result
 
     def start_stream(self):

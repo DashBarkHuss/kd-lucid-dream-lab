@@ -13,7 +13,7 @@ if os.environ.get('CI'):
     matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from montage import Montage
-from cyton_realtime_round_robin_accurate_time_buffer import Visualizer
+from gssc_local.realtime_with_restart.visualizer import Visualizer
 
 def test_visualizer_with_real_data():
     """Test the Visualizer with a 30-second chunk of real data"""

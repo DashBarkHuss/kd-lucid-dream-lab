@@ -4,11 +4,11 @@
 Main script for running the multiprocessing board stream with gap handling.
 
 This script provides a complete implementation of the multiprocessing board streaming system,
-using StreamManager for real-time data acquisition with inter-process communication.
+using BrainFlowChildProcessManager for real-time data acquisition with inter-process communication.
 It handles data streaming with gap detection and automatic restart functionality.
 
 Key Features:
-- Multiprocessing data acquisition via StreamManager
+- Child process data acquisition via BrainFlowChildProcessManager
 - Inter-process communication for robust gap detection
 - Automatic stream restart after gaps
 - File trimming for gap continuation
@@ -31,7 +31,7 @@ sys.path.append(workspace_root)
 # Now use absolute imports
 from gssc_local.realtime_with_restart.board_manager import BoardManager
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
-from gssc_local.realtime_with_restart.core.stream_manager import StreamManager
+from gssc_local.realtime_with_restart.core.brainflow_child_process_manager import BrainFlowChildProcessManager
 from gssc_local.realtime_with_restart.utils.timestamp_utils import format_elapsed_time
 from gssc_local.realtime_with_restart.utils.logging_utils import setup_colored_logger
 from gssc_local.realtime_with_restart.utils.file_utils import create_trimmed_csv
@@ -54,7 +54,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
     """Main function that manages the data acquisition and processing.
     
     This function:
-    1. Initializes the board with multiprocessing streaming via StreamManager
+    1. Initializes the board with child process streaming via BrainFlowChildProcessManager
     2. Sets up the data handler and visualization components
     3. Manages the main processing loop with inter-process communication
     4. Handles data streaming and gap detection through message passing
@@ -83,8 +83,8 @@ def main(handler_class=ReceivedStreamedDataHandler):
     original_playback_data = pd.read_csv(playback_file, sep='\t', header=None)
 
     board_id = BoardIds.CYTON_DAISY_BOARD
-    board_manager = BoardManager(playback_file, board_id)
-    board_manager.get_board_config()
+    board_manager = BoardManager(board_id)
+    board_manager.set_board_shim()
     board_timestamp_channel = board_manager.board_timestamp_channel
     board_timestamp_channel_9 = board_manager.board_shim.get_timestamp_channel(board_id)
     received_streamed_data_handler = handler_class(board_manager, logger)
@@ -96,22 +96,22 @@ def main(handler_class=ReceivedStreamedDataHandler):
         # Main processing loop
         while True:
             # Create and start stream manager
-            stream_manager = StreamManager(playback_file, board_id)
-            stream_manager.start_stream()
+            brainflow_child_process_manager = BrainFlowChildProcessManager(playback_file, board_id)
+            brainflow_child_process_manager.start_stream()
             
             last_good_ts = None
             child_exited_normally = False
             
             # Monitor stream and handle incoming data
-            while stream_manager.is_streaming():
-                message = stream_manager.get_next_message()
+            while brainflow_child_process_manager.is_streaming():
+                message = brainflow_child_process_manager.get_next_message()
                 if message:
                     msg_type, received = message
                     
                     if msg_type == 'start_ts':
                         # Update start timestamp from child
-                        stream_manager.start_first_data_ts = float(received) if received is not None else None
-                        logger.info(f"Updated start_first_data_ts to: {stream_manager.start_first_data_ts}")
+                        brainflow_child_process_manager.start_first_data_ts = float(received) if received is not None else None
+                        logger.info(f"Updated start_first_data_ts to: {brainflow_child_process_manager.start_first_data_ts}")
                         
                     elif msg_type == 'last_ts':
                         # Handle gap detection
@@ -135,9 +135,9 @@ def main(handler_class=ReceivedStreamedDataHandler):
                 time.sleep(0.1)
                 
             # Clean up stream
-            start_first_data_ts = stream_manager.start_first_data_ts  # Store the timestamp before cleanup
-            stream_manager.stop_stream()
-            stream_manager = None  # Prevent double stop in finally
+            start_first_data_ts = brainflow_child_process_manager.start_first_data_ts  # Store the timestamp before cleanup
+            brainflow_child_process_manager.stop_stream()
+            brainflow_child_process_manager = None  # Prevent double stop in finally
             
             # Handle abnormal child exit
             if not child_exited_normally:
@@ -182,10 +182,8 @@ def main(handler_class=ReceivedStreamedDataHandler):
         try:
             if 'received_streamed_data_handler' in locals():
                 received_streamed_data_handler.data_manager.cleanup()
-            if 'board_manager' in locals():
-                board_manager.release()
-            if 'stream_manager' in locals() and stream_manager is not None:
-                stream_manager.stop_stream()  # Clean up multiprocessing streams
+            if 'stream_manager' in locals() and brainflow_child_process_manager is not None:
+                brainflow_child_process_manager.stop_stream()  # Clean up multiprocessing streams
         except Exception as e:
             logger.error(f"Error during cleanup: {str(e)}")
 

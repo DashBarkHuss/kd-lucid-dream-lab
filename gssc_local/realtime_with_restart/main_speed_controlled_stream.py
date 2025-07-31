@@ -83,10 +83,10 @@ def main(handler_class=ReceivedStreamedDataHandler):
     # Initialize board and handler
     board_id = BoardIds.CYTON_DAISY_BOARD  # Keep for consistency with main.py
     # Use SpeedControlledBoardManager with moderate speed for gap testing
-    board_manager = SpeedControlledBoardManager(playback_file, speed_multiplier=10.0)
-    board_manager.get_board_config()     
-    board_timestamp_channel = board_manager.board_timestamp_channel
-    received_streamed_data_handler = handler_class(board_manager, logger)
+    mock_board_manager_speed_control = SpeedControlledBoardManager(playback_file, speed_multiplier=10.0)
+    mock_board_manager_speed_control.set_board_shim()     
+    board_timestamp_channel = mock_board_manager_speed_control.board_timestamp_channel
+    received_streamed_data_handler = handler_class(mock_board_manager_speed_control, logger)
 
     # Get the PyQt application instance from the visualizer
     qt_app = received_streamed_data_handler.data_manager.visualizer.app
@@ -95,7 +95,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
         # Main processing loop
         while True:
             # Create and start stream
-            board_manager.start_stream()
+            mock_board_manager_speed_control.start_stream()
             logger.info("Started speed-controlled board stream")
             
             last_good_ts = None
@@ -105,7 +105,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
             # Monitor stream and handle incoming data
             while True:
                 # Get new data chunk
-                new_data = board_manager.get_new_data()
+                new_data = mock_board_manager_speed_control.get_new_data()
                 
                 if new_data.size > 0:
                     # If this is the first data chunk, set the start timestamp
@@ -130,7 +130,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
                 qt_app.processEvents()
                 time.sleep(0.1)
                 
-            # Clean up stream (no StreamManager to clean up for direct board access)
+            # Clean up stream (no MultiprocessStreamManager to clean up for direct board access)
             # start_first_data_ts already stored as local variable
             
             # Handle processing status (similar to child_exited_normally in main.py)
@@ -167,18 +167,18 @@ def main(handler_class=ReceivedStreamedDataHandler):
             
             # Update the board manager's file path (no need to create new instance like main.py)
             # This ensures we continue from the correct point
-            board_manager.file_path = playback_file
+            mock_board_manager_speed_control.file_path = playback_file
             # Reload the data from the new file
-            board_manager.file_data = pd.read_csv(playback_file, sep='\t', header=None, dtype=float)
-            board_manager.current_position = 0
+            mock_board_manager_speed_control.file_data = pd.read_csv(playback_file, sep='\t', header=None, dtype=float)
+            mock_board_manager_speed_control.current_position = 0
             
             # Reset gap detection state for clean restart
-            board_manager.in_gap_mode = False
-            board_manager.gap_start_real_time = None
-            board_manager.gap_duration_seconds = None
-            board_manager.expected_timestamp = None
+            mock_board_manager_speed_control.in_gap_mode = False
+            mock_board_manager_speed_control.gap_start_real_time = None
+            mock_board_manager_speed_control.gap_duration_seconds = None
+            mock_board_manager_speed_control.expected_timestamp = None
             
-            board_manager.start_stream()  # Reset stream position
+            mock_board_manager_speed_control.start_stream()  # Reset stream position
             
             # No need to recreate handlers - they can reuse the same board manager
 
@@ -190,9 +190,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
         try:
             if 'received_streamed_data_handler' in locals():
                 received_streamed_data_handler.data_manager.cleanup()
-            if 'board_manager' in locals():
-                board_manager.release()
-            # No stream_manager cleanup needed (uses SpeedControlledBoardManager directly)
+            # No multiprocess_stream_manager cleanup needed (uses SpeedControlledBoardManager directly)
         except Exception as e:
             logger.error(f"Error during cleanup: {str(e)}")
 

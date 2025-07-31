@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import matplotlib.pyplot as plt
 from montage import Montage
-from cyton_realtime_round_robin_accurate_time_buffer import Visualizer
+from gssc_local.realtime_with_restart.visualizer import Visualizer
 
 def generate_sample_data(num_channels=16, num_points=3750, sampling_rate=125):
     """Generate sample data for testing

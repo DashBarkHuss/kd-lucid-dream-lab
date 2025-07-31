@@ -7,8 +7,13 @@ from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
 
 logger = logging.getLogger(__name__)
 
-class StreamManager:
-    """Manages the lifecycle of the data streaming process and parent-child communication."""
+class BrainFlowChildProcessManager:
+    """Manages a child process for BrainFlow operations with gap detection and restart capability.
+    
+    This class spawns a dedicated child process to handle BrainFlow streaming operations,
+    providing isolation from the main process. When gaps are detected, the child process
+    exits cleanly and can be restarted. For direct hardware streaming, use BoardManager instead.
+    """
     
     def __init__(self, playback_file: str, board_id: int = BoardIds.CYTON_DAISY_BOARD):
         self.playback_file = playback_file
