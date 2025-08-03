@@ -148,7 +148,7 @@ def transform_data_to_rows(new_data: np.ndarray, logger=None) -> List[List[float
     validate_transformed_rows_not_empty(transformed_rows, logger)
     return transformed_rows
 
-def filter_duplicate_timestamps(new_rows: List[List[float]], timestamp_channel: int, last_saved_timestamp: Optional[float], logger=None) -> Tuple[List[List[float]], int]:
+def filter_previously_seen_timestamps(new_rows: List[List[float]], timestamp_channel: int, last_saved_timestamp: Optional[float], logger=None) -> Tuple[List[List[float]], int]:
     """Filter out rows with timestamps less than or equal to the last saved timestamp.
     
     Args:
@@ -176,6 +176,44 @@ def filter_duplicate_timestamps(new_rows: List[List[float]], timestamp_channel: 
         logger.debug(f"Skipped {duplicate_count} duplicate/overlapping samples from streaming")
         
     return rows_to_add, duplicate_count
+
+
+def filter_duplicate_timestamps_within_batch(data: np.ndarray, timestamp_channel: int, logger=None) -> Tuple[np.ndarray, int]:
+    """Filter out samples with exact duplicate timestamps within a data batch.
+    
+    This function removes samples that have identical timestamps within the same data batch,
+    keeping only the first occurrence of each unique timestamp. This addresses the BrainFlow
+    issue where the same sample data appears multiple times after OpenBCI GUI stream restarts.
+    
+    Args:
+        data (np.ndarray): 2D array where each column is a sample and each row is a channel
+        timestamp_channel (int): Row index of the timestamp channel
+        logger (Optional[logging.Logger]): Logger instance for reporting
+        
+    Returns:
+        Tuple[np.ndarray, int]: Tuple containing:
+            - Filtered data array with only unique timestamps
+            - Number of duplicate samples that were removed
+    """
+    if data.size == 0:
+        return data, 0
+    
+    timestamps = data[timestamp_channel, :]
+    
+    # Find unique timestamps and their first occurrence indices
+    _, unique_indices = np.unique(timestamps, return_index=True)
+    unique_indices = np.sort(unique_indices)  # Maintain original order
+    
+    # Calculate number of duplicates removed
+    duplicate_count = data.shape[1] - len(unique_indices)
+    
+    # Filter data to keep only unique timestamp samples
+    filtered_data = data[:, unique_indices]
+    
+    if logger and duplicate_count > 0:
+        logger.info(f"Filtered out {duplicate_count} exact duplicate timestamps from data batch")
+        
+    return filtered_data, duplicate_count
 
 def process_sleep_stage_data(file_path: Path) -> Optional[pd.DataFrame]:
     """Process and validate sleep stage data from CSV.

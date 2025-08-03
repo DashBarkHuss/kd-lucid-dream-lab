@@ -69,18 +69,18 @@ def main(handler_class=ReceivedStreamedDataHandler):
         handler_class: The data handler class to instantiate (for dependency injection)
     """
     # Initialize playback file and timestamp tracking
-    # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
-    original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
-    # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
-    playback_file = original_data_file
+    # original_data_file_path = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
+    original_data_file_path = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
+    # original_data_file_path = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
+    current_playback_file = original_data_file_path
     
     # Verify input file exists
-    if not os.path.isfile(playback_file):
-        logger.error(f"File not found: {playback_file}")
+    if not os.path.isfile(current_playback_file):
+        logger.error(f"File not found: {current_playback_file}")
         return
 
     # Load the CSV file for offset calculation
-    original_playback_data = pd.read_csv(playback_file, sep='\t', header=None)
+    original_playback_data = pd.read_csv(current_playback_file, sep='\t', header=None)
 
     board_id = BoardIds.CYTON_DAISY_BOARD
     board_manager = BoardManager(board_id)
@@ -96,7 +96,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
         # Main processing loop
         while True:
             # Create and start stream manager
-            brainflow_child_process_manager = BrainFlowChildProcessManager(playback_file, board_id)
+            brainflow_child_process_manager = BrainFlowChildProcessManager(current_playback_file, board_id)
             brainflow_child_process_manager.start_stream()
             
             last_good_ts = None
@@ -158,7 +158,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
                 logger.info(f"Main csv buffer path before final save: {received_streamed_data_handler.data_manager.csv_manager.main_csv_path}")        
                 output_csv_path = received_streamed_data_handler.data_manager.csv_manager.main_csv_path
                 received_streamed_data_handler.data_manager.csv_manager.save_all_and_cleanup(merge_files=True, merge_output_path="merged_data.csv")
-                received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file, output_csv_path)
+                received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file_path, output_csv_path)
                 break
 
             # Create new trimmed file starting from the gap
@@ -167,12 +167,12 @@ def main(handler_class=ReceivedStreamedDataHandler):
             elapsed_from_last_good_ts = original_playback_data.iloc[offset, board_timestamp_channel] - last_good_ts
             logger.info(f"Restarting from: {offset} | Time from start: {format_elapsed_time(elapsed_from_start)} | Time from last good ts: {format_elapsed_time(elapsed_from_last_good_ts)}")
 
-            trimmed_file = os.path.join(workspace_root, f"data/offset_files/offset_{offset}_{os.path.basename(playback_file)}")
-            create_trimmed_csv(playback_file, trimmed_file, offset)
+            trimmed_file = os.path.join(workspace_root, f"data/offset_files/offset_{offset}_{os.path.basename(current_playback_file)}")
+            create_trimmed_csv(current_playback_file, trimmed_file, offset)
 
             # Update playback file for next iteration
-            playback_file = trimmed_file
-            logger.info(f"Updated playback file to: {playback_file}")
+            current_playback_file = trimmed_file
+            logger.info(f"Updated playback file to: {current_playback_file}")
 
     except Exception as e:
         import traceback

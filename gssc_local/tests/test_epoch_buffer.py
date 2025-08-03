@@ -525,6 +525,7 @@ class TestEpochBuffer:
             def __init__(self, board_shim, sampling_rate):
                 self.board_shim = board_shim
                 self.sampling_rate = sampling_rate
+                self.board_timestamp_channel = BoardShim.get_timestamp_channel(master_board_id)
         
         # Create mock logger
         logger = logging.getLogger(__name__)

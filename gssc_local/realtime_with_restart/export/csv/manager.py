@@ -60,7 +60,7 @@ from .utils import (
     create_format_specifiers,
     create_column_names,
     transform_data_to_rows,
-    filter_duplicate_timestamps,
+    filter_previously_seen_timestamps,
     process_sleep_stage_data,
     finalize_merged_data,
     MAIN_DATA_FMT,
@@ -226,7 +226,7 @@ class CSVManager:
             self.main_csv_buffer.extend(new_rows)
         else:
             # For subsequent data, handle duplicates by finding the first new timestamp
-            rows_to_add, duplicate_count = filter_duplicate_timestamps(new_rows, timestamp_channel, self.last_saved_timestamp, self.logger)
+            rows_to_add, duplicate_count = filter_previously_seen_timestamps(new_rows, timestamp_channel, self.last_saved_timestamp, self.logger)
             
             if duplicate_count > 0:
                 self.logger.debug(f"Skipped {duplicate_count} duplicate/overlapping samples from streaming")
@@ -288,7 +288,7 @@ class CSVManager:
 
             # Update last saved timestamp if buffer has data
             self._update_last_saved_timestamp(timestamp_channel)
-                
+
             # Then check if buffer size exceeds limit
             if self._check_main_buffer_overflow():
                 # Save current buffer

@@ -78,3 +78,7 @@ Prep stage:
 4.  Then take the tape and put it corner to corner and do the same smoothing motion on the tape. Repeat for another peice of tape so that you make an x. When you do this on the hair, you need to part the hair as you put the tape on which can take a little bit of practice.
 
 <img src="tape.jpg" alt="tape" style="width: 50%;">
+
+## Attaching the electrodes to Cyton
+
+Always use the bottom row of headers on the cyton and daisy.

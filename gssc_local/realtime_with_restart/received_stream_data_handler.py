@@ -2,6 +2,16 @@ from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.board_manager import BoardManager
 from logging import Logger
 from gssc_local.montage import Montage
+from gssc_local.realtime_with_restart.utils.data_filtering_utils import filter_data
+
+
+
+
+
+
+
+
+
 
 class ReceivedStreamedDataHandler: 
     """Handles processing and storage of incoming EEG data"""
@@ -10,21 +20,33 @@ class ReceivedStreamedDataHandler:
         self.board_manager = board_manager
         self.data_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, Montage.minimal_sleep_montage())
         self.logger = logger
-        self.is_initial = True
 
     def process_board_data(self, board_data):
         """Process incoming data chunk"""
         self.logger.info("\n=== ReceivedStreamedDataHandler.process_board_data ===")
         self.logger.info(f"Received data shape: {board_data.shape}")
         
-        self.sample_count += board_data.shape[1]  # Increment total sample count
+
+        # Get last saved timestamp for filtering
+        last_saved_timestamp = self.data_manager.csv_manager.last_saved_timestamp
+        is_initial = last_saved_timestamp is None
+        
+        # Filter data using original approach
+        filtered_data = filter_data(
+            board_data, 
+            self.board_manager.board_timestamp_channel, 
+            self.logger,
+            last_saved_timestamp=last_saved_timestamp,
+            expected_sample_rate=self.board_manager.sampling_rate
+        )
+        
+        
+        self.sample_count += filtered_data.shape[1]  # Increment total sample count
 
         # Queue data for CSV writing
-        self.data_manager.queue_data_for_csv_write(board_data, self.is_initial)
+        self.data_manager.queue_data_for_csv_write(filtered_data, is_initial)
         # add data to memory for epoch processing
-        self.data_manager.add_to_data_processing_buffer(board_data, self.is_initial)
-
-        self.is_initial = False
+        self.data_manager.add_to_data_processing_buffer(filtered_data, is_initial)
         
         # Calculate which buffer should be processed next
         next_buffer_id = self.data_manager._calculate_next_buffer_id_to_process()
@@ -46,7 +68,6 @@ class ReceivedStreamedDataHandler:
             
 
           
-            before_trim_size = self.data_manager.etd_buffer_manager._get_total_data_points()
             epoch_start_idx_abs, _ = self.data_manager._get_next_epoch_indices(self.data_manager._calculate_next_buffer_id_to_process())
             # Only trim buffer after successful epoch processing
             # This ensures we don't trim data that hasn't been processed yet
@@ -55,7 +76,7 @@ class ReceivedStreamedDataHandler:
             )
 
         # Log processing statistics
-        self.logger.info(f"Collected {self.sample_count} streamed samples")
+        self.logger.info(f"Collected {self.sample_count} processed samples")
 
 
         # Calculate and log basic statistics for monitoring
