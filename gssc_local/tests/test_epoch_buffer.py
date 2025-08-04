@@ -65,7 +65,8 @@ class TestEpochBuffer:
         board.start_stream()
         
         # Create DataManager with the playback board
-        data_manager = DataManager(board, sampling_rate)
+        from gssc_local.montage import Montage
+        data_manager = DataManager(board, sampling_rate, Montage.minimal_sleep_montage())
         
         # Clean up the temp file after the test
         def cleanup():
@@ -553,8 +554,10 @@ class TestEpochBuffer:
             board.start_stream()
             
             # Create mock board manager and handler
+            from gssc_local.montage import Montage
+            test_montage = Montage.minimal_sleep_montage()
             mock_board_manager = MockBoardManager(board, sampling_rate)
-            handler = ReceivedStreamedDataHandler(mock_board_manager, logger)
+            handler = ReceivedStreamedDataHandler(mock_board_manager, logger, test_montage)
             
             # Track metrics
             initial_buffer_size = handler.data_manager.etd_buffer_manager.max_buffer_size

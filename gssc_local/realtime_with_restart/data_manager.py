@@ -45,6 +45,7 @@ class DataManager:
     def __init__(self, board_shim, sampling_rate, montage: Montage = None):
         self.board_shim = board_shim
         self.sampling_rate = sampling_rate
+        self.montage = montage 
         self.seconds_per_epoch = 30
         self.seconds_per_step = 5
         # Buffer configuration
@@ -539,9 +540,32 @@ class DataManager:
         epoch_start_time = timestamp_data[0]  # First timestamp in the epoch
         
         # Get index combinations for EEG and EOG channels
-        eeg_indices = [0, 1, 2]  # EEG channels
-        eog_indices = [3]       # EOG channels
-        index_combinations = self.signal_processor.get_index_combinations(eeg_indices, eog_indices)
+        # 
+        # CHANNEL MAPPING: processed_epoch_data is always 16 channels from physical OpenBCI channels 1-16
+        # Array index = physical_channel - 1 (0-based indexing)
+        # - processed_epoch_data[0] = physical channel 1
+        # - processed_epoch_data[10] = physical channel 11 (R-LEOG) 
+        # - processed_epoch_data[11] = physical channel 12 (L-LEOG)
+        #
+        # The montage type doesn't change this mapping - it only defines which channels are used.
+        
+        channel_types = self.montage.get_channel_types()
+        
+        if all(ch_type == "EOG" for ch_type in channel_types):
+            # EOG-only montage: no EEG channels, use both EOG channels
+            # EOG channels 11, 12 map to array indices 10, 11 (physical_channel - 1)
+            eeg_combo_indices_electrode_channel_mapping = []        # No EEG channels
+            eog_combo_indices_electrode_channel_mapping = [10, 11]  # Physical channels 11(R-LEOG), 12(L-LEOG) → indices 10, 11
+        else:
+            # Default for minimal_sleep_montage and other montages
+            # Physical channels 1-6 map to array indices 0-5, channel 11 maps to index 10
+            eeg_combo_indices_electrode_channel_mapping = [0, 1, 2]  # Physical channels 1(F3), 2(F4), 3(C3) → indices 0, 1, 2
+            eog_combo_indices_electrode_channel_mapping = [10]       # Physical channel 11(R-LEOG) → index 10
+        
+        # Validate that our hardcoded indices match the expected channel types
+        self.montage.validate_channel_indices_combination_types(eeg_combo_indices_electrode_channel_mapping, eog_combo_indices_electrode_channel_mapping)
+        
+        index_combinations = self.signal_processor.get_index_combinations(eeg_combo_indices_electrode_channel_mapping, eog_combo_indices_electrode_channel_mapping)
         
         # Get sleep stage prediction using improved SignalProcessor
         predicted_class, class_probs, new_hidden_states = self.signal_processor.predict_sleep_stage(

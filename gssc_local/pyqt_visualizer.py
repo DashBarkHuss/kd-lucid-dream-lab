@@ -49,8 +49,10 @@ class PyQtVisualizer:
         self.is_counting_down = True  # Flag to track if we're still counting down
         self.headless = headless
         
-        # Use provided montage or create default
-        self.montage = montage if montage is not None else Montage.default_sleep_montage()
+        # Require explicit montage parameter
+        if montage is None:
+            raise ValueError("montage parameter is required - no default montage will be assumed")
+        self.montage = montage
         self.channel_labels = self.montage.get_channel_labels()
         self.channel_types = self.montage.get_channel_types()
         self.filter_ranges = self.montage.get_filter_ranges()

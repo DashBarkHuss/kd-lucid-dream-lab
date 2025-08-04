@@ -352,7 +352,8 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         self.mock.set_board_shim()
         
         # Create DataManager
-        data_manager = DataManager(self.mock.board_shim, self.sampling_rate)
+        from gssc_local.montage import Montage
+        data_manager = DataManager(self.mock.board_shim, self.sampling_rate, Montage.minimal_sleep_montage())
         
         # Set up CSV path BEFORE processing any data (following CSV manager test pattern)
         output_file = 'test_output.csv'

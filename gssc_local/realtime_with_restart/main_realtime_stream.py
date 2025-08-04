@@ -37,6 +37,7 @@ sys.path.append(workspace_root)
 # Now use absolute imports
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 from gssc_local.realtime_with_restart.utils.logging_utils import setup_colored_logger
+from gssc_local.montage import Montage
 
 import time
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
@@ -111,7 +112,7 @@ class StreamingBoardManager:
             self.board_shim.release_session()
 
 
-def main(handler_class=ReceivedStreamedDataHandler):
+def main(handler_class=ReceivedStreamedDataHandler, montage=None):
     """Main function that manages the real-time data acquisition and processing.
     
     This function:
@@ -128,6 +129,8 @@ def main(handler_class=ReceivedStreamedDataHandler):
     
     Args:
         handler_class: The data handler class to instantiate (for dependency injection)
+        montage: Montage configuration to use
+
     """
     logger.info("Starting real-time OpenBCI stream processor")
     
@@ -135,7 +138,9 @@ def main(handler_class=ReceivedStreamedDataHandler):
     streaming_board_manager = StreamingBoardManager()
     streaming_board_manager.set_board_shim()
     board_timestamp_channel = streaming_board_manager.board_timestamp_channel
-    received_streamed_data_handler = handler_class(streaming_board_manager, logger)
+    
+    # Create data handler with optional montage configuration
+    received_streamed_data_handler = handler_class(streaming_board_manager, logger, montage)
 
     # Get the PyQt application instance from the visualizer
     qt_app = received_streamed_data_handler.data_manager.visualizer.app
@@ -210,4 +215,4 @@ def main(handler_class=ReceivedStreamedDataHandler):
 
 
 if __name__ == "__main__":
-    main()
+    main(montage=Montage.eog_only_montage())

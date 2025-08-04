@@ -15,10 +15,10 @@ from gssc_local.realtime_with_restart.utils.data_filtering_utils import filter_d
 
 class ReceivedStreamedDataHandler: 
     """Handles processing and storage of incoming EEG data"""
-    def __init__(self, board_manager: BoardManager, logger: Logger):
+    def __init__(self, board_manager: BoardManager, logger: Logger, montage: Montage = None):
         self.sample_count = 0  # Total number of samples processed
         self.board_manager = board_manager
-        self.data_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, Montage.minimal_sleep_montage())
+        self.data_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, montage)
         self.logger = logger
 
     def process_board_data(self, board_data):
