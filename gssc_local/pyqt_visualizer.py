@@ -239,8 +239,12 @@ class PyQtVisualizer:
         # Create time axis
         time_axis = np.arange(epoch_data.shape[1]) / sampling_rate + time_offset
 
+        # Extract only the channels defined in the montage from the full epoch_data
+        electrode_indices = self.montage.get_electrode_channel_indices()
+        selected_epoch_data = epoch_data[electrode_indices]
+
         # Update each channel's plot
-        for i, (data, plot, curve) in enumerate(zip(epoch_data, self.plots, self.curves)):
+        for i, (data, plot, curve) in enumerate(zip(selected_epoch_data, self.plots, self.curves)):
             # Update curve data
             curve.setData(time_axis, data)
             

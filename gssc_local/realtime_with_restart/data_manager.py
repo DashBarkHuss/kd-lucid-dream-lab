@@ -487,10 +487,25 @@ class DataManager:
 
         if has_gap:
             # Handle the gap
-            self.handle_gap(
-                prev_timestamp=self.etd_buffer_manager._get_timestamps()[epoch_start_idx_abs-1],
-                gap_size=gap_size, buffer_id=buffer_id
-            )
+            try:
+                prev_timestamp = self.etd_buffer_manager._get_timestamps()[epoch_start_idx_abs-1]
+                self.handle_gap(
+                    prev_timestamp=prev_timestamp,
+                    gap_size=gap_size, buffer_id=buffer_id
+                )
+            except IndexError as e: #added due to myterious error we saw previously when straming data
+                timestamps = self.etd_buffer_manager._get_timestamps()
+                self.logger.error(f"IndexError in gap handling - Debug info:")
+                self.logger.error(f"  - epoch_start_idx_abs: {epoch_start_idx_abs}")
+                self.logger.error(f"  - epoch_end_idx_abs: {epoch_end_idx_abs}")
+                self.logger.error(f"  - buffer_id: {buffer_id}")
+                self.logger.error(f"  - gap_size: {gap_size}")
+                self.logger.error(f"  - timestamps length: {len(timestamps)}")
+                self.logger.error(f"  - trying to access index: {epoch_start_idx_abs-1}")
+                self.logger.error(f"  - timestamps array: {timestamps[:10] if len(timestamps) > 0 else 'EMPTY'}")
+                self.logger.error(f"  - buffer offsets: {[self._get_data_point_delay_for_buffer(i) for i in range(6)]}")
+                self.logger.error(f"  - total ETD buffer size: {len(self.etd_buffer_manager.get_buffer_data())}")
+                raise e  # Re-raise to maintain original behavior
        
         # Update buffer status
         self.last_processed_epoch_per_buffer[buffer_id] = (epoch_start_idx_abs, epoch_end_idx_abs)
@@ -527,9 +542,12 @@ class DataManager:
         end_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(end_idx_abs, to_etd=True)
         
         # Extract EXACTLY points_per_epoch data points from the correct slice
+        # Note: We assume the timestamp channel is always the last channel in ETD buffer
+        # Use sequential 0-based indexing for electrode channels (excluding timestamp)
+        num_electrode_channels = len(self.etd_buffer_manager.electrode_and_timestamp_data) - 1
         epoch_data = np.array([
-            self.etd_buffer_manager.electrode_and_timestamp_data[channel][start_idx_rel:end_idx_rel]
-            for channel in self.electrode_channels
+            self.etd_buffer_manager.electrode_and_timestamp_data[i][start_idx_rel:end_idx_rel]
+            for i in range(num_electrode_channels)
         ])
         
         # Verify we have exactly the right number of points

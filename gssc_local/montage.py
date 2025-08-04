@@ -184,6 +184,59 @@ class Montage:
         
         return montage
     
+    @staticmethod
+    def all_channels_montage() -> 'Montage':
+        """Create a montage that displays all 16 channels from the Cyton+Daisy board.
+        
+        This montage includes all channels 1-16 for debugging and data exploration.
+        Channel types are set based on typical OpenBCI Cyton+Daisy configuration.
+        
+        Returns:
+            Montage: A montage with all 16 channels
+        """
+        montage = Montage()
+        
+        # Add all 16 channels with appropriate labels and types
+        all_channels = [
+            (1, "CH1", "EEG"),
+            (2, "CH2", "EEG"), 
+            (3, "CH3", "EEG"),
+            (4, "CH4", "EEG"),
+            (5, "CH5", "EEG"),
+            (6, "CH6", "EEG"),
+            (7, "CH7", "EEG"),
+            (8, "CH8", "EEG"),
+            (9, "CH9", "EOG"),
+            (10, "CH10", "EOG"),
+            (11, "CH11", "EOG"),
+            (12, "CH12", "EOG"),
+            (13, "CH13", "EMG"),
+            (14, "CH14", "EMG"),
+            (15, "CH15", "OTHER"),
+            (16, "CH16", "OTHER")
+        ]
+        
+        for channel_number, label, channel_type in all_channels:
+            # Use appropriate board designation
+            board = "CYTON_DAISY" if channel_number <= 8 else "DAISY"
+            
+            # Set filter range based on channel type
+            if channel_type == "EMG":
+                filter_range = (10, 100)
+            else:
+                filter_range = (0.1, 100)
+            
+            montage.add_channel(channel_number, ChannelConfig(
+                label=label,
+                location=f"Channel {channel_number}",
+                filter_range=filter_range,
+                channel_type=channel_type,
+                board=board,
+                channel_number=channel_number
+            ))
+        
+        return montage
+    
     def get_channel_labels(self) -> List[str]:
         """Get list of channel labels in order"""
         return [self.channels[i].label for i in sorted(self.channels.keys())]
@@ -199,6 +252,22 @@ class Montage:
     def get_channel_boards(self) -> List[str]:
         """Get list of boards for each channel in order"""
         return [self.channels[i].board for i in sorted(self.channels.keys())]
+    
+    def get_electrode_channel_indices(self) -> List[int]:
+        """Get 0-based electrode indices for extracting montage channels from epoch_data.
+        
+        This method returns the 0-based indices needed to extract the correct channels
+        from the full epoch_data array (which contains all 16 board channels).
+        
+        For example:
+        - EOG-only montage (channels 11, 12) returns [10, 11]
+        - Minimal montage (channels 1,2,3,4,5,6,11,13,14) returns [0,1,2,3,4,5,10,12,13]
+        
+        Returns:
+            List[int]: 0-based electrode indices to extract from epoch_data array
+        """
+        sorted_channel_numbers = sorted(self.channels.keys())
+        return [ch_num - 1 for ch_num in sorted_channel_numbers]
     
     def convert_electrode_indices_to_montage_indices(self, electrode_indices: List[int]) -> List[int]:
         """Convert electrode channel mapping indices to montage indices.
