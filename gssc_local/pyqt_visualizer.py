@@ -2,9 +2,18 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
 import sys, os
+import logging
+from scipy.signal import butter, filtfilt, iirnotch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from gssc_local.montage import Montage
+
+# Set up logger
+logger = logging.getLogger(__name__)
+
+class FilterError(Exception):
+    """Raised when filtering operations fail"""
+    pass
 
 class PyQtVisualizer:
     """Handles visualization of polysomnograph data and sleep stages using PyQtGraph"""
@@ -55,7 +64,6 @@ class PyQtVisualizer:
         self.montage = montage
         self.channel_labels = self.montage.get_channel_labels()
         self.channel_types = self.montage.get_channel_types()
-        self.filter_ranges = self.montage.get_filter_ranges()
         
         # Get channel information from board if available
         if board_shim is not None:
@@ -74,7 +82,7 @@ class PyQtVisualizer:
         if not self.headless:
             # Create main window
             self.win = QtWidgets.QMainWindow()
-            self.win.setWindowTitle('Polysomnograph')
+            self.win.setWindowTitle('Polysomnograph - Filters: ON')  # Initial title with filter status
             # Increase height to ensure all channels have enough space
             # 16 channels * 100px per channel + some margin for title and spacing
             self.win.resize(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
@@ -98,6 +106,12 @@ class PyQtVisualizer:
             
             # Set initial loading message
             self.title_label.setText(f"Waiting {self.seconds_per_epoch} seconds for initial data...")
+            
+            # Create filter control checkbox
+            self.filter_checkbox = QtWidgets.QCheckBox("Apply Clinical Filters (Northwestern Standard)")
+            self.filter_checkbox.setChecked(True)  # Default to ON
+            self.filter_checkbox.toggled.connect(self.toggle_visual_filters)
+            self.layout.addWidget(self.filter_checkbox)
             
             # Create GraphicsLayoutWidget for plots
             self.plot_widget = pg.GraphicsLayoutWidget()
@@ -128,6 +142,47 @@ class PyQtVisualizer:
         self.countdown_timer = QtCore.QTimer()
         self.countdown_timer.timeout.connect(self._update_countdown)
         self.countdown_timer.start(1000)  # Update every second
+        
+        # Visual filtering configuration - initialized based on GUI checkbox
+        if not self.headless and hasattr(self, 'filter_checkbox'):
+            self.visual_filter_enabled = self.filter_checkbox.isChecked()
+        else:
+            self.visual_filter_enabled = True  # Default to ON for headless mode
+        
+        # Cache for immediate filter toggle response
+        self._cached_epoch_data = None
+        self._cached_sampling_rate = None
+        self._cached_sleep_stage = None
+        self._cached_time_offset = None
+        self._cached_epoch_start_time = None
+        
+        # Northwestern clinical filter standards
+        self.northwestern_bandpass_filters = {
+            # EEG Channels (0.3-100 Hz)
+            1: (0.3, 100.0),   # F3 - Frontal Left
+            2: (0.3, 100.0),   # F4 - Frontal Right  
+            3: (0.3, 100.0),   # C3 - Central Left
+            4: (0.3, 100.0),   # C4 - Central Right
+            5: (0.3, 100.0),   # O1 - Occipital Left
+            6: (0.3, 100.0),   # O2 - Occipital Right
+            7: (0.3, 100.0),   # T3/T5 - Temporal Left
+            8: (0.3, 100.0),   # T4/T6 - Temporal Right
+            
+            # EOG Channels (0.3-100 Hz)
+            9: (0.3, 100.0),    # ROC - Right Outer Canthus
+            10: (0.3, 100.0),   # LOC - Left Outer Canthus
+            11: (0.3, 100.0),   # R-EOG - Right EOG
+            12: (0.3, 100.0),   # L-EOG - Left EOG
+            
+            # EMG Channels (10-100 Hz)  
+            13: (10.0, 100.0),  # EMG1 - Chin EMG
+            14: (10.0, 100.0),  # EMG2 - Leg EMG
+            
+            # Respiratory/Other Channels
+            15: (0.3, 50.0),    # Airflow/Respiratory (lower high-cutoff)
+            16: (10.0, 100.0)   # Snoring/Audio (higher low-cutoff)
+        }
+        self.northwestern_notch_filters = [50.0, 60.0]
         
     def _init_polysomnograph(self):
         """Initialize the polysomnograph figure and plots"""
@@ -212,9 +267,104 @@ class PyQtVisualizer:
         elif self.countdown_remaining == 0:
             self.is_counting_down = False
             self.countdown_timer.stop()
+    
+    def toggle_visual_filters(self, checked):
+        """Handle checkbox state changes for visual filtering"""
+        self.visual_filter_enabled = checked
+        filter_status = "ON" if checked else "OFF"
+        logger.info(f"Visual filtering toggled: {filter_status}")
+        
+        # Update window title to show filter status if not in headless mode
+        if not self.headless and hasattr(self, 'win'):
+            base_title = 'Polysomnograph'
+            filter_suffix = f' - Filters: {filter_status}'
+            self.win.setWindowTitle(base_title + filter_suffix)
+        
+        # Immediately replot with current data if available
+        if self._cached_epoch_data is not None:
+            self.plot_polysomnograph(
+                epoch_data=self._cached_epoch_data,
+                sampling_rate=self._cached_sampling_rate,
+                sleep_stage=self._cached_sleep_stage,
+                time_offset=self._cached_time_offset,
+                epoch_start_time=self._cached_epoch_start_time
+            )
+    
+    def apply_bandpass_filter(self, data, low_freq, high_freq, sampling_rate):
+        """Apply 4th-order Butterworth bandpass filter with zero-phase filtering"""
+        nyquist = sampling_rate / 2.0
+        
+        # Ensure frequencies are within valid range (0 < freq < nyquist)
+        low_freq = max(0.1, min(low_freq, nyquist * 0.95))
+        high_freq = max(low_freq + 0.1, min(high_freq, nyquist * 0.95))
+        
+        low_norm = low_freq / nyquist  
+        high_norm = high_freq / nyquist
+        
+        # Design 4th-order Butterworth filter
+        b, a = butter(4, [low_norm, high_norm], btype='band')
+        
+        # Apply zero-phase filtering
+        filtered_data = filtfilt(b, a, data)
+        return filtered_data
+
+    def apply_notch_filter(self, data, notch_freq, sampling_rate, Q=30):
+        """Apply IIR notch filter for power line noise removal"""
+        nyquist = sampling_rate / 2.0
+        
+        # Skip notch filter if frequency is too close to Nyquist
+        if notch_freq >= nyquist * 0.9:
+            logger.warning(f"Skipping notch filter at {notch_freq} Hz (too close to Nyquist {nyquist} Hz)")
+            return data
+            
+        # Design notch filter
+        b, a = iirnotch(notch_freq, Q, sampling_rate)
+        
+        # Apply zero-phase filtering  
+        filtered_data = filtfilt(b, a, data)
+        return filtered_data
+
+    def apply_complete_filtering(self, epoch_data, channel_numbers, sampling_rate):
+        """Apply complete Northwestern filtering pipeline to selected channels
+        
+        Args:
+            epoch_data: Array of shape (n_channels, n_samples) containing data for selected channels
+            channel_numbers: List of actual channel numbers (1-based) corresponding to each row in epoch_data
+            sampling_rate: Sampling rate in Hz
+        """
+        filtered_data = epoch_data.copy()
+        
+        for channel_idx, channel_num in enumerate(channel_numbers):
+            
+            if channel_num in self.northwestern_bandpass_filters:
+                try:
+                    # Step 1: Apply channel-specific bandpass filter
+                    low_freq, high_freq = self.northwestern_bandpass_filters[channel_num]
+                    filtered_data[channel_idx] = self.apply_bandpass_filter(
+                        filtered_data[channel_idx], low_freq, high_freq, sampling_rate
+                    )
+                    
+                    # Step 2: Apply notch filters for power line noise
+                    for notch_freq in self.northwestern_notch_filters:
+                        filtered_data[channel_idx] = self.apply_notch_filter(
+                            filtered_data[channel_idx], notch_freq, sampling_rate
+                        )
+                        
+                except Exception as e:
+                    logger.error(f"Filter failed on channel {channel_num} ({low_freq}-{high_freq} Hz): {e}")
+                    raise FilterError(f"Channel {channel_num} filtering failed. Check sampling rate and data quality.")
+        
+        return filtered_data
             
     def plot_polysomnograph(self, epoch_data, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
         """Update polysomnograph plot with new data"""
+        # Cache the current display parameters for immediate filter toggling
+        self._cached_epoch_data = epoch_data.copy()
+        self._cached_sampling_rate = sampling_rate
+        self._cached_sleep_stage = sleep_stage
+        self._cached_time_offset = time_offset
+        self._cached_epoch_start_time = epoch_start_time
+        
         # Stop countdown if it's still running
         if self.is_counting_down:
             self.is_counting_down = False
@@ -243,8 +393,16 @@ class PyQtVisualizer:
         electrode_indices = self.montage.get_electrode_channel_indices()
         selected_epoch_data = epoch_data[electrode_indices]
 
+        # Apply Northwestern filtering if enabled (for display only)
+        if hasattr(self, 'visual_filter_enabled') and self.visual_filter_enabled:
+            # Get actual channel numbers for proper filter mapping
+            channel_numbers = sorted(self.montage.channels.keys())
+            display_data = self.apply_complete_filtering(selected_epoch_data, channel_numbers, sampling_rate)
+        else:
+            display_data = selected_epoch_data
+
         # Update each channel's plot
-        for i, (data, plot, curve) in enumerate(zip(selected_epoch_data, self.plots, self.curves)):
+        for data, plot, curve in zip(display_data, self.plots, self.curves):
             # Update curve data
             curve.setData(time_axis, data)
             

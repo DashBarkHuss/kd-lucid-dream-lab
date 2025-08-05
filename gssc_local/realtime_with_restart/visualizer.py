@@ -18,7 +18,6 @@ class Visualizer:
         self.montage = montage if montage is not None else Montage.default_sleep_montage()
         self.channel_labels = self.montage.get_channel_labels()
         self.channel_types = self.montage.get_channel_types()
-        self.filter_ranges = self.montage.get_filter_ranges()
         
         # Get channel information from board if available
         if board_shim is not None:

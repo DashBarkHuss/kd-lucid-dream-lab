@@ -166,8 +166,8 @@ def main(handler_class=ReceivedStreamedDataHandler, montage=None):
             if new_data.size > 0:
 
 
-                #  all inter batch filtering like filer_old_timestamps, needs to happen where the last saved timestamp is in scope               
-                # Use filtered and reordered data for processing
+                #  all inter batch data sanitization like removing old timestamps, needs to happen where the last saved timestamp is in scope               
+                # Use sanitized and reordered data for processing
                 # Reset no-data counter
                 no_data_count = 0
                 

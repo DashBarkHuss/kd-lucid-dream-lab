@@ -5,7 +5,6 @@ from typing import List, Dict, Optional
 class ChannelConfig:
     label: str
     location: str
-    filter_range: tuple[float, float]
     channel_type: str  # 'EEG', 'EOG', 'EMG', 'OTHER'
     board: str  # 'CYTON_DAISY' or 'CYTON' or 'GANGLION'
     channel_number: int  # 1-16
@@ -42,7 +41,6 @@ class Montage:
             montage.add_channel(i, ChannelConfig(
                 label=label,
                 location=location,
-                filter_range=(0.1, 100),
                 channel_type="EEG",
                 board="CYTON_DAISY",
                 channel_number=i
@@ -60,7 +58,6 @@ class Montage:
             montage.add_channel(i, ChannelConfig(
                 label=label,
                 location=description,
-                filter_range=(0.1, 100),
                 channel_type="EOG",
                 board="DAISY",
                 channel_number=i
@@ -74,11 +71,10 @@ class Montage:
             ("Snoring", "Snoring", "OTHER", (10, 100))
         ]
         
-        for i, (label, description, ch_type, filter_range) in enumerate(other_channels, 13):
+        for i, (label, description, ch_type) in enumerate([("EMG1", "Chin EMG", "EMG"), ("EMG2", "Leg EMG", "EMG"), ("Airflow", "Nasal Airflow", "OTHER"), ("Snoring", "Snoring", "OTHER")], 13):
             montage.add_channel(i, ChannelConfig(
                 label=label,
                 location=description,
-                filter_range=filter_range,
                 channel_type=ch_type,
                 board="DAISY",
                 channel_number=i
@@ -114,7 +110,6 @@ class Montage:
             montage.add_channel(channel_number, ChannelConfig(
                 label=label,
                 location=location,
-                filter_range=(0.1, 100),
                 channel_type="EEG",
                 board="CYTON_DAISY",
                 channel_number=channel_number
@@ -130,7 +125,6 @@ class Montage:
             montage.add_channel(channel_number, ChannelConfig(
                 label=label,
                 location=location,
-                filter_range=(0.1, 100),
                 channel_type="EOG",
                 board="DAISY",
                 channel_number=channel_number
@@ -146,7 +140,6 @@ class Montage:
             montage.add_channel(channel_number, ChannelConfig(
                 label=label,
                 location=location,
-                filter_range=(10, 100),  # Higher low cutoff for EMG
                 channel_type="EMG",
                 board="DAISY",
                 channel_number=channel_number
@@ -176,7 +169,6 @@ class Montage:
             montage.add_channel(channel_number, ChannelConfig(
                 label=label,
                 location=location,
-                filter_range=(0.1, 100),
                 channel_type="EOG",
                 board="DAISY",
                 channel_number=channel_number
@@ -220,16 +212,9 @@ class Montage:
             # Use appropriate board designation
             board = "CYTON_DAISY" if channel_number <= 8 else "DAISY"
             
-            # Set filter range based on channel type
-            if channel_type == "EMG":
-                filter_range = (10, 100)
-            else:
-                filter_range = (0.1, 100)
-            
             montage.add_channel(channel_number, ChannelConfig(
                 label=label,
                 location=f"Channel {channel_number}",
-                filter_range=filter_range,
                 channel_type=channel_type,
                 board=board,
                 channel_number=channel_number
@@ -244,10 +229,6 @@ class Montage:
     def get_channel_types(self) -> List[str]:
         """Get list of channel types in order"""
         return [self.channels[i].channel_type for i in sorted(self.channels.keys())]
-    
-    def get_filter_ranges(self) -> List[tuple[float, float]]:
-        """Get list of filter ranges in order"""
-        return [self.channels[i].filter_range for i in sorted(self.channels.keys())]
     
     def get_channel_boards(self) -> List[str]:
         """Get list of boards for each channel in order"""

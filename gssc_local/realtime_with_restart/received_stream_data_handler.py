@@ -2,7 +2,7 @@ from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.board_manager import BoardManager
 from logging import Logger
 from gssc_local.montage import Montage
-from gssc_local.realtime_with_restart.utils.data_filtering_utils import filter_data
+from gssc_local.realtime_with_restart.utils.data_filtering_utils import sanitize_data
 
 
 
@@ -31,8 +31,8 @@ class ReceivedStreamedDataHandler:
         last_saved_timestamp = self.data_manager.csv_manager.last_saved_timestamp
         is_initial = last_saved_timestamp is None
         
-        # Filter data using original approach
-        filtered_data = filter_data(
+        # Sanitize raw data to remove duplicates and fix ordering issues
+        filtered_data = sanitize_data(
             board_data, 
             self.board_manager.board_timestamp_channel, 
             self.logger,

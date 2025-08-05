@@ -1,7 +1,7 @@
 """
-Data filtering utilities for early-stage pipeline processing.
+Data sanitization utilities for early-stage pipeline processing.
 
-This module provides comprehensive filtering and validation for raw board data
+This module provides comprehensive sanitization and validation for raw board data
 before it enters the main processing pipeline. Functions include:
 - Duplicate timestamp filtering and removal
 - Out-of-order sample reordering  
@@ -16,8 +16,8 @@ from gssc_local.realtime_with_restart.utils.timestamp_utils import reorder_sampl
 from gssc_local.realtime_with_restart.export.csv.validation import find_duplicates
 
 
-def filter_data(board_data, board_timestamp_channel, logger, last_saved_timestamp=None, expected_sample_rate=None):
-    """Filter data before processing"""
+def sanitize_data(board_data, board_timestamp_channel, logger, last_saved_timestamp=None, expected_sample_rate=None):
+    """Sanitize raw data by removing duplicates, reordering samples, and validating integrity before processing"""
     filtered_data = board_data
     
     if last_saved_timestamp is not None:

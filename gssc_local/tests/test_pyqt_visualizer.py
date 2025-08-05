@@ -109,18 +109,12 @@ def test_real_data():
     # Create montage - using minimal montage without temporal and top/bottom EOG
     montage = Montage.minimal_sleep_montage()
     
-    # Get the montage channel indices in order
-    montage_channels = sorted(montage.channels.keys())
-    
-    # Map montage channels to data file columns
-    selected_columns = [ch for ch in montage_channels]
-    
-    # Select the data for the epoch
+    # Select the data for the epoch (first 16 channels to match OpenBCI layout)
     start_idx = points_per_epoch  # Start at 3750 (30 seconds in)
     end_idx = 2 * points_per_epoch  # End at 7500 (60 seconds in)
     
-    # Get the epoch data
-    epoch_data = df.iloc[start_idx:end_idx, selected_columns].values.T
+    # Get the epoch data for all 16 channels (assuming CSV has at least 16 channels)
+    epoch_data = df.iloc[start_idx:end_idx, 0:16].values.T
     
     # Create visualizer with headless mode in CI
     visualizer = PyQtVisualizer(
