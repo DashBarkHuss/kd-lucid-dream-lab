@@ -21,10 +21,10 @@ class ReceivedStreamedDataHandler:
         self.data_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, montage)
         self.logger = logger
 
-    def process_board_data(self, board_data):
+    def process_board_data_chunk(self, raw_board_data_chunk):
         """Process incoming data chunk"""
         self.logger.info("\n=== ReceivedStreamedDataHandler.process_board_data ===")
-        self.logger.info(f"Received data shape: {board_data.shape}")
+        self.logger.info(f"Received data shape: {raw_board_data_chunk.shape}")
         
 
         # Get last saved timestamp for filtering
@@ -32,8 +32,8 @@ class ReceivedStreamedDataHandler:
         is_initial = last_saved_timestamp is None
         
         # Sanitize raw data to remove duplicates and fix ordering issues
-        filtered_data = sanitize_data(
-            board_data, 
+        sanitized_board_data_chunk = sanitize_data(
+            raw_board_data_chunk, 
             self.board_manager.board_timestamp_channel, 
             self.logger,
             last_saved_timestamp=last_saved_timestamp,
@@ -41,19 +41,30 @@ class ReceivedStreamedDataHandler:
         )
         
         
-        self.sample_count += filtered_data.shape[1]  # Increment total sample count
+        self.sample_count +=  sanitized_board_data_chunk.shape[1]  # Increment total sample count
 
         # Queue data for CSV writing
-        self.data_manager.queue_data_for_csv_write(filtered_data, is_initial)
-        # add data to memory for epoch processing
-        self.data_manager.add_to_data_processing_buffer(filtered_data, is_initial)
+        self.data_manager.queue_data_for_csv_write(sanitized_board_data_chunk, is_initial)
+    
+    
+       
+        # Validate data before adding to buffer
+        if not self.data_manager.validate_data(sanitized_board_data_chunk):
+            self.logger.error("Data validation failed, skipping epoch processing")
+            return
+            
+        # add data directly to ETD buffer
+        self.data_manager.etd_buffer_manager.select_channel_data_and_add(sanitized_board_data_chunk)
         
         # Calculate which buffer should be processed next
         next_buffer_id = self.data_manager._calculate_next_buffer_id_to_process()
         self.logger.info(f"Next buffer ID to process: {next_buffer_id}")
 
         # Check if we CAN process an epoch (have enough data + right timing)
-        can_process, reason, epoch_start_idx, epoch_end_idx = self.data_manager.next_available_epoch_on_round_robin_buffer(next_buffer_id)
+        can_process, reason, epoch_start_idx_abs, epoch_end_idx_abs = self.data_manager.next_available_epoch_on_round_robin_buffer(next_buffer_id)
+        # log epoch start and end indices
+        self.logger.info(f"Epoch start index: {epoch_start_idx_abs}")
+        self.logger.info(f"Epoch end index: {epoch_end_idx_abs}")
         self.logger.info(f"Can process epoch: {can_process}")
         if not can_process:
             self.logger.info(f"Reason: {reason}")
@@ -63,8 +74,8 @@ class ReceivedStreamedDataHandler:
 
             # Process the epoch
             self.data_manager.manage_epoch(buffer_id=next_buffer_id, 
-                                    epoch_start_idx_abs=epoch_start_idx, 
-                                    epoch_end_idx_abs=epoch_end_idx)
+                                    epoch_start_idx_abs=epoch_start_idx_abs, 
+                                    epoch_end_idx_abs=epoch_end_idx_abs)
             
 
           

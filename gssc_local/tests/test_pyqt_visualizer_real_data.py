@@ -30,18 +30,15 @@ def test_pyqt_visualizer_with_real_data():
     # Create montage - using minimal montage without temporal and top/bottom EOG
     montage = Montage.minimal_sleep_montage()
     
-    # Get the montage channel indices in order
-    montage_channels = sorted(montage.channels.keys())
-    
-    # Map montage channels to data file columns
-    selected_columns = [ch for ch in montage_channels]
+    # Select electrode channels (columns 0-15 for 16 electrode channels)
+    electrode_columns = list(range(16))  # Columns 0-15 for electrode channels
     
     # Select the data for the epoch
     start_idx = points_per_epoch  # Start at 3750 (30 seconds in)
     end_idx = 2 * points_per_epoch  # End at 7500 (60 seconds in)
     
-    # Get the epoch data
-    epoch_data = df.iloc[start_idx:end_idx, selected_columns].values.T
+    # Get the epoch data with all electrode channels
+    epoch_data = df.iloc[start_idx:end_idx, electrode_columns].values.T
     
     # Create visualizer with headless mode in CI
     visualizer = PyQtVisualizer(
@@ -53,7 +50,7 @@ def test_pyqt_visualizer_with_real_data():
     
     # Plot the data
     visualizer.plot_polysomnograph(
-        epoch_data=epoch_data,
+        epoch_data_all_electrode_channels_on_board=epoch_data,
         sampling_rate=sampling_rate,
         sleep_stage=0,  # Wake stage
         time_offset=0,

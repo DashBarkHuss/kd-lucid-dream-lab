@@ -369,7 +369,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         print(f"[DEBUG] Current position after initial data: {self.mock.current_position}")
         
         if initial_data.size > 0:
-            data_manager.add_to_data_processing_buffer(initial_data, is_initial=True)
+            data_manager.etd_buffer_manager.select_channel_data_and_add(initial_data)
             data_manager.queue_data_for_csv_write(initial_data, is_initial=True)
             print(f"[DEBUG] Queued initial data with shape: {initial_data.shape} to CSV")
             print(f"[DEBUG] CSV buffer length after initial: {len(data_manager.csv_manager.main_csv_buffer)}")
@@ -383,7 +383,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
             if data.size == 0:
                 break
             print(f"[DEBUG] Got new data chunk with shape: {data.shape}")
-            data_manager.add_to_data_processing_buffer(data)
+            data_manager.etd_buffer_manager.select_channel_data_and_add(data)
             data_manager.queue_data_for_csv_write(data)
             total_samples += data.shape[1]
             print(f"[DEBUG] Total samples processed: {total_samples}")

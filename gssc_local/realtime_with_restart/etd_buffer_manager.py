@@ -257,8 +257,8 @@ class ETDBufferManager:
         else:
             return index + self.offset
 
-    def add_data(self, new_data):
-        """Add new data to the buffer (expects shape: (n_channels, n_samples)).
+    def select_channel_data_and_add(self, board_data_chunk):
+        """Add data from electrode_and_timestamp_channels channels to the buffer (expects shape: (n_channels, n_samples)).
         
         Args:
             new_data: Array of shape (n_channels, n_samples) containing the data to add
@@ -266,19 +266,20 @@ class ETDBufferManager:
                 - Each column represents a time point
                 - Example: For 8 channels and 1000 samples: shape (8, 1000)
                 - This is the raw data format from the board
+                - Only channels specified in electrode_and_timestamp_channels will be stored
         """
         # Validate data shape: must be (n_channels, n_samples) BrainFlow's native format
-        if new_data.shape[0] < len(self.electrode_and_timestamp_channels):
+        if board_data_chunk.shape[0] < len(self.electrode_and_timestamp_channels):
             raise ValueError(
-                f"Input data has {new_data.shape[0]} channels but we need {len(self.electrode_and_timestamp_channels)} "
+                f"Input data has {board_data_chunk.shape[0]} channels but we need {len(self.electrode_and_timestamp_channels)} "
                 f"channels to select from. Expected data in (n_channels, n_samples) format with at least "
-                f"{len(self.electrode_and_timestamp_channels)} channels, got shape {new_data.shape}"
+                f"{len(self.electrode_and_timestamp_channels)} channels, got shape {board_data_chunk.shape}"
             )
         
         # Only store channels we want in the correct order
         for i, channel in enumerate(self.electrode_and_timestamp_channels):
-            self.electrode_and_timestamp_data[i].extend(new_data[channel].tolist() if hasattr(new_data[channel], 'tolist') else new_data[channel])
+            self.electrode_and_timestamp_data[i].extend(board_data_chunk[channel].tolist() if hasattr(board_data_chunk[channel], 'tolist') else board_data_chunk[channel])
                 
         # Update total streamed samples using the dedicated method
-        self.update_total_streamed_samples(new_data) 
+        self.update_total_streamed_samples(board_data_chunk) 
 

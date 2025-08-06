@@ -212,7 +212,10 @@ class TestRealtimeStream(unittest.TestCase):
         # Mock DataManager
         self.mock_data_manager = Mock(spec=DataManager)
         self.mock_data_manager.queue_data_for_csv_write = Mock()
-        self.mock_data_manager.add_to_data_processing_buffer.return_value = True
+        # Mock ETD buffer manager
+        self.mock_etd_buffer = Mock()
+        self.mock_etd_buffer.select_channel_data_and_add = Mock()
+        self.mock_data_manager.etd_buffer_manager = self.mock_etd_buffer
         self.mock_data_manager.save_new_data = Mock()
         self.mock_data_manager._calculate_next_buffer_id_to_process.return_value = 0
         self.mock_data_manager.next_available_epoch_on_round_robin_buffer.return_value = (True, None, 0, 1250)  # 10 seconds at 125 Hz
@@ -222,7 +225,7 @@ class TestRealtimeStream(unittest.TestCase):
         
         # Mock ReceivedStreamedDataHandler
         self.mock_data_handler = Mock(spec=ReceivedStreamedDataHandler)
-        self.mock_data_handler.process_board_data = Mock()
+        self.mock_data_handler.process_board_data_chunk = Mock()
         self.mock_data_handler.data_manager = self.mock_data_manager
         
         # Mock logger
@@ -244,7 +247,7 @@ class TestRealtimeStream(unittest.TestCase):
         print("\nMocks setup complete:")
         print("✓ BoardManager mocked with CYTON_DAISY_BOARD configuration")
         print("✓ DataManager mocked with basic processing methods")
-        print("✓ ReceivedStreamedDataHandler mocked with process_board_data")
+        print("✓ ReceivedStreamedDataHandler mocked with process_board_data_chunk")
         print("✓ Logger mocked with info/error/warning methods")
         print("✓ Qt App and Visualizer mocked")
 
@@ -293,7 +296,7 @@ class TestRealtimeStream(unittest.TestCase):
         process_calls = []
         def track_process_calls(*args, **kwargs):
             process_calls.append((args, kwargs))
-        mock_handler.process_board_data.side_effect = track_process_calls
+        mock_handler.process_board_data_chunk.side_effect = track_process_calls
         mock_handler.data_manager = self.mock_data_manager
         mock_handler_class = Mock(return_value=mock_handler)
         
@@ -305,7 +308,7 @@ class TestRealtimeStream(unittest.TestCase):
         with patch('gssc_local.realtime_with_restart.main_multiprocess.pd.read_csv') as mock_read_csv:
             mock_read_csv.return_value = mock_df
             main(handler_class=mock_handler_class)
-        print(f"process_board_data call count: {mock_handler.process_board_data.call_count}")
+        print(f"process_board_data_chunk call count: {mock_handler.process_board_data_chunk.call_count}")
         
         # Verify stream manager was used correctly
         mock_stream_manager_class.assert_called_once()
@@ -314,13 +317,13 @@ class TestRealtimeStream(unittest.TestCase):
         
         # Verify data was processed using the mock instance that was created
         mock_handler_class.assert_called_once()  # Verify the class was instantiated
-        self.assertTrue(len(process_calls) > 0, "Expected process_board_data to have been called")
+        self.assertTrue(len(process_calls) > 0, "Expected process_board_data_chunk to have been called")
         
         # Verify the number of data processing calls
         expected_calls = 2  # We sent 2 data chunks
         actual_calls = len(process_calls)
         self.assertEqual(actual_calls, expected_calls, 
-                        f"Expected {expected_calls} process_board_data calls, got {actual_calls}")
+                        f"Expected {expected_calls} process_board_data_chunk calls, got {actual_calls}")
         
         print("✓ Stream manager was used correctly")
         print(f"✓ Data was processed {actual_calls} times")
@@ -341,7 +344,8 @@ class TestRealtimeStream(unittest.TestCase):
         
         # Test DataManager mock
         self.assertTrue(self.mock_data_manager.queue_data_for_csv_write.return_value)
-        self.assertTrue(self.mock_data_manager.add_to_data_processing_buffer.return_value)
+        # Test ETD buffer manager mock
+        self.assertIsNotNone(self.mock_data_manager.etd_buffer_manager.select_channel_data_and_add)
         self.mock_data_manager.save_new_data.assert_not_called()
         self.assertEqual(self.mock_data_manager._calculate_next_buffer_id_to_process(), 0)
         can_process, reason, start_idx, end_idx = self.mock_data_manager.next_available_epoch_on_round_robin_buffer(0)
@@ -350,7 +354,7 @@ class TestRealtimeStream(unittest.TestCase):
         print("✓ DataManager mock configured correctly")
         
         # Test ReceivedStreamedDataHandler mock
-        self.mock_data_handler.process_board_data.assert_not_called()
+        self.mock_data_handler.process_board_data_chunk.assert_not_called()
         self.assertEqual(self.mock_data_handler.data_manager, self.mock_data_manager)
         print("✓ ReceivedStreamedDataHandler mock configured correctly")
         

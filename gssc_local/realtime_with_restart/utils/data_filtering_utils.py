@@ -16,14 +16,14 @@ from gssc_local.realtime_with_restart.utils.timestamp_utils import reorder_sampl
 from gssc_local.realtime_with_restart.export.csv.validation import find_duplicates
 
 
-def sanitize_data(board_data, board_timestamp_channel, logger, last_saved_timestamp=None, expected_sample_rate=None):
+def sanitize_data(raw_board_data, board_timestamp_channel, logger, last_saved_timestamp=None, expected_sample_rate=None):
     """Sanitize raw data by removing duplicates, reordering samples, and validating integrity before processing"""
-    filtered_data = board_data
+    sanitized_board_data = raw_board_data
     
     if last_saved_timestamp is not None:
         # check for old timestamps
         from gssc_local.realtime_with_restart.export.csv.utils import transform_data_to_rows
-        rows = transform_data_to_rows(filtered_data, logger)
+        rows = transform_data_to_rows(sanitized_board_data, logger)
         filtered_rows, old_timestamps_removed = filter_previously_seen_timestamps(
             rows, board_timestamp_channel, last_saved_timestamp, logger
         )
@@ -32,17 +32,17 @@ def sanitize_data(board_data, board_timestamp_channel, logger, last_saved_timest
             # Convert back to original format if rows were filtered
             if filtered_rows:
                 import numpy as np
-                filtered_data = np.array(filtered_rows).T
+                sanitized_board_data = np.array(filtered_rows).T
 
-    filtered_data, duplicates_removed = filter_duplicate_timestamps_within_batch(
-        filtered_data, board_timestamp_channel, logger
+    sanitized_board_data, duplicates_removed = filter_duplicate_timestamps_within_batch(
+        sanitized_board_data, board_timestamp_channel, logger
     )
     if duplicates_removed > 0:
         logger.warning(f"Filtered {duplicates_removed} duplicate timestamps")
 
     # Reorder samples by timestamp to ensure monotonic order
-    filtered_data, was_reordered = reorder_samples_by_timestamp(
-        filtered_data, board_timestamp_channel, logger
+    sanitized_board_data, was_reordered = reorder_samples_by_timestamp(
+        sanitized_board_data, board_timestamp_channel, logger
     )
     if was_reordered:
         logger.warning("Reordered samples to ensure monotonic timestamp order")
@@ -51,14 +51,14 @@ def sanitize_data(board_data, board_timestamp_channel, logger, last_saved_timest
     if last_saved_timestamp is not None:
         validate_inter_batch_sample_rate(
             last_saved_timestamp, 
-            filtered_data, 
+            sanitized_board_data, 
             board_timestamp_channel, 
             expected_sample_rate, 
             logger
         )
 
     # Validate sample rate within the batch
-    timestamps = filtered_data[board_timestamp_channel, :]
+    timestamps = sanitized_board_data[board_timestamp_channel, :]
     is_valid, actual_rate = validate_sample_rate(timestamps, expected_sample_rate, logger=logger)
     if not is_valid:
         logger.warning(f"Sample rate validation failed within batch: expected={expected_sample_rate:.2f}Hz, actual={actual_rate:.2f}Hz")
@@ -75,4 +75,4 @@ def sanitize_data(board_data, board_timestamp_channel, logger, last_saved_timest
     if not has_no_duplicates or not is_ordered:
         logger.error(f"Final validation failed: duplicates={duplicate_count}, ordered={is_ordered}")
 
-    return filtered_data
+    return sanitized_board_data

@@ -283,14 +283,14 @@ class PyQtVisualizer:
         # Immediately replot with current data if available
         if self._cached_epoch_data is not None:
             self.plot_polysomnograph(
-                epoch_data=self._cached_epoch_data,
+                epoch_data_all_electrode_channels_on_board=self._cached_epoch_data,
                 sampling_rate=self._cached_sampling_rate,
                 sleep_stage=self._cached_sleep_stage,
                 time_offset=self._cached_time_offset,
                 epoch_start_time=self._cached_epoch_start_time
             )
     
-    def apply_bandpass_filter(self, data, low_freq, high_freq, sampling_rate):
+    def apply_bandpass_filter(self, channel_data, low_freq, high_freq, sampling_rate):
         """Apply 4th-order Butterworth bandpass filter with zero-phase filtering"""
         nyquist = sampling_rate / 2.0
         
@@ -305,7 +305,7 @@ class PyQtVisualizer:
         b, a = butter(4, [low_norm, high_norm], btype='band')
         
         # Apply zero-phase filtering
-        filtered_data = filtfilt(b, a, data)
+        filtered_data = filtfilt(b, a, channel_data)
         return filtered_data
 
     def apply_notch_filter(self, data, notch_freq, sampling_rate, Q=30):
@@ -356,10 +356,10 @@ class PyQtVisualizer:
         
         return filtered_data
             
-    def plot_polysomnograph(self, epoch_data, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
+    def plot_polysomnograph(self, epoch_data_all_electrode_channels_on_board, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
         """Update polysomnograph plot with new data"""
         # Cache the current display parameters for immediate filter toggling
-        self._cached_epoch_data = epoch_data.copy()
+        self._cached_epoch_data = epoch_data_all_electrode_channels_on_board.copy()
         self._cached_sampling_rate = sampling_rate
         self._cached_sleep_stage = sleep_stage
         self._cached_time_offset = time_offset
@@ -387,22 +387,22 @@ class PyQtVisualizer:
             self.title_label.setText(title_text)
         
         # Create time axis
-        time_axis = np.arange(epoch_data.shape[1]) / sampling_rate + time_offset
+        time_axis = np.arange(epoch_data_all_electrode_channels_on_board.shape[1]) / sampling_rate + time_offset
 
         # Extract only the channels defined in the montage from the full epoch_data
         electrode_indices = self.montage.get_electrode_channel_indices()
-        selected_epoch_data = epoch_data[electrode_indices]
+        montage_electrode_data = epoch_data_all_electrode_channels_on_board[electrode_indices]
 
         # Apply Northwestern filtering if enabled (for display only)
         if hasattr(self, 'visual_filter_enabled') and self.visual_filter_enabled:
             # Get actual channel numbers for proper filter mapping
             channel_numbers = sorted(self.montage.channels.keys())
-            display_data = self.apply_complete_filtering(selected_epoch_data, channel_numbers, sampling_rate)
+            filtered_display_montage_electrode_data = self.apply_complete_filtering(montage_electrode_data, channel_numbers, sampling_rate)
         else:
-            display_data = selected_epoch_data
+            filtered_display_montage_electrode_data = montage_electrode_data
 
         # Update each channel's plot
-        for data, plot, curve in zip(display_data, self.plots, self.curves):
+        for data, plot, curve in zip(filtered_display_montage_electrode_data, self.plots, self.curves):
             # Update curve data
             curve.setData(time_axis, data)
             

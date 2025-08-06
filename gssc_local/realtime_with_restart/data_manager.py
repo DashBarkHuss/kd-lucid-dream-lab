@@ -167,7 +167,7 @@ class DataManager:
             
         return all_channels
 
-    def validate_consecutive_data(self, data, channel_idx=None):
+    def validate_consecutive_data(self, board_data_chunk, channel_idx=None):
         """
         Validate that data values on a specific channel are consecutive.
         This is useful for testing with synthetic data where we expect consecutive values.
@@ -191,10 +191,10 @@ class DataManager:
         # The first EEG channel is actually at index 1 in the CSV
         adjusted_channel_idx = channel_idx + 1
             
-        if adjusted_channel_idx >= len(data):
+        if adjusted_channel_idx >= len(board_data_chunk):
             return False, f"Channel index {adjusted_channel_idx} out of range"
             
-        channel_data = data[adjusted_channel_idx]
+        channel_data = board_data_chunk[adjusted_channel_idx]
         
         # For the first validation, just store the last value
         if self.last_validated_value_for_consecutive_data_validation is None:
@@ -215,32 +215,34 @@ class DataManager:
         self.last_validated_value_for_consecutive_data_validation = channel_data[-1]
         return True, "Data validated successfully"
 
-    def add_to_data_processing_buffer(self, new_data, is_initial=False):
-        """Add new data to the buffer for epoch processing.
+    def validate_data(self, board_data_chunk):
+        """Validate incoming board data format and values.
         
         Args:
-            new_data: Array containing the data to add. Must be in (n_channels, n_samples) format.
-            is_initial: Whether this is the initial data chunk
+            board_data_chunk: Array containing the board data to validate. Must be in (n_channels, n_samples) format.
             
         Returns:
-            bool: True if data was added successfully, False if validation failed
+            bool: True if data is valid, False if validation failed
+            
+        Raises:
+            ValueError: If data shape is invalid
+            Exception: If consecutive value validation fails (when enabled)
         """
-        # Validate data values
-        if np.any(np.isnan(new_data)) or np.any(np.isinf(new_data)):
+        # Validate data values 
+        if np.any(np.isnan(board_data_chunk)) or np.any(np.isinf(board_data_chunk)):
             logging.warning("Data contains NaN or infinite values!")
             return False
         # Validate consecutive values if enabled
         if self.validate_consecutive_values:
-            is_valid, message = self.validate_consecutive_data(new_data)
+            is_valid, message = self.validate_consecutive_data(board_data_chunk)
             if not is_valid:
                 raise Exception(f"Consecutive value validation failed: {message}")
         # Validate data shape: must be (n_channels, n_samples)
         total_channels = self.board_shim.get_num_rows(self.board_shim.get_board_id())
-        if new_data.shape[0] != total_channels:
-            raise ValueError(f"Expected data in (n_channels, n_samples) format with {total_channels} channels, got shape {new_data.shape}")
-        # Update analysis ready data
-        self.etd_buffer_manager.add_data(new_data)
+        if board_data_chunk.shape[0] != total_channels:
+            raise ValueError(f"Expected data in (n_channels, n_samples) format with {total_channels} channels, got shape {board_data_chunk.shape}")
         return True
+
 
     def queue_data_for_csv_write(self, new_data, is_initial=False):
         """Queue new data for CSV writing and handle buffer management."""
@@ -545,13 +547,13 @@ class DataManager:
         # Note: We assume the timestamp channel is always the last channel in ETD buffer
         # Use sequential 0-based indexing for electrode channels (excluding timestamp)
         num_electrode_channels = len(self.etd_buffer_manager.electrode_and_timestamp_data) - 1
-        epoch_data = np.array([
+        epoch_data_all_electrode_channels_on_board = np.array([
             self.etd_buffer_manager.electrode_and_timestamp_data[i][start_idx_rel:end_idx_rel]
             for i in range(num_electrode_channels)
         ])
         
         # Verify we have exactly the right number of points
-        assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
+        assert epoch_data_all_electrode_channels_on_board.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data_all_electrode_channels_on_board.shape[1]}"
         
         # Get the timestamp data for this epoch
         timestamp_data = self.etd_buffer_manager._get_timestamps()[start_idx_rel:end_idx_rel]
@@ -559,11 +561,11 @@ class DataManager:
         
         # Get index combinations for EEG and EOG channels
         # 
-        # CHANNEL MAPPING: processed_epoch_data is always 16 channels from physical OpenBCI channels 1-16
+        # CHANNEL MAPPING: epoch_data_all_electrodes_on_board is always 16 channels from physical OpenBCI channels 1-16
         # Array index = physical_channel - 1 (0-based indexing)
-        # - processed_epoch_data[0] = physical channel 1
-        # - processed_epoch_data[10] = physical channel 11 (R-LEOG) 
-        # - processed_epoch_data[11] = physical channel 12 (L-LEOG)
+        # - epoch_data_all_electrodes_on_board[0] = physical channel 1
+        # - epoch_data_all_electrodes_on_board[10] = physical channel 11 (R-LEOG) 
+        # - epoch_data_all_electrodes_on_board[11] = physical channel 12 (L-LEOG)
         #
         # The montage type doesn't change this mapping - it only defines which channels are used.
         
@@ -587,7 +589,7 @@ class DataManager:
         
         # Get sleep stage prediction using improved SignalProcessor
         predicted_class, class_probs, new_hidden_states = self.signal_processor.predict_sleep_stage(
-            epoch_data,
+            epoch_data_all_electrode_channels_on_board,
             index_combinations,
             self.buffer_hidden_states[buffer_id]
         )
@@ -600,7 +602,7 @@ class DataManager:
         # Update visualization using Visualizer
         time_offset = start_idx_abs / self.sampling_rate
         self.visualizer.plot_polysomnograph(
-            epoch_data, 
+            epoch_data_all_electrode_channels_on_board, 
             self.sampling_rate, 
             predicted_class, 
             time_offset, 

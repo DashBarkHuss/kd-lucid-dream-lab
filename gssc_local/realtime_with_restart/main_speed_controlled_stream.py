@@ -114,7 +114,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
                         logger.info(f"Set start_first_data_ts to: {start_first_data_ts}")
                     
                     # Process the data through the pipeline
-                    received_streamed_data_handler.process_board_data(new_data)
+                    received_streamed_data_handler.process_board_data_chunk(new_data)
                     
                     # Update last good timestamp for gap detection
                     if board_timestamp_channel is not None:

@@ -122,7 +122,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
                         
                     elif msg_type == 'data':
 
-                        received_streamed_data_handler.process_board_data(received['board_data'])
+                        received_streamed_data_handler.process_board_data_chunk(received['board_data'])
 
                     elif msg_type == 'error':
                         # Handle error from child process

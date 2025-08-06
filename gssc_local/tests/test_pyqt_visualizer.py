@@ -55,7 +55,7 @@ def test_synthetic_data():
         
         # Test visualization
         visualizer.plot_polysomnograph(
-            epoch_data=data,
+            epoch_data_all_electrode_channels_on_board=data,
             sampling_rate=125,
             sleep_stage=2,  # N2 sleep stage
             time_offset=0,
@@ -126,7 +126,7 @@ def test_real_data():
     
     # Plot the data
     visualizer.plot_polysomnograph(
-        epoch_data=epoch_data,
+        epoch_data_all_electrode_channels_on_board=epoch_data,
         sampling_rate=sampling_rate,
         sleep_stage=0,  # Wake stage
         time_offset=0,

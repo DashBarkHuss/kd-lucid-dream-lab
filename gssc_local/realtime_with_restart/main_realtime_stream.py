@@ -93,17 +93,17 @@ class StreamingBoardManager:
             self.board_shim.prepare_session()
         self.board_shim.start_stream()
         
-    def get_new_data(self):
+    def get_new_raw_data_chunk(self):
         """Get new data from the stream."""
-        data = self.board_shim.get_board_data()  # Get all new data since last call
+        new_raw_board_chunk = self.board_shim.get_board_data()  # Get all new data since last call
         
         # Debug logging to investigate duplicate timestamps
-        if data.size > 0:
-            logger.info(f"BrainFlow returned {data.shape[1]} samples, first timestamp: {data[self.board_timestamp_channel][0]:.6f}, last timestamp: {data[self.board_timestamp_channel][-1]:.6f}")
+        if new_raw_board_chunk.size > 0:
+            logger.info(f"BrainFlow returned {new_raw_board_chunk.shape[1]} samples, first timestamp: {new_raw_board_chunk[self.board_timestamp_channel][0]:.6f}, last timestamp: {new_raw_board_chunk[self.board_timestamp_channel][-1]:.6f}")
         else:
             logger.info("BrainFlow returned no data")
             
-        return data
+        return new_raw_board_chunk
         
     def stop_stream(self):
         """Stop the streaming session."""
@@ -161,9 +161,9 @@ def main(handler_class=ReceivedStreamedDataHandler, montage=None):
         # Main processing loop
         while True:
             # Get new data chunk
-            new_data = streaming_board_manager.get_new_data()
+            raw_board_data_chunk = streaming_board_manager.get_new_raw_data_chunk()
             
-            if new_data.size > 0:
+            if raw_board_data_chunk.size > 0:
 
 
                 #  all inter batch data sanitization like removing old timestamps, needs to happen where the last saved timestamp is in scope               
@@ -173,11 +173,11 @@ def main(handler_class=ReceivedStreamedDataHandler, montage=None):
                 
                 # If this is the first data chunk, set the start timestamp
                 if start_first_data_ts is None and board_timestamp_channel is not None:
-                    start_first_data_ts = float(new_data[board_timestamp_channel][0])
+                    start_first_data_ts = float(raw_board_data_chunk[board_timestamp_channel][0])
                     logger.info(f"Started processing data at timestamp: {start_first_data_ts}")
                 
                 # Process the data through the pipeline
-                received_streamed_data_handler.process_board_data(new_data)
+                received_streamed_data_handler.process_board_data_chunk(raw_board_data_chunk)
                 
             else:
                 # No data received
