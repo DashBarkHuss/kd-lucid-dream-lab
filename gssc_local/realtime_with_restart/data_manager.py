@@ -32,6 +32,7 @@ from gssc_local.realtime_with_restart.export.csv.test_utils import compare_csv_f
 from gssc_local.realtime_with_restart.export.csv.validation import validate_file_path
 from gssc_local.realtime_with_restart.export.csv.exceptions import CSVExportError, CSVDataError
 from .etd_buffer_manager import ETDBufferManager
+from .channel_mapping import ChannelIndexMapping, DataWithBrainFlowDataKey
 import pandas as pd
 import time
 import os
@@ -571,16 +572,28 @@ class DataManager:
         
         channel_types = self.montage.get_channel_types()
         
+        # Create structured channel mapping for epoch data (array indices 0-15 → board positions 1-16)
+        epoch_data_channel_mapping = [
+            ChannelIndexMapping(board_position=i+1)  # Array index i → Board position i+1 (channels 1-16)
+            for i in range(num_electrode_channels)
+        ]
+        
+        # Wrap epoch data with structured mapping
+        epoch_data_key_wrapper = DataWithBrainFlowDataKey(
+            data=epoch_data_all_electrode_channels_on_board,
+            channel_mapping=epoch_data_channel_mapping
+        )
+        
         if all(ch_type == "EOG" for ch_type in channel_types):
             # EOG-only montage: no EEG channels, use both EOG channels
-            # EOG channels 11, 12 map to array indices 10, 11 (physical_channel - 1)
+            # Get data by board positions 11, 12 (physical channels 11, 12)
             eeg_combo_indices_electrode_channel_mapping = []        # No EEG channels
-            eog_combo_indices_electrode_channel_mapping = [10, 11]  # Physical channels 11(R-LEOG), 12(L-LEOG) → indices 10, 11
+            eog_combo_indices_electrode_channel_mapping = [10, 11]  # Keep as array indices for backward compatibility
         else:
             # Default for minimal_sleep_montage and other montages
-            # Physical channels 1-6 map to array indices 0-5, channel 11 maps to index 10
-            eeg_combo_indices_electrode_channel_mapping = [0, 1, 2]  # Physical channels 1(F3), 2(F4), 3(C3) → indices 0, 1, 2
-            eog_combo_indices_electrode_channel_mapping = [10]       # Physical channel 11(R-LEOG) → index 10
+            # Get data by board positions 1, 2, 3 and 11 (physical channels 1, 2, 3, 11)
+            eeg_combo_indices_electrode_channel_mapping = [0, 1, 2]  # Keep as array indices for backward compatibility
+            eog_combo_indices_electrode_channel_mapping = [10]       # Keep as array indices for backward compatibility
         
         # Validate that our hardcoded indices match the expected channel types
         self.montage.validate_channel_indices_combination_types(eeg_combo_indices_electrode_channel_mapping, eog_combo_indices_electrode_channel_mapping)
@@ -589,7 +602,7 @@ class DataManager:
         
         # Get sleep stage prediction using improved SignalProcessor
         predicted_class, class_probs, new_hidden_states = self.signal_processor.predict_sleep_stage(
-            epoch_data_all_electrode_channels_on_board,
+            epoch_data_key_wrapper.data,
             index_combinations,
             self.buffer_hidden_states[buffer_id]
         )
@@ -602,7 +615,7 @@ class DataManager:
         # Update visualization using Visualizer
         time_offset = start_idx_abs / self.sampling_rate
         self.visualizer.plot_polysomnograph(
-            epoch_data_all_electrode_channels_on_board, 
+            epoch_data_key_wrapper.data, 
             self.sampling_rate, 
             predicted_class, 
             time_offset, 
