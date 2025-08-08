@@ -370,10 +370,9 @@ class PyQtVisualizer:
     def plot_polysomnograph(self, epoch_data_wrapper, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
         """Update polysomnograph plot with new data"""
         # Extract data from wrapper for processing
-        epoch_data = epoch_data_wrapper.data
         
         # Cache the current display parameters for immediate filter toggling
-        self._cached_epoch_data = epoch_data.copy()
+        self._cached_epoch_data = epoch_data_wrapper.data.copy()
         self._cached_sampling_rate = sampling_rate
         self._cached_sleep_stage = sleep_stage
         self._cached_time_offset = time_offset
@@ -401,7 +400,7 @@ class PyQtVisualizer:
             self.title_label.setText(title_text)
         
         # Create time axis
-        time_axis = np.arange(epoch_data.shape[1]) / sampling_rate + time_offset
+        time_axis = np.arange(epoch_data_wrapper.data.shape[1]) / sampling_rate + time_offset
 
         # Extract only the channels defined in the montage from the full epoch_data
         montage_pkeys = self.montage.get_board_keys(self.electrode_channels) 
@@ -417,12 +416,12 @@ class PyQtVisualizer:
         # Apply Northwestern filtering if enabled (for display only)
         if hasattr(self, 'visual_filter_enabled') and self.visual_filter_enabled:
             # Get actual channel numbers for proper filter mapping
-            filtered_display_montage_electrode_data = self.apply_complete_filtering(montage_data_wrapper, sampling_rate)
+            filtered_display_montage_pkwrapper = self.apply_complete_filtering(montage_data_wrapper, sampling_rate)
         else:
-            filtered_display_montage_electrode_data = montage_electrode_data
+            filtered_display_montage_pkwrapper = montage_data_wrapper
 
         # Update each channel's plot
-        for data, plot, curve in zip(filtered_display_montage_electrode_data, self.plots, self.curves):
+        for data, plot, curve in zip(filtered_display_montage_pkwrapper, self.plots, self.curves):
             # Update curve data
             curve.setData(time_axis, data)
             

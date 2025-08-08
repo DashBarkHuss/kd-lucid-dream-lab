@@ -24,7 +24,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from montage import Montage
 from gssc_helper import realtime_inference, make_hiddens, preprocess_eeg_epoch_for_gssc, prepare_input, get_predicted_classes, get_predicted_classes_and_probabilities, get_results_for_each_combo, make_eeg_eog_combinations, make_infer, compare_sleep_stages
 from convert_csv_to_fif import convert_csv_to_raw, save_raw_to_fif, convert_csv_to_fif
-from gssc_local.realtime_with_restart.processor_improved import SignalProcessor
+from gssc_local.realtime_with_restart.processor import SignalProcessor
 
 start = 30
 end = 59.999

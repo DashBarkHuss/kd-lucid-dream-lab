@@ -9,7 +9,7 @@ import numpy as np
 import h5py
 import pytest
 from gssc_local.montage import Montage
-from gssc_local.realtime_with_restart.processor_improved import SignalProcessor
+from gssc_local.realtime_with_restart.processor import SignalProcessor
 from gssc_local.realtime_with_restart.channel_mapping import ChannelIndexMapping, DataWithBrainFlowDataKey
 from gssc_local.convert_csv_to_fif import convert_csv_to_raw
 

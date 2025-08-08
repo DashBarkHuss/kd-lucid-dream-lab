@@ -1,4 +1,5 @@
 """
+TEMPORARILY BROKEN FILE FOR TESTING - DO NOT USE
 This script uses the gssc_array_inference_with_fif.py as a starting point. then we replace the old ArrayInfer class with the new one.
 
 The gssc_array_inference_with_fif.py script performs sleep stage classification on EEG data stored in .fif format.
@@ -70,6 +71,7 @@ Predicted classes for epoch 299: [[2]
 It doesn't log a summary of the predicted classes and class probabilities for all epochs. It doesn't log an accuracy comparison with the ground truth.
 """
 
+raise ImportError("TEMPORARILY BROKEN FILE FOR TESTING gssc_helper.py - seeing if this is used anywhere important")
 from gssc.infer import ArrayInfer
 import numpy as np
 import torch

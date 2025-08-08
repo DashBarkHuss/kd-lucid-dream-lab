@@ -23,8 +23,6 @@ import torch
 from pathlib import Path
 from typing import Union, Optional, Tuple, List
 from gssc_local.realtime_with_restart.processor import SignalProcessor
-from gssc_local.realtime_with_restart.processor_improved import SignalProcessor as ImprovedSignalProcessor
-from gssc_local.realtime_with_restart.visualizer import Visualizer
 from gssc_local.pyqt_visualizer import PyQtVisualizer
 from gssc_local.montage import Montage
 from gssc_local.realtime_with_restart.export.csv.manager import CSVManager
@@ -81,7 +79,7 @@ class DataManager:
             [torch.zeros(10, 1, 256) for _ in range(7)]  # 7 hidden states for 7 combinations
             for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
         ]
-        self.signal_processor = ImprovedSignalProcessor(use_cuda=False)
+        self.signal_processor = SignalProcessor(use_cuda=False)
         # self.visualizer = Visualizer(self.seconds_per_epoch, self.board_shim, montage)
         self.visualizer = PyQtVisualizer(self.seconds_per_epoch, self.board_shim, montage)
         self.expected_interval = 1.0 / sampling_rate
@@ -587,20 +585,20 @@ class DataManager:
         if all(ch_type == "EOG" for ch_type in channel_types):
             # EOG-only montage: no EEG channels, use both EOG channels
             # Get data by board positions 11, 12 (physical channels 11, 12)
-            eeg_combo_indices_electrode_channel_mapping = []        # No EEG channels
-            eog_combo_indices_electrode_channel_mapping = [10, 11]  # Keep as array indices for backward compatibility
+            eeg_combo_pk = []        # No EEG channels
+            eog_combo_pk = [10, 11]  # Keep as array indices for backward compatibility
         else:
             # Default for minimal_sleep_montage and other montages
             # Get data by board positions 1, 2, 3 and 11 (physical channels 1, 2, 3, 11)
-            eeg_combo_indices_electrode_channel_mapping = [1, 2, 3]  # Keep as array indices for backward compatibility
-            eog_combo_indices_electrode_channel_mapping = [10]       # Keep as array indices for backward compatibility
+            eeg_combo_pk = [1, 2, 3]  # Keep as array indices for backward compatibility
+            eog_combo_pk = [10]       # Keep as array indices for backward compatibility
         
         # Validate that our hardcoded indices match the expected channel types
-        self.montage.validate_channel_indices_combination_types(eeg_combo_indices_electrode_channel_mapping, eog_combo_indices_electrode_channel_mapping)
+        self.montage.validate_channel_indices_combination_types(eeg_combo_pk, eog_combo_pk)
         
-        index_combinations = self.signal_processor.get_index_combinations(eeg_combo_indices_electrode_channel_mapping, eog_combo_indices_electrode_channel_mapping)
+        index_combinations = self.signal_processor.get_index_combinations(eeg_combo_pk, eog_combo_pk)
         
-        # Get sleep stage prediction using improved SignalProcessor
+        # Get sleep stage prediction using SignalProcessor
         predicted_class, class_probs, new_hidden_states = self.signal_processor.predict_sleep_stage(
             epoch_data_key_wrapper,
             index_combinations,

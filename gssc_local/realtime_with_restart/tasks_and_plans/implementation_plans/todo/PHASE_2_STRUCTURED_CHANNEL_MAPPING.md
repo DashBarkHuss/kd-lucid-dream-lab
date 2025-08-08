@@ -229,6 +229,7 @@ def predict_sleep_stage(self, epoch_data, hidden_states, eeg_indices = [0, 1, 2]
 ### replace get_electrode_channel_indices with get_board_keys
 
 on montage.py we need to add a function that gets the board keys for all channels in the montage
+✅ completed
 
 ### Buffer Management Arrays
 
@@ -357,6 +358,125 @@ These access shape properties or work with already-processed data and should rem
 - CSV formatting arrays (`fmt`, `data_array.shape[1]`)
 - Signal processing results (`results[i][0].numpy()`)
 - Model state arrays (`new_hidden_states`)
+
+## Data Manager Specific Updates (Comprehensive Analysis)
+
+### **Critical Priority - Hardcoded Channel Arrays (Lines 588-595)**
+
+These are the main targets that need immediate conversion to use `DataWithBrainFlowDataKey.get_by_keys()`:
+
+```python
+# CURRENT (Lines 588-595): t
+if all(ch_type == "EOG" for ch_type in channel_types):
+    eeg_combo_indices_electrode_channel_mapping = []        # Line 589 - NEEDS UPDATE
+    eog_combo_indices_electrode_channel_mapping = [10, 11]  # Line 590 - NEEDS UPDATE
+else:
+    eeg_combo_indices_electrode_channel_mapping = [1, 2, 3]  # Line 594 - NEEDS UPDATE
+    eog_combo_indices_electrode_channel_mapping = [10]       # Line 595 - NEEDS UPDATE
+```
+
+**Required Changes:**
+
+- Replace hardcoded arrays with board position keys
+- Use `epoch_data_key_wrapper.get_by_keys([board_positions])` instead of array indices
+
+✅ completed - was correct but i was using the wrong variable name
+
+### **Epoch Data Construction (Lines 550-553)**
+
+```python
+# CURRENT (Lines 550-553):
+epoch_data = np.array([
+    self.etd_buffer_manager.electrode_and_timestamp_data[i][start_idx_rel:end_idx_rel] # Line 551 - NEEDS KEY ACCESS
+    for i in range(num_electrode_channels)  # Line 552 - NEEDS BOARD KEY MAPPING
+])
+```
+
+⏳ this is mostly an etd buffer manager issue. need to update the etd buffer manager to use the new mapping.
+
+**Required Changes:**
+
+- Add structured channel mapping to `etd_buffer_manager.electrode_and_timestamp_data`
+- Use board position keys instead of sequential array indices
+
+### **ETD Buffer Manager Integration**
+
+The `etd_buffer_manager.electrode_and_timestamp_data` needs to be wrapped with `DataWithBrainFlowDataKey` so that:
+
+```python
+# CURRENT: Raw array access
+self.etd_buffer_manager.electrode_and_timestamp_data[i][start_idx_rel:end_idx_rel]
+
+# AFTER: Key-based access
+self.etd_buffer_manager.electrode_and_timestamp_data.get_by_key(board_position)[start_idx_rel:end_idx_rel]
+```
+
+⏳ need to update the etd buffer manager to use the new mapping.
+
+### **Validation Method Updates (Line 197)**
+
+```python
+# CURRENT (Line 197):
+channel_data = board_data_chunk[adjusted_channel_idx]  # NEEDS KEY ACCESS
+
+# AFTER:
+channel_data = board_data_chunk.get_by_key(adjusted_channel_idx)
+```
+
+✅ completed
+actually not necessary since board ata isn't transofrmed and the pk is the index
+
+### **Signal Processor Integration (Lines 603-607)**
+
+```python
+# CURRENT (Lines 600, 604):
+index_combinations = self.signal_processor.get_index_combinations(eeg_combo_indices_electrode_channel_mapping, eog_combo_indices_electrode_channel_mapping)
+predicted_class, class_probs, new_hidden_states = self.signal_processor.predict_sleep_stage(
+    epoch_data_key_wrapper,  # Already wrapped correctly
+    index_combinations,
+    self.buffer_hidden_states[buffer_id]
+)
+```
+
+**Required Changes:**
+
+- Update `get_index_combinations()` to work with board position keys
+- Ensure `SignalProcessor.predict_sleep_stage()` uses key-based access internally - i wonder how thoguh since we pass in the wrong mapping- eeg_combo_indices_electrode_channel_mapping
+
+✅ completed
+
+### **Variables That Do NOT Need Updates**
+
+These work with processed data or metadata and should remain unchanged:
+
+- `buffer_id`, `epoch_start_idx_abs`, `epoch_end_idx_abs` (indices for buffer management)
+- `start_idx_rel`, `end_idx_rel` (relative buffer indices)
+- `timestamp_data` (already processed timestamps)
+- `self.points_per_epoch`, `self.sampling_rate` (configuration constants)
+- `predicted_class`, `class_probs`, `new_hidden_states` (model outputs)
+- Shape access: `epoch_data.shape[1]` (remains as property access) ⭐️shouldn't this be epoch_data_wrapper? no maybe not because this might be before we add it to the wrapper
+
+### **Montage Integration Required**
+
+The `montage` object needs a new method:
+
+```python
+# NEW METHOD NEEDED in montage.py:
+def get_board_keys(self) -> List[int]:
+    """Return board position keys for all channels in this montage"""
+```
+
+This will replace the hardcoded channel arrays with montage-driven board position selections.
+
+### **Summary of Primary Updates Needed:**
+
+1. **Lines 589-590, 594-595**: Replace hardcoded `eeg_combo_indices` and `eog_combo_indices` arrays with board position keys
+2. **Lines 550-553**: Convert epoch data construction to use key-based access
+3. **Line 197**: Update validation method to use `get_by_key()`
+4. **ETD Buffer Manager**: Wrap `electrode_and_timestamp_data` with `DataWithBrainFlowDataKey`
+5. **Montage Integration**: Add `get_board_keys()` method to montage class
+
+The core pattern is replacing `array[index]` with `data_wrapper.get_by_key(board_position)` for all arrays that access raw board data.
 
 ## Future Cleanup: Variable Name Simplification
 
