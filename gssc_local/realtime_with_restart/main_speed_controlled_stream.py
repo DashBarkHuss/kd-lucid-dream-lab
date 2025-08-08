@@ -86,7 +86,10 @@ def main(handler_class=ReceivedStreamedDataHandler):
     mock_board_manager_speed_control = SpeedControlledBoardManager(playback_file, speed_multiplier=10.0)
     mock_board_manager_speed_control.set_board_shim()     
     board_timestamp_channel = mock_board_manager_speed_control.board_timestamp_channel
-    received_streamed_data_handler = handler_class(mock_board_manager_speed_control, logger)
+    
+    # Create montage for proper initialization
+    montage = Montage.eog_only_montage()
+    received_streamed_data_handler = handler_class(mock_board_manager_speed_control, logger, montage)
 
     # Get the PyQt application instance from the visualizer
     qt_app = received_streamed_data_handler.data_manager.visualizer.app

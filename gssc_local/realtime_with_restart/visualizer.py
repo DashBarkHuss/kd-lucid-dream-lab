@@ -86,9 +86,12 @@ class Visualizer:
         }
         return stages.get(sleep_stage, 'Unknown')
     
-    def plot_polysomnograph(self, epoch_data, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
+    def plot_polysomnograph(self, epoch_data_wrapper, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
         """Update polysomnograph plot with new data"""
         self.init_polysomnograph()  # Ensure figure exists
+        
+        # Extract data from wrapper for processing
+        epoch_data = epoch_data_wrapper.data
         
         # Create time axis with offset
         time_axis = np.arange(epoch_data.shape[1]) / sampling_rate + time_offset

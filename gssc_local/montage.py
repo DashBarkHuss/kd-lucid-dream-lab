@@ -275,6 +275,32 @@ class Montage:
                 
         return montage_indices
     
+    def get_board_keys(self, exg_channels: List[int]) -> List[int]:
+        """Get board positions for all channels in this montage.
+        
+        Args:
+            exg_channels: List of EEG channels from board_shim.get_exg_channels() that provides the board keys for all hardware channels on the board
+            
+        Returns:
+            List[int]: List of board positions (BrainFlow data array indices) for all channels in this montage, in montage order
+            
+        Raises:
+            ValueError: If any montage channel cannot be found in the EEG channels mapping
+        """
+        sorted_channel_numbers = sorted(self.channels.keys())
+        board_positions = []
+        
+        for physical_channel_num in sorted_channel_numbers:
+            # Find the board position for this physical channel
+            try:
+                relative_channel_index = physical_channel_num - 1
+                board_pos = exg_channels[relative_channel_index]
+                board_positions.append(board_pos)
+            except IndexError:
+                raise ValueError(f"Physical channel {physical_channel_num} from montage is out of range for board with {len(exg_channels)} channels")
+                
+        return board_positions
+    
     def validate_channel_indices_combination_types(self, eeg_combination_indices: List[int], eog_combination_indices: List[int]) -> None:
         """Validate that electrode channel mapping indices correspond to expected channel types in the montage.
         

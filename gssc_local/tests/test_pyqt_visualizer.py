@@ -9,8 +9,10 @@ import numpy as np
 import pandas as pd
 from montage import Montage
 from pyqt_visualizer import PyQtVisualizer
+from realtime_with_restart.channel_mapping import ChannelIndexMapping, DataWithBrainFlowDataKey
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
+from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 
 def generate_sample_data(num_channels=16, num_points=3750, sampling_rate=125):
     """Generate sample data for testing
@@ -47,15 +49,32 @@ def test_synthetic_data():
         # Create montage
         montage = Montage.default_sleep_montage()
         
+        # Create board_shim for testing
+        params = BrainFlowInputParams()
+        board_shim = BoardShim(BoardIds.SYNTHETIC_BOARD, params)
+        
         # Create visualizer with headless mode in CI
-        visualizer = PyQtVisualizer(seconds_per_epoch=30, montage=montage, headless=is_ci)
+        visualizer = PyQtVisualizer(seconds_per_epoch=30, board_shim=board_shim, montage=montage, headless=is_ci)
         
         # Generate sample data
         data = generate_sample_data()
         
+        # Create channel mapping for the data (assuming channels 1-16 mapping)
+        num_channels = data.shape[0]
+        channel_mapping = [
+            ChannelIndexMapping(board_position=i+1)  # Board positions 1 to N
+            for i in range(num_channels)
+        ]
+        
+        # Wrap data with channel mapping
+        epoch_data_wrapper = DataWithBrainFlowDataKey(
+            data=data,
+            channel_mapping=channel_mapping
+        )
+        
         # Test visualization
         visualizer.plot_polysomnograph(
-            epoch_data_all_electrode_channels_on_board=data,
+            epoch_data_wrapper=epoch_data_wrapper,
             sampling_rate=125,
             sleep_stage=2,  # N2 sleep stage
             time_offset=0,
@@ -116,17 +135,34 @@ def test_real_data():
     # Get the epoch data for all 16 channels (assuming CSV has at least 16 channels)
     epoch_data = df.iloc[start_idx:end_idx, 0:16].values.T
     
+    # Create channel mapping for the data (assuming channels 1-16 mapping)
+    num_channels = epoch_data.shape[0]
+    channel_mapping = [
+        ChannelIndexMapping(board_position=i+1)  # Board positions 1 to N
+        for i in range(num_channels)
+    ]
+    
+    # Wrap data with channel mapping
+    epoch_data_wrapper = DataWithBrainFlowDataKey(
+        data=epoch_data,
+        channel_mapping=channel_mapping
+    )
+    
+    # Create board_shim for testing
+    params = BrainFlowInputParams()
+    board_shim = BoardShim(BoardIds.SYNTHETIC_BOARD, params)
+    
     # Create visualizer with headless mode in CI
     visualizer = PyQtVisualizer(
         seconds_per_epoch=30,
-        board_shim=None,
+        board_shim=board_shim,
         montage=montage,
         headless=is_ci
     )
     
     # Plot the data
     visualizer.plot_polysomnograph(
-        epoch_data_all_electrode_channels_on_board=epoch_data,
+        epoch_data_wrapper=epoch_data_wrapper,
         sampling_rate=sampling_rate,
         sleep_stage=0,  # Wake stage
         time_offset=0,

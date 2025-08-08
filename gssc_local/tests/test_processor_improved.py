@@ -10,6 +10,7 @@ import h5py
 import pytest
 from gssc_local.montage import Montage
 from gssc_local.realtime_with_restart.processor_improved import SignalProcessor
+from gssc_local.realtime_with_restart.channel_mapping import ChannelIndexMapping, DataWithBrainFlowDataKey
 from gssc_local.convert_csv_to_fif import convert_csv_to_raw
 
 def test_predict_sleep_stage():
@@ -51,13 +52,26 @@ def test_predict_sleep_stage():
     processor = SignalProcessor()
     numpy_data = raw_sliced.get_data()
     
+    # Create channel mapping for the data (assuming channels 1-16 mapping)
+    num_channels = numpy_data.shape[0]
+    channel_mapping = [
+        ChannelIndexMapping(board_position=i+1)  # Board positions 1 to N
+        for i in range(num_channels)
+    ]
+    
+    # Wrap data with channel mapping
+    epoch_data_wrapper = DataWithBrainFlowDataKey(
+        data=numpy_data,
+        channel_mapping=channel_mapping
+    )
+    
     # Get combinations and hidden states
     eeg_eog_combo_dict = processor.get_index_combinations(eeg_indices, eog_indices)
     hiddens = processor.make_hiddens(len(eeg_eog_combo_dict))
     
     # Get predictions
     predicted_class, class_probs, new_hiddens = processor.predict_sleep_stage(
-        numpy_data, 
+        epoch_data_wrapper, 
         eeg_eog_combo_dict, 
         hiddens
     )

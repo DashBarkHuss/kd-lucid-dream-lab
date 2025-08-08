@@ -46,6 +46,11 @@ class DataWithBrainFlowDataKey:
         array_indices = self._get_indices_by_brainflow_keys(brainflow_keys)
         return self.data[array_indices]
 
+    def set_by_key(self, brainflow_key: int, new_data: np.ndarray):
+        """Set data for a specific BrainFlow data key"""
+        array_idx = self._get_indices_by_brainflow_keys([brainflow_key])[0]
+        self.data[array_idx] = new_data
+
     def __getitem__(self, key):
         """Allow array-like access to underlying data"""
         return self.data[key]

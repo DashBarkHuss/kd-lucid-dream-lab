@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from montage import Montage
 from gssc_local.realtime_with_restart.visualizer import Visualizer
+from gssc_local.realtime_with_restart.channel_mapping import ChannelIndexMapping, DataWithBrainFlowDataKey
 
 def generate_sample_data(num_channels=16, num_points=3750, sampling_rate=125):
     """Generate sample data for testing
@@ -46,9 +47,22 @@ def test_visualizer():
     # Generate sample data
     data = generate_sample_data()
     
+    # Create channel mapping for the data
+    num_channels = data.shape[0]
+    channel_mapping = [
+        ChannelIndexMapping(board_position=i+1)  # Board positions 1 to N
+        for i in range(num_channels)
+    ]
+    
+    # Wrap data with channel mapping
+    epoch_data_wrapper = DataWithBrainFlowDataKey(
+        data=data,
+        channel_mapping=channel_mapping
+    )
+    
     # Test visualization
     visualizer.plot_polysomnograph(
-        epoch_data=data,
+        epoch_data_wrapper=epoch_data_wrapper,
         sampling_rate=125,
         sleep_stage=2,  # N2 sleep stage
         time_offset=0,

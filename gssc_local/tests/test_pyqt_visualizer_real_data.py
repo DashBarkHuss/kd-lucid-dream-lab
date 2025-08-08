@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from montage import Montage
 from pyqt_visualizer import PyQtVisualizer
+from realtime_with_restart.channel_mapping import ChannelIndexMapping, DataWithBrainFlowDataKey
+from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 
 def test_pyqt_visualizer_with_real_data():
     """Test the PyQtVisualizer with a 30-second chunk of real data from a BrainFlow recording"""
@@ -40,17 +42,34 @@ def test_pyqt_visualizer_with_real_data():
     # Get the epoch data with all electrode channels
     epoch_data = df.iloc[start_idx:end_idx, electrode_columns].values.T
     
+    # Create channel mapping for the data
+    num_channels = epoch_data.shape[0]
+    channel_mapping = [
+        ChannelIndexMapping(board_position=i+1)  # Board positions 1 to N
+        for i in range(num_channels)
+    ]
+    
+    # Wrap data with channel mapping
+    epoch_data_wrapper = DataWithBrainFlowDataKey(
+        data=epoch_data,
+        channel_mapping=channel_mapping
+    )
+    
+    # Create board_shim for testing
+    params = BrainFlowInputParams()
+    board_shim = BoardShim(BoardIds.SYNTHETIC_BOARD, params)
+    
     # Create visualizer with headless mode in CI
     visualizer = PyQtVisualizer(
         seconds_per_epoch=30,
-        board_shim=None,
+        board_shim=board_shim,
         montage=montage,
         headless=is_ci
     )
     
     # Plot the data
     visualizer.plot_polysomnograph(
-        epoch_data_all_electrode_channels_on_board=epoch_data,
+        epoch_data_wrapper=epoch_data_wrapper,
         sampling_rate=sampling_rate,
         sleep_stage=0,  # Wake stage
         time_offset=0,

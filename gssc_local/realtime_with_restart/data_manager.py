@@ -548,13 +548,13 @@ class DataManager:
         # Note: We assume the timestamp channel is always the last channel in ETD buffer
         # Use sequential 0-based indexing for electrode channels (excluding timestamp)
         num_electrode_channels = len(self.etd_buffer_manager.electrode_and_timestamp_data) - 1
-        epoch_data_all_electrode_channels_on_board = np.array([
-            self.etd_buffer_manager.electrode_and_timestamp_data[i][start_idx_rel:end_idx_rel]
+        epoch_data = np.array([
+            self.etd_buffer_manager.electrode_and_timestamp_data[i][start_idx_rel:end_idx_rel] # we needd to add keys to electrode_and_timestamp_data
             for i in range(num_electrode_channels)
         ])
         
         # Verify we have exactly the right number of points
-        assert epoch_data_all_electrode_channels_on_board.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data_all_electrode_channels_on_board.shape[1]}"
+        assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
         
         # Get the timestamp data for this epoch
         timestamp_data = self.etd_buffer_manager._get_timestamps()[start_idx_rel:end_idx_rel]
@@ -580,7 +580,7 @@ class DataManager:
         
         # Wrap epoch data with structured mapping
         epoch_data_key_wrapper = DataWithBrainFlowDataKey(
-            data=epoch_data_all_electrode_channels_on_board,
+            data=epoch_data,
             channel_mapping=epoch_data_channel_mapping
         )
         
@@ -592,7 +592,7 @@ class DataManager:
         else:
             # Default for minimal_sleep_montage and other montages
             # Get data by board positions 1, 2, 3 and 11 (physical channels 1, 2, 3, 11)
-            eeg_combo_indices_electrode_channel_mapping = [0, 1, 2]  # Keep as array indices for backward compatibility
+            eeg_combo_indices_electrode_channel_mapping = [1, 2, 3]  # Keep as array indices for backward compatibility
             eog_combo_indices_electrode_channel_mapping = [10]       # Keep as array indices for backward compatibility
         
         # Validate that our hardcoded indices match the expected channel types
@@ -602,7 +602,7 @@ class DataManager:
         
         # Get sleep stage prediction using improved SignalProcessor
         predicted_class, class_probs, new_hidden_states = self.signal_processor.predict_sleep_stage(
-            epoch_data_key_wrapper.data,
+            epoch_data_key_wrapper,
             index_combinations,
             self.buffer_hidden_states[buffer_id]
         )
@@ -615,7 +615,7 @@ class DataManager:
         # Update visualization using Visualizer
         time_offset = start_idx_abs / self.sampling_rate
         self.visualizer.plot_polysomnograph(
-            epoch_data_key_wrapper.data, 
+            epoch_data_key_wrapper, 
             self.sampling_rate, 
             predicted_class, 
             time_offset, 

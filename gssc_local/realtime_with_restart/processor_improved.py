@@ -51,30 +51,38 @@ class SignalProcessor:
         """
         return torch.zeros(num_combinations, 10, 1, 256)
     
-    def make_combo_dictionary(self, epoch_data: torch.Tensor, eeg_index: Optional[int], eog_index: Optional[int]) -> Dict[str, torch.Tensor]:
+    def make_combo_dictionary(self, epoch_data_wrapper, eeg_key: Optional[int], eog_key: Optional[int]) -> Dict[str, torch.Tensor]:
         """
-        Create input dictionary for EEG and EOG data.
+        Create input dictionary for EEG and EOG data using BrainFlow keys.
         
         Args:
-            epoch_data (torch.Tensor): Input data tensor
-            eeg_index (Optional[int]): EEG channel index
-            eog_index (Optional[int]): EOG channel index
+            epoch_data_wrapper (DataWithBrainFlowDataKey): Wrapper containing processed data with channel mapping.
+                The wrapper.data should be torch.Tensor or numpy.ndarray with processed EEG/EOG data.
+            eeg_key (Optional[int]): EEG channel BrainFlow key (board position)
+            eog_key (Optional[int]): EOG channel BrainFlow key (board position)
             
         Returns:
             Dict[str, torch.Tensor]: Input dictionary with processed data
         """
         input_dict = {}
-        epoch_tensor = (torch.tensor(epoch_data, dtype=torch.float32) 
-                       if not isinstance(epoch_data, torch.Tensor) 
-                       else epoch_data.float())
         
-        if eeg_index is not None:
-            eeg_data = epoch_tensor[eeg_index].reshape(1, 1, -1)
-            input_dict['eeg'] = eeg_data
+        if eeg_key is not None:
+            # Get EEG data by BrainFlow key
+            eeg_data = epoch_data_wrapper.get_by_key(eeg_key)
+            # Convert to tensor with proper validation and reshape for model input
+            eeg_tensor = (torch.tensor(eeg_data, dtype=torch.float32) 
+                         if not isinstance(eeg_data, torch.Tensor) 
+                         else eeg_data.float()).reshape(1, 1, -1)
+            input_dict['eeg'] = eeg_tensor
         
-        if eog_index is not None:
-            eog_data = epoch_tensor[eog_index].reshape(1, 1, -1)
-            input_dict['eog'] = eog_data
+        if eog_key is not None:
+            # Get EOG data by BrainFlow key
+            eog_data = epoch_data_wrapper.get_by_key(eog_key)
+            # Convert to tensor with proper validation and reshape for model input
+            eog_tensor = (torch.tensor(eog_data, dtype=torch.float32) 
+                         if not isinstance(eog_data, torch.Tensor) 
+                         else eog_data.float()).reshape(1, 1, -1)
+            input_dict['eog'] = eog_tensor
         
         return input_dict
     
@@ -210,17 +218,15 @@ class SignalProcessor:
         data = epo_arr_zscore(data)
         return data
     
-    def prepare_input_data(self, epoch_data: torch.Tensor, index_combinations: List[Tuple[Optional[int], Optional[int]]]) -> List[Dict[str, torch.Tensor]]:
+    def prepare_input_data(self, epoch_data_wrapper, index_combinations: List[Tuple[Optional[int], Optional[int]]]) -> List[Dict[str, torch.Tensor]]:
         """
         Prepare input data for prediction with comprehensive validation.
         
         Args:
-            epoch_data (torch.Tensor): 30-second chunk of EEG/EOG data
-                Shape: [n_channels, n_samples]
-                Type: torch.Tensor or numpy.ndarray
-                Values: Raw EEG/EOG signal values
-            eeg_indices (List[int]): List of EEG channel indices
-            eog_indices (List[int]): List of EOG channel indices
+            epoch_data_wrapper (DataWithBrainFlowDataKey): Wrapper containing 30-second chunk of EEG/EOG data
+                with structured channel mapping using BrainFlow board positions as keys.
+                The wrapper.data should be torch.Tensor or numpy.ndarray with shape [n_channels, n_samples]
+            index_combinations (List[Tuple[Optional[int], Optional[int]]]): List of (eeg_board_position, eog_board_position) combinations
             
         Returns:
             List[Dict[str, torch.Tensor]]: List of processed input dictionaries
@@ -228,9 +234,13 @@ class SignalProcessor:
         Raises:
             ValueError: If input validation fails
         """
-        # Input validation
-        if not isinstance(epoch_data, (torch.Tensor, np.ndarray)):
-            raise ValueError("epoch_data must be torch.Tensor or numpy.ndarray")
+        # Input validation - check wrapper structure
+        if not hasattr(epoch_data_wrapper, 'data') or not hasattr(epoch_data_wrapper, 'get_by_key'):
+            raise ValueError("epoch_data_wrapper must be DataWithBrainFlowDataKey with data and get_by_key attributes")
+        
+        # Input validation - check underlying data type
+        if not isinstance(epoch_data_wrapper.data, (torch.Tensor, np.ndarray)):
+            raise ValueError("epoch_data_wrapper.data must be torch.Tensor or numpy.ndarray")
             
         # Validate channel indices
         if not index_combinations:
@@ -238,25 +248,31 @@ class SignalProcessor:
             
         # Preprocess the full data
         sfreq = 2560/30  # Target sampling rate
-        processed_epoch_data = self.preprocess_epoch(epoch_data)
+        processed_epoch_data = self.preprocess_epoch(epoch_data_wrapper.data)
+        
+        # Create new wrapper with processed data but same channel mapping
+        from gssc_local.realtime_with_restart.channel_mapping import DataWithBrainFlowDataKey
+        processed_wrapper = DataWithBrainFlowDataKey(
+            data=processed_epoch_data,
+            channel_mapping=epoch_data_wrapper.channel_mapping
+        )
         
         # Process each combination
         processed_dicts = []
-        for eeg_idx, eog_idx in index_combinations:
-            # Create input dictionary using make_combo_dictionary
-            input_dict = self.make_combo_dictionary(processed_epoch_data, eeg_idx, eog_idx)
+        for eeg_key, eog_key in index_combinations:
+            # Create input dictionary using make_combo_dictionary with BrainFlow keys
+            input_dict = self.make_combo_dictionary(processed_wrapper, eeg_key, eog_key)
             processed_dicts.append(input_dict)
             
         return processed_dicts
     
-    def predict_sleep_stage(self, epoch_data: torch.Tensor, index_combinations: List[Tuple[Optional[int], Optional[int]]], hidden_states: List[torch.Tensor] = None) -> Tuple[int, np.ndarray, List[torch.Tensor]]:
+    def predict_sleep_stage(self, epoch_data_wrapper, index_combinations: List[Tuple[Optional[int], Optional[int]]], hidden_states: List[torch.Tensor] = None) -> Tuple[int, np.ndarray, List[torch.Tensor]]:
         """
         Predict sleep stage from epoch data with enhanced error handling.
         
         Args:
-            epoch_data (torch.Tensor): Input data tensor
-            eeg_indices (List[int]): List of EEG channel indices
-            eog_indices (List[int]): List of EOG channel indices
+            epoch_data_wrapper (DataWithBrainFlowDataKey): Input data wrapper with channel mapping
+            index_combinations (List[Tuple[Optional[int], Optional[int]]]): List of channel combinations
             hidden_states (List[torch.Tensor]): List of hidden states for each combination
             
         Returns:
@@ -266,8 +282,8 @@ class SignalProcessor:
                 - Updated hidden states
         """
      
-        # Prepare input data
-        input_dict_list = self.prepare_input_data(epoch_data, index_combinations)
+        # Prepare input data - pass wrapper directly for key-based access
+        input_dict_list = self.prepare_input_data(epoch_data_wrapper, index_combinations)
         
         # Get predictions for each combination
         results = []

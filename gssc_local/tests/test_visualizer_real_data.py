@@ -14,6 +14,7 @@ if os.environ.get('CI'):
 import matplotlib.pyplot as plt
 from montage import Montage
 from gssc_local.realtime_with_restart.visualizer import Visualizer
+from realtime_with_restart.channel_mapping import ChannelIndexMapping, DataWithBrainFlowDataKey
 
 def test_visualizer_with_real_data():
     """Test the Visualizer with a 30-second chunk of real data"""
@@ -45,6 +46,19 @@ def test_visualizer_with_real_data():
     # Get the epoch data
     epoch_data = df.iloc[start_idx:end_idx, selected_columns].values.T
     
+    # Create channel mapping for the data
+    num_channels = epoch_data.shape[0]
+    channel_mapping = [
+        ChannelIndexMapping(board_position=i+1)  # Board positions 1 to N
+        for i in range(num_channels)
+    ]
+    
+    # Wrap data with channel mapping
+    epoch_data_wrapper = DataWithBrainFlowDataKey(
+        data=epoch_data,
+        channel_mapping=channel_mapping
+    )
+    
     # Create visualizer
     visualizer = Visualizer(
         seconds_per_epoch=30,
@@ -57,7 +71,7 @@ def test_visualizer_with_real_data():
     
     # Plot the data
     visualizer.plot_polysomnograph(
-        epoch_data=epoch_data,
+        epoch_data_wrapper=epoch_data_wrapper,
         sampling_rate=sampling_rate,
         sleep_stage=0,  # Wake stage
         time_offset=0,

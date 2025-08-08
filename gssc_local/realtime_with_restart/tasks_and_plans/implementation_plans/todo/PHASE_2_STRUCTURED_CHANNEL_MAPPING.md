@@ -170,6 +170,11 @@ selected_epoch_data = epoch_data_key_wrapper.get_by_keys(desired_brainflow_keys)
 3. **Signal processing results identical** to pre-refactor behavior
 4. **Foundation for Phase 3** - Consistent indexing system ready for centralized management
 
+✅ completed data class creation
+
+- ChannelIndexMapping
+- DataWithBrainFlowDataKey
+
 ## Comprehensive List of Arrays and Index Variables to Update
 
 Based on codebase analysis, here are all arrays and index variables that need to be converted to structured channel mapping:
@@ -186,6 +191,32 @@ eeg_combo_indices_electrode_channel_mapping = [0, 1, 2] # Line 582 (normal monta
 eog_combo_indices_electrode_channel_mapping = [10]      # Line 583 (normal montage)
 ```
 
+✅ completed epoch_data_all_electrode_channels_on_board_mapping update
+
+**File**: `processor_improved.py` (lines 71-73, 75-77)
+
+```python
+# CURRENT - Raw array indexing in make_combo_dictionary method:
+if eeg_index is not None:
+    eeg_data = epoch_tensor[eeg_index].reshape(1, 1, -1)
+    input_dict['eeg'] = eeg_data
+
+if eog_index is not None:
+    eog_data = epoch_tensor[eog_index].reshape(1, 1, -1)
+    input_dict['eog'] = eog_data
+```
+
+✅ completed
+
+**File**: `processor_improved.py` (line 269)
+
+```python
+# CURRENT - Extracts raw data from wrapper instead of using key-based access:
+input_dict_list = self.prepare_input_data(epoch_data_wrapper.data, index_combinations)
+```
+
+✅ completed
+
 **File**: `processor.py` (line 95)
 
 ```python
@@ -193,17 +224,13 @@ eog_combo_indices_electrode_channel_mapping = [10]      # Line 583 (normal monta
 def predict_sleep_stage(self, epoch_data, hidden_states, eeg_indices = [0, 1, 2], eog_indices = [3]):
 ```
 
+✅ completed
+
+### replace get_electrode_channel_indices with get_board_keys
+
+on montage.py we need to add a function that gets the board keys for all channels in the montage
+
 ### Buffer Management Arrays
-
-**File**: `data_manager.py`
-
-```python
-# Line 76 - Buffer count array (fixed size, may need ChannelIndexMapping for validation)
-self.epochs_processed_count_per_buffer = [0] * 6   # Count of epochs processed per buffer
-
-# Line 743 - Reset logic for buffer counts
-self.epochs_processed_count_per_buffer = [0] * 6
-```
 
 ### Data Access Index Variables
 
@@ -241,6 +268,17 @@ epoch_data_all_electrode_channels_on_board[10]  # Physical channel 11 (R-LEOG)
 epoch_data_all_electrode_channels_on_board[11]  # Physical channel 12 (L-LEOG)
 ```
 
+change dot to epoch_data
+
+now we need to change epoch_data[0] to epoch_data.get_by_key(0)
+
+## montage
+
+    electrode_indices = self.montage.get_electrode_channel_indices()
+        montage_electrode_data = epoch_data[electrode_indices]
+
+        we need to add a function to the montage that gets the montage indices by board position
+
 ### Array Construction Patterns
 
 **Pattern**: Array index to channel mapping
@@ -253,6 +291,10 @@ epoch_data = np.array([
 ])
 ```
 
+.montage.get_board_keys() can be used to get the board keys for all channels in the montage
+
+we need to change edt to have keys then we can reference them using the mapping we made.
+
 ### ETD Buffer Manager Channel References
 
 **File**: `etd_buffer_manager.py`
@@ -263,6 +305,31 @@ len(self.electrode_and_timestamp_data[0])           # Buffer size check
 board_data_chunk.shape[0]                          # Input channel count
 len(self.electrode_and_timestamp_channels)         # Expected channel count
 ```
+
+**File: main_speed_controlled_stream.py**
+
+- Line 116: `new_data[board_timestamp_channel][0]` → `new_data.get_by_key(board_timestamp_channel)[0]`
+- Line 124: `new_data[board_timestamp_channel][-1]` → `new_data.get_by_key(board_timestamp_channel)[-1]`
+
+**File: main_realtime_stream.py**
+
+- Line 176: `raw_board_data_chunk[board_timestamp_channel][0]` → `raw_board_data_chunk.get_by_key(board_timestamp_channel)[0]`
+
+**File: data_manager.py**
+
+- Line 198: `board_data_chunk[adjusted_channel_idx]` → `board_data_chunk.get_by_key(adjusted_channel_idx)`
+
+**File: etd_buffer_manager.py**
+
+- Line 281: `board_data_chunk[channel]` → `board_data_chunk.get_by_key(channel)`
+
+**File: utils/data_filtering_utils.py**
+
+- Line 61: `sanitized_board_data[board_timestamp_channel, :]` → `sanitized_board_data.get_by_key(board_timestamp_channel)`
+
+**File: core/brainflow_child_process_manager.py**
+
+- Line 92: `board_data[timestamp_channel]` → `board_data.get_by_key(timestamp_channel)`
 
 ## Variables That Do NOT Need ChannelIndexMapping
 
@@ -275,6 +342,21 @@ Not all arrays need ChannelIndexMapping. Only arrays that are used to access the
 - Validation arrays (`duplicate_indices`, `unique_indices`)
 - Model state arrays (`new_hidden_states`)
 - Time-based calculations (`total_duration`, `expected_samples`)
+
+## Specific Array Access Patterns to Convert to `.get_by_key()`
+
+Based on codebase analysis, here are all the specific array access patterns that need to be converted to use `DataWithBrainFlowDataKey.get_by_key()`:
+
+### Arrays That Do NOT Need Conversion:
+
+These access shape properties or work with already-processed data and should remain as regular array access:
+
+- `board_data_chunk.shape[0]`, `board_data_chunk.shape[1]` - Shape properties
+- `new_data[0]` when checking sample count - Length checking
+- Array construction loops like `range(num_electrode_channels)`
+- CSV formatting arrays (`fmt`, `data_array.shape[1]`)
+- Signal processing results (`results[i][0].numpy()`)
+- Model state arrays (`new_hidden_states`)
 
 ## Future Cleanup: Variable Name Simplification
 

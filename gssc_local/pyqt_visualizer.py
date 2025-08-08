@@ -2,6 +2,7 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
 import sys, os
+from gssc_local.realtime_with_restart.channel_mapping import DataWithBrainFlowDataKey, ChannelIndexMapping
 import logging
 from scipy.signal import butter, filtfilt, iirnotch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -65,12 +66,11 @@ class PyQtVisualizer:
         self.channel_labels = self.montage.get_channel_labels()
         self.channel_types = self.montage.get_channel_types()
         
-        # Get channel information from board if available
-        if board_shim is not None:
-            self.electrode_channels = board_shim.get_exg_channels(board_shim.get_board_id())
-        else:
-            # Default to 16 channels for Cyton+Daisy
-            self.electrode_channels = list(range(16))
+        # Require explicit board_shim parameter
+        if board_shim is None:
+            raise ValueError("board_shim parameter is required ")
+        self.electrode_channels = board_shim.get_exg_channels(board_shim.get_board_id())
+
             
         # Set PyQtGraph global configuration
         pg.setConfigOption('background', 'w')  # White background
@@ -157,32 +157,35 @@ class PyQtVisualizer:
         self._cached_epoch_start_time = None
         
         # Northwestern clinical filter standards
-        self.northwestern_bandpass_filters = {
-            # EEG Channels (0.3-100 Hz)
-            1: (0.3, 100.0),   # F3 - Frontal Left
-            2: (0.3, 100.0),   # F4 - Frontal Right  
-            3: (0.3, 100.0),   # C3 - Central Left
-            4: (0.3, 100.0),   # C4 - Central Right
-            5: (0.3, 100.0),   # O1 - Occipital Left
-            6: (0.3, 100.0),   # O2 - Occipital Right
-            7: (0.3, 100.0),   # T3/T5 - Temporal Left
-            8: (0.3, 100.0),   # T4/T6 - Temporal Right
-            
-            # EOG Channels (0.3-100 Hz)
-            9: (0.3, 100.0),    # ROC - Right Outer Canthus
-            10: (0.3, 100.0),   # LOC - Left Outer Canthus
-            11: (0.3, 100.0),   # R-EOG - Right EOG
-            12: (0.3, 100.0),   # L-EOG - Left EOG
-            
-            # EMG Channels (10-100 Hz)  
-            13: (10.0, 100.0),  # EMG1 - Chin EMG
-            14: (10.0, 100.0),  # EMG2 - Leg EMG
-            
-            # Respiratory/Other Channels
-            15: (0.3, 50.0),    # Airflow/Respiratory (lower high-cutoff)
-            16: (10.0, 100.0)   # Snoring/Audio (higher low-cutoff)
+        self.northwestern_filters_cyton_daisy = {
+            "bandpass_filters": {
+                # EEG Channels (0.3-100 Hz)
+                1: (0.3, 100.0),   # F3 - Frontal Left
+                2: (0.3, 100.0),   # F4 - Frontal Right  
+                3: (0.3, 100.0),   # C3 - Central Left
+                4: (0.3, 100.0),   # C4 - Central Right
+                5: (0.3, 100.0),   # O1 - Occipital Left
+                6: (0.3, 100.0),   # O2 - Occipital Right
+                7: (0.3, 100.0),   # T3/T5 - Temporal Left
+                8: (0.3, 100.0),   # T4/T6 - Temporal Right
+                
+                # EOG Channels (0.3-100 Hz)
+                9: (0.3, 100.0),    # ROC - Right Outer Canthus
+                10: (0.3, 100.0),   # LOC - Left Outer Canthus
+                11: (0.3, 100.0),   # R-EOG - Right EOG
+                12: (0.3, 100.0),   # L-EOG - Left EOG
+                
+                # EMG Channels (10-100 Hz)  
+                13: (10.0, 100.0),  # EMG1 - Chin EMG
+                14: (10.0, 100.0),  # EMG2 - Leg EMG
+                
+                # Respiratory/Other Channels
+                15: (0.3, 50.0),    # Airflow/Respiratory (lower high-cutoff)
+                16: (10.0, 100.0)   # Snoring/Audio (higher low-cutoff)
+            },
+            "notch_filters": [50.0, 60.0],
+            "board_keys": self.electrode_channels
         }
-        self.northwestern_notch_filters = [50.0, 60.0]
         
     def _init_polysomnograph(self):
         """Initialize the polysomnograph figure and plots"""
@@ -283,7 +286,7 @@ class PyQtVisualizer:
         # Immediately replot with current data if available
         if self._cached_epoch_data is not None:
             self.plot_polysomnograph(
-                epoch_data_all_electrode_channels_on_board=self._cached_epoch_data,
+                epoch_data_wrapper=self._cached_epoch_data_wrapper,
                 sampling_rate=self._cached_sampling_rate,
                 sleep_stage=self._cached_sleep_stage,
                 time_offset=self._cached_time_offset,
@@ -324,7 +327,7 @@ class PyQtVisualizer:
         filtered_data = filtfilt(b, a, data)
         return filtered_data
 
-    def apply_complete_filtering(self, epoch_data, channel_numbers, sampling_rate):
+    def apply_complete_filtering(self, montage_data_wrapper, sampling_rate):
         """Apply complete Northwestern filtering pipeline to selected channels
         
         Args:
@@ -332,34 +335,45 @@ class PyQtVisualizer:
             channel_numbers: List of actual channel numbers (1-based) corresponding to each row in epoch_data
             sampling_rate: Sampling rate in Hz
         """
-        filtered_data = epoch_data.copy()
         
-        for channel_idx, channel_num in enumerate(channel_numbers):
+        # copy data andcreate a new wrapper to return
+        filtered_data_wrapper = DataWithBrainFlowDataKey(
+            data=montage_data_wrapper.data.copy(),
+            channel_mapping=montage_data_wrapper.channel_mapping
+        )
+        
+        for _, board_key in enumerate(filtered_data_wrapper.channel_mapping): 
+            board_position = board_key.board_position
             
-            if channel_num in self.northwestern_bandpass_filters:
+            if board_position in self.northwestern_filters_cyton_daisy["bandpass_filters"]: 
                 try:
                     # Step 1: Apply channel-specific bandpass filter
-                    low_freq, high_freq = self.northwestern_bandpass_filters[channel_num]
-                    filtered_data[channel_idx] = self.apply_bandpass_filter(
-                        filtered_data[channel_idx], low_freq, high_freq, sampling_rate
+                    low_freq, high_freq = self.northwestern_filters_cyton_daisy["bandpass_filters"][board_position]
+                    filtered_data = self.apply_bandpass_filter(
+                        filtered_data_wrapper.get_by_key(board_position), low_freq, high_freq, sampling_rate
                     )
+                    filtered_data_wrapper.set_by_key(board_position, filtered_data)
                     
                     # Step 2: Apply notch filters for power line noise
-                    for notch_freq in self.northwestern_notch_filters:
-                        filtered_data[channel_idx] = self.apply_notch_filter(
-                            filtered_data[channel_idx], notch_freq, sampling_rate
+                    for notch_freq in self.northwestern_filters_cyton_daisy["notch_filters"]:
+                        filtered_data = self.apply_notch_filter(
+                            filtered_data_wrapper.get_by_key(board_position), notch_freq, sampling_rate
                         )
+                        filtered_data_wrapper.set_by_key(board_position, filtered_data)
                         
                 except Exception as e:
-                    logger.error(f"Filter failed on channel {channel_num} ({low_freq}-{high_freq} Hz): {e}")
-                    raise FilterError(f"Channel {channel_num} filtering failed. Check sampling rate and data quality.")
+                    logger.error(f"Filter failed on channel {board_key} ({low_freq}-{high_freq} Hz): {e}")
+                    raise FilterError(f"Channel {board_key} filtering failed. Check sampling rate and data quality.")
         
-        return filtered_data
+        return filtered_data_wrapper
             
-    def plot_polysomnograph(self, epoch_data_all_electrode_channels_on_board, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
+    def plot_polysomnograph(self, epoch_data_wrapper, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
         """Update polysomnograph plot with new data"""
+        # Extract data from wrapper for processing
+        epoch_data = epoch_data_wrapper.data
+        
         # Cache the current display parameters for immediate filter toggling
-        self._cached_epoch_data = epoch_data_all_electrode_channels_on_board.copy()
+        self._cached_epoch_data = epoch_data.copy()
         self._cached_sampling_rate = sampling_rate
         self._cached_sleep_stage = sleep_stage
         self._cached_time_offset = time_offset
@@ -387,17 +401,23 @@ class PyQtVisualizer:
             self.title_label.setText(title_text)
         
         # Create time axis
-        time_axis = np.arange(epoch_data_all_electrode_channels_on_board.shape[1]) / sampling_rate + time_offset
+        time_axis = np.arange(epoch_data.shape[1]) / sampling_rate + time_offset
 
         # Extract only the channels defined in the montage from the full epoch_data
-        electrode_indices = self.montage.get_electrode_channel_indices()
-        montage_electrode_data = epoch_data_all_electrode_channels_on_board[electrode_indices]
+        montage_pkeys = self.montage.get_board_keys(self.electrode_channels) 
+        montage_electrode_data = epoch_data_wrapper.get_by_keys(montage_pkeys)
+
+        # make montage data wrapper
+        channel_mappings = [ChannelIndexMapping(board_position=key) for key in self.montage.get_board_keys(self.electrode_channels)]
+        montage_data_wrapper = DataWithBrainFlowDataKey(
+            data=montage_electrode_data,
+            channel_mapping=channel_mappings
+        )
 
         # Apply Northwestern filtering if enabled (for display only)
         if hasattr(self, 'visual_filter_enabled') and self.visual_filter_enabled:
             # Get actual channel numbers for proper filter mapping
-            channel_numbers = sorted(self.montage.channels.keys())
-            filtered_display_montage_electrode_data = self.apply_complete_filtering(montage_electrode_data, channel_numbers, sampling_rate)
+            filtered_display_montage_electrode_data = self.apply_complete_filtering(montage_data_wrapper, sampling_rate)
         else:
             filtered_display_montage_electrode_data = montage_electrode_data
 
