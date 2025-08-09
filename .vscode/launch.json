@@ -29,6 +29,19 @@
       "env": {
         "PYTHONPATH": "${workspaceFolder}"
       }
+    },
+    {
+      "name": "Debug Main Speed Controlled Stream",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/gssc_local/realtime_with_restart/main_speed_controlled_stream.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false,
+      "stopOnEntry": false
     }
   ]
 }

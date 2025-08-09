@@ -251,8 +251,8 @@ class SignalProcessor:
         processed_epoch_data = self.preprocess_epoch(epoch_data_wrapper.data)
         
         # Create new wrapper with processed data but same channel mapping
-        from gssc_local.realtime_with_restart.channel_mapping import DataWithBrainFlowDataKey
-        processed_wrapper = DataWithBrainFlowDataKey(
+        from gssc_local.realtime_with_restart.channel_mapping import NumPyDataWithBrainFlowDataKey
+        processed_wrapper = NumPyDataWithBrainFlowDataKey(
             data=processed_epoch_data,
             channel_mapping=epoch_data_wrapper.channel_mapping
         )

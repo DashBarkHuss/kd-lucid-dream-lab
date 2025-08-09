@@ -2,7 +2,7 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
 import sys, os
-from gssc_local.realtime_with_restart.channel_mapping import DataWithBrainFlowDataKey, ChannelIndexMapping
+from gssc_local.realtime_with_restart.channel_mapping import NumPyDataWithBrainFlowDataKey, ChannelIndexMapping
 import logging
 from scipy.signal import butter, filtfilt, iirnotch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -337,7 +337,7 @@ class PyQtVisualizer:
         """
         
         # copy data andcreate a new wrapper to return
-        filtered_data_wrapper = DataWithBrainFlowDataKey(
+        filtered_data_wrapper = NumPyDataWithBrainFlowDataKey(
             data=montage_data_wrapper.data.copy(),
             channel_mapping=montage_data_wrapper.channel_mapping
         )
@@ -408,7 +408,7 @@ class PyQtVisualizer:
 
         # make montage data wrapper
         channel_mappings = [ChannelIndexMapping(board_position=key) for key in self.montage.get_board_keys(self.electrode_channels)]
-        montage_data_wrapper = DataWithBrainFlowDataKey(
+        montage_data_wrapper = NumPyDataWithBrainFlowDataKey(
             data=montage_electrode_data,
             channel_mapping=channel_mappings
         )

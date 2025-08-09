@@ -10,7 +10,7 @@ import h5py
 import pytest
 from gssc_local.montage import Montage
 from gssc_local.realtime_with_restart.processor import SignalProcessor
-from gssc_local.realtime_with_restart.channel_mapping import ChannelIndexMapping, DataWithBrainFlowDataKey
+from gssc_local.realtime_with_restart.channel_mapping import ChannelIndexMapping, NumPyDataWithBrainFlowDataKey
 from gssc_local.convert_csv_to_fif import convert_csv_to_raw
 
 def test_predict_sleep_stage():
@@ -60,7 +60,7 @@ def test_predict_sleep_stage():
     ]
     
     # Wrap data with channel mapping
-    epoch_data_wrapper = DataWithBrainFlowDataKey(
+    epoch_data_wrapper = NumPyDataWithBrainFlowDataKey(
         data=numpy_data,
         channel_mapping=channel_mapping
     )

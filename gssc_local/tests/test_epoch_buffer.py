@@ -92,9 +92,9 @@ class TestEpochBuffer:
             
         return ETDBufferManager(
             max_buffer_size=35 * metadata['sampling_rate'],  # 35 seconds of data
-            timestamp_channel_index=len(electrode_and_timestamp_channels) - 1,  # Timestamp is last channel
+            timestamp_board_key=timestamp_channel,
             channel_count=len(electrode_and_timestamp_channels),
-            electrode_and_timestamp_channels=electrode_and_timestamp_channels
+            electrode_and_timestamp_board_keys=electrode_and_timestamp_channels
         )
 
     @pytest.fixture
@@ -169,7 +169,7 @@ class TestEpochBuffer:
                 f"Buffer should maintain at least {min_buffer_size} points after processing buffer {buffer_id}, got {current_buffer_size}"
             
             # Verify data continuity
-            timestamps = data_manager.etd_buffer_manager.electrode_and_timestamp_data[data_manager.etd_buffer_manager.timestamp_channel_index]
+            timestamps = data_manager.etd_buffer_manager.electrode_and_timestamp_data_pkwrapper.get_by_key(data_manager.etd_buffer_manager.timestamp_board_key)
             data_manager.etd_buffer_manager._verify_timestamp_continuity(timestamps)
             
             # Verify offset tracking
@@ -179,11 +179,12 @@ class TestEpochBuffer:
             assert data_manager.etd_buffer_manager.total_streamed_samples == initial_data_size + 20 * sampling_rate, \
                 f"Total streamed samples should be {initial_data_size + 20 * sampling_rate}, got {data_manager.etd_buffer_manager.total_streamed_samples}"
             
-            # assert that the last channel is the timestamp channel
-            assert data_manager.etd_buffer_manager.electrode_and_timestamp_channels[-1] == metadata['timestamp_channel'], \
-                "Last channel should be the timestamp channel"
-            # assert that the last channels first value is a timestamp
-            first_timestamp = data_manager.etd_buffer_manager.electrode_and_timestamp_data[-1][0]
+            # assert that the timestamp channel is included
+            assert data_manager.etd_buffer_manager.timestamp_board_key == metadata['timestamp_channel'], \
+                "Timestamp board key should match expected timestamp channel"
+            # assert that the timestamp channel first value is a timestamp
+            timestamp_data = data_manager.etd_buffer_manager.electrode_and_timestamp_data_pkwrapper.get_by_key(data_manager.etd_buffer_manager.timestamp_board_key)
+            first_timestamp = timestamp_data[0]
             assert first_timestamp > 1700000000, \
                 f"First value of last channel should be a Unix timestamp after 2023, got {first_timestamp}"
             

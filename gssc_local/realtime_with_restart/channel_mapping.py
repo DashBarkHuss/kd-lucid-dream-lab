@@ -15,7 +15,7 @@ class ChannelIndexMapping:
 
 
 @dataclass
-class DataWithBrainFlowDataKey:
+class NumPyDataWithBrainFlowDataKey:
     """General wrapper for any data that tracks BrainFlow board data indices as primary keys"""
     data: np.ndarray
     channel_mapping: List[ChannelIndexMapping]  # Maps array positions to BrainFlow data indices
@@ -59,3 +59,50 @@ class DataWithBrainFlowDataKey:
     def shape(self):
         """Expose shape of underlying data"""
         return self.data.shape
+
+
+@dataclass
+class ListDataWithBrainFlowDataKey:
+    """Wrapper for list-of-lists data with BrainFlow key tracking"""
+    data: List[List]  # [channel][time] format
+    channel_mapping: List[ChannelIndexMapping]
+
+    def get_by_key(self, brainflow_key: int) -> List:
+        """Get single channel list by BrainFlow data key"""
+        for array_idx, mapping in enumerate(self.channel_mapping):
+            if mapping.board_position == brainflow_key:
+                return self.data[array_idx]
+        raise ValueError(f"BrainFlow key {brainflow_key} not found in channel mapping")
+
+    def get_by_keys(self, brainflow_keys: List[int]) -> List[List]:
+        """Get multiple channel lists by BrainFlow data keys"""
+        return [self.get_by_key(key) for key in brainflow_keys]
+
+    def set_by_key(self, brainflow_key: int, new_data: List):
+        """Set data for a specific BrainFlow data key"""
+        for array_idx, mapping in enumerate(self.channel_mapping):
+            if mapping.board_position == brainflow_key:
+                self.data[array_idx] = new_data
+                return
+        raise ValueError(f"BrainFlow key {brainflow_key} not found in channel mapping")
+
+    def extend_by_key(self, brainflow_key: int, new_data: List):
+        """Extend data for a specific BrainFlow data key"""
+        for array_idx, mapping in enumerate(self.channel_mapping):
+            if mapping.board_position == brainflow_key:
+                self.data[array_idx].extend(new_data)
+                return
+        raise ValueError(f"BrainFlow key {brainflow_key} not found in channel mapping")
+
+    def __getitem__(self, key):
+        """Allow array-like access to underlying data"""
+        return self.data[key]
+
+    def __len__(self):
+        """Return number of channels"""
+        return len(self.data)
+    
+    def clear_all(self):
+        """Clear all channel data"""
+        for channel_list in self.data:
+            channel_list.clear()

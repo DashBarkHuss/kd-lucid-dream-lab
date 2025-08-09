@@ -30,7 +30,7 @@ from gssc_local.realtime_with_restart.export.csv.test_utils import compare_csv_f
 from gssc_local.realtime_with_restart.export.csv.validation import validate_file_path
 from gssc_local.realtime_with_restart.export.csv.exceptions import CSVExportError, CSVDataError
 from .etd_buffer_manager import ETDBufferManager
-from .channel_mapping import ChannelIndexMapping, DataWithBrainFlowDataKey
+from .channel_mapping import ChannelIndexMapping, NumPyDataWithBrainFlowDataKey
 import pandas as pd
 import time
 import os
@@ -60,9 +60,9 @@ class DataManager:
         # Initialize buffer manager
         self.etd_buffer_manager = ETDBufferManager(
             max_buffer_size=35 * sampling_rate,  # 35 seconds of data
-            timestamp_channel_index=electrode_and_timestamp_channels.index(self.board_timestamp_channel),
+            timestamp_board_key=self.board_timestamp_channel,
             channel_count=len(electrode_and_timestamp_channels),
-            electrode_and_timestamp_channels=electrode_and_timestamp_channels
+            electrode_and_timestamp_board_keys=electrode_and_timestamp_channels
         )
         
         # Buffer tracking
@@ -543,13 +543,15 @@ class DataManager:
         end_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(end_idx_abs, to_etd=True)
         
         # Extract EXACTLY points_per_epoch data points from the correct slice
-        # Note: We assume the timestamp channel is always the last channel in ETD buffer
-        # Use sequential 0-based indexing for electrode channels (excluding timestamp)
-        num_electrode_channels = len(self.etd_buffer_manager.electrode_and_timestamp_data) - 1
+        # Get electrode board keys (exclude timestamp channel)
+        electrode_board_keys = [key for key in self.etd_buffer_manager.electrode_and_timestamp_board_keys 
+                               if key != self.etd_buffer_manager.timestamp_board_key]
+        
         epoch_data = np.array([
-            self.etd_buffer_manager.electrode_and_timestamp_data[i][start_idx_rel:end_idx_rel] # we needd to add keys to electrode_and_timestamp_data
-            for i in range(num_electrode_channels)
+            self.etd_buffer_manager.electrode_and_timestamp_data_pkwrapper.get_by_key(board_key)[start_idx_rel:end_idx_rel]
+            for board_key in electrode_board_keys
         ])
+        num_electrode_channels = len(electrode_board_keys)
         
         # Verify we have exactly the right number of points
         assert epoch_data.shape[1] == self.points_per_epoch, f"Expected {self.points_per_epoch} points, got {epoch_data.shape[1]}"
@@ -570,14 +572,14 @@ class DataManager:
         
         channel_types = self.montage.get_channel_types()
         
-        # Create structured channel mapping for epoch data (array indices 0-15 → board positions 1-16)
+        # Create structured channel mapping for epoch data using actual board keys
         epoch_data_channel_mapping = [
-            ChannelIndexMapping(board_position=i+1)  # Array index i → Board position i+1 (channels 1-16)
-            for i in range(num_electrode_channels)
+            ChannelIndexMapping(board_position=board_key)
+            for board_key in electrode_board_keys
         ]
         
         # Wrap epoch data with structured mapping
-        epoch_data_key_wrapper = DataWithBrainFlowDataKey(
+        epoch_data_key_wrapper = NumPyDataWithBrainFlowDataKey(
             data=epoch_data,
             channel_mapping=epoch_data_channel_mapping
         )
@@ -749,7 +751,7 @@ class DataManager:
             self.last_saved_timestamp = None
             
             # Clear data buffers
-            self.etd_buffer_manager.electrode_and_timestamp_data = [[] for _ in range(len(self.etd_buffer_manager.electrode_and_timestamp_channels))]
+            self.etd_buffer_manager.electrode_and_timestamp_data_pkwrapper.clear_all()
             self.last_processed_epoch_per_buffer = [None] * 6
             self.epochs_processed_count_per_buffer = [0] * 6
             

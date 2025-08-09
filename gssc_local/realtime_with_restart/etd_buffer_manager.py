@@ -29,6 +29,7 @@ See individual method docstrings for detailed documentation.
 import numpy as np
 import logging
 from typing import List, Tuple
+from .channel_mapping import ListDataWithBrainFlowDataKey, ChannelIndexMapping
 logger = logging.getLogger(__name__)
 
 
@@ -57,21 +58,30 @@ class ETDBufferManager:
                 ]
     """
     
-    def __init__(self, max_buffer_size: int, timestamp_channel_index: int, channel_count: int, electrode_and_timestamp_channels: List[int]):
+    def __init__(self, max_buffer_size: int, timestamp_board_key: int, channel_count: int, electrode_and_timestamp_board_keys: List[int]):
         """Initialize the buffer manager.
         
         Args:
             max_buffer_size: Maximum number of data points to maintain in buffer
-            timestamp_channel_index: Index of the timestamp channel in the buffer
+            timestamp_board_key: Board position key for the timestamp channel
             channel_count: Number of channels in the buffer
-            electrode_and_timestamp_channels: List of channel indices to store in the buffer
+            electrode_and_timestamp_board_keys: List of board position keys for channels to store in the buffer
         """
         self.max_buffer_size = max_buffer_size
         self.offset = 0  # Track absolute position in the data stream
         self.total_streamed_samples = 0  # Track total samples processed
-        self.timestamp_channel_index = timestamp_channel_index
-        self.electrode_and_timestamp_channels = electrode_and_timestamp_channels
-        self.electrode_and_timestamp_data = [[] for _ in range(channel_count)]
+        self.timestamp_board_key = timestamp_board_key
+        self.electrode_and_timestamp_board_keys = electrode_and_timestamp_board_keys
+        
+        # Convert board keys to channel mappings internally
+        channel_mappings = [ChannelIndexMapping(board_position=key) for key in electrode_and_timestamp_board_keys]
+        
+        # Create structured buffer with channel mapping
+        raw_data = [[] for _ in range(channel_count)]
+        self.electrode_and_timestamp_data_pkwrapper = ListDataWithBrainFlowDataKey(
+            data=raw_data,
+            channel_mapping=channel_mappings
+        )
         
     def _get_total_data_points(self) -> int:
         """Get total number of data points in buffer.
@@ -79,7 +89,7 @@ class ETDBufferManager:
         Returns:
             Number of data points in buffer (length of any channel's data list)
         """
-        return len(self.electrode_and_timestamp_data[0]) if self.electrode_and_timestamp_data else 0
+        return len(self.electrode_and_timestamp_data_pkwrapper[0]) if self.electrode_and_timestamp_data_pkwrapper else 0
         
     def _get_timestamps(self) -> List[float]:
         """Get timestamps from electrode_and_timestamp_data buffer.
@@ -87,7 +97,7 @@ class ETDBufferManager:
         Returns:
             List of timestamps from the buffer (from the timestamp channel)
         """
-        return self.electrode_and_timestamp_data[self.timestamp_channel_index]  # Use correct timestamp channel index
+        return self.electrode_and_timestamp_data_pkwrapper.get_by_key(self.timestamp_board_key)
         
     def _verify_timestamp_continuity(self, timestamps: List[float]) -> None:
         """Verify timestamp continuity in the buffer.
@@ -132,7 +142,7 @@ class ETDBufferManager:
             )
             
         # Verify all channels have the same length
-        channel_lengths = [len(channel) for channel in self.electrode_and_timestamp_data]
+        channel_lengths = [len(channel) for channel in self.electrode_and_timestamp_data_pkwrapper]
         if not all(length == expected_size for length in channel_lengths):
             raise ValueError(
                 f"Channel synchronization failed: lengths {channel_lengths} should all be {expected_size}"
@@ -177,7 +187,7 @@ class ETDBufferManager:
         Raises:
             ValueError: If validation fails after trim
         """
-        if not self.electrode_and_timestamp_data or max_next_expected is None or max_next_expected <= 0:
+        if not self.electrode_and_timestamp_data_pkwrapper or max_next_expected is None or max_next_expected <= 0:
             return
             
         current_size = self._get_total_data_points()
@@ -201,7 +211,7 @@ class ETDBufferManager:
             return
             
         # Remove oldest data points from each channel
-        for channel in self.electrode_and_timestamp_data:
+        for channel in self.electrode_and_timestamp_data_pkwrapper:
             channel[:safe_remove_points] = []
             
         # Update offset tracking - this must happen after removing the data
@@ -269,16 +279,16 @@ class ETDBufferManager:
                 - Only channels specified in electrode_and_timestamp_channels will be stored
         """
         # Validate data shape: must be (n_channels, n_samples) BrainFlow's native format
-        if board_data_chunk.shape[0] < len(self.electrode_and_timestamp_channels):
+        if board_data_chunk.shape[0] < len(self.electrode_and_timestamp_board_keys):
             raise ValueError(
-                f"Input data has {board_data_chunk.shape[0]} channels but we need {len(self.electrode_and_timestamp_channels)} "
+                f"Input data has {board_data_chunk.shape[0]} channels but we need {len(self.electrode_and_timestamp_board_keys)} "
                 f"channels to select from. Expected data in (n_channels, n_samples) format with at least "
-                f"{len(self.electrode_and_timestamp_channels)} channels, got shape {board_data_chunk.shape}"
+                f"{len(self.electrode_and_timestamp_board_keys)} channels, got shape {board_data_chunk.shape}"
             )
         
         # Only store channels we want in the correct order
-        for i, channel in enumerate(self.electrode_and_timestamp_channels):
-            self.electrode_and_timestamp_data[i].extend(board_data_chunk[channel].tolist() if hasattr(board_data_chunk[channel], 'tolist') else board_data_chunk[channel])
+        for board_key in self.electrode_and_timestamp_board_keys:
+            self.electrode_and_timestamp_data_pkwrapper.extend_by_key(board_key, board_data_chunk[board_key].tolist())
                 
         # Update total streamed samples using the dedicated method
         self.update_total_streamed_samples(board_data_chunk) 

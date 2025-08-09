@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from montage import Montage
 from pyqt_visualizer import PyQtVisualizer
-from realtime_with_restart.channel_mapping import ChannelIndexMapping, DataWithBrainFlowDataKey
+from realtime_with_restart.channel_mapping import ChannelIndexMapping, NumPyDataWithBrainFlowDataKey
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
@@ -67,7 +67,7 @@ def test_synthetic_data():
         ]
         
         # Wrap data with channel mapping
-        epoch_data_wrapper = DataWithBrainFlowDataKey(
+        epoch_data_wrapper = NumPyDataWithBrainFlowDataKey(
             data=data,
             channel_mapping=channel_mapping
         )
@@ -143,7 +143,7 @@ def test_real_data():
     ]
     
     # Wrap data with channel mapping
-    epoch_data_wrapper = DataWithBrainFlowDataKey(
+    epoch_data_wrapper = NumPyDataWithBrainFlowDataKey(
         data=epoch_data,
         channel_mapping=channel_mapping
     )
