@@ -244,6 +244,7 @@ board_data_chunk.shape[1]  # Number of samples dimension
 epoch_data.shape[0]        # Number of channels in epoch
 epoch_data.shape[1]        # Number of samples in epoch
 
+
 # Timestamp channel access (these use board position indices)
 new_data[board_timestamp_channel][0]     # First timestamp
 timestamps[0]                            # First timestamp
@@ -253,6 +254,8 @@ timestamps[-1]                          # Last timestamp
 channel_data[0]                         # First sample in channel
 data.data[array_indices]                # Multi-channel access by indices
 ```
+
+✅ completed - board_data_chunk we kept the same since it is the raw board positions. channel_data is just one channel. new data is the raw board data.
 
 ### Channel Selection and Processing Arrays
 
@@ -269,9 +272,7 @@ epoch_data_all_electrode_channels_on_board[10]  # Physical channel 11 (R-LEOG)
 epoch_data_all_electrode_channels_on_board[11]  # Physical channel 12 (L-LEOG)
 ```
 
-change dot to epoch_data
-
-now we need to change epoch_data[0] to epoch_data.get_by_key(0)
+Nothing to to hear anymore.
 
 ## montage
 
@@ -279,6 +280,8 @@ now we need to change epoch_data[0] to epoch_data.get_by_key(0)
         montage_electrode_data = epoch_data[electrode_indices]
 
         we need to add a function to the montage that gets the montage indices by board position
+
+✅ completed
 
 ### Array Construction Patterns
 
@@ -292,9 +295,11 @@ epoch_data = np.array([
 ])
 ```
 
-.montage.get_board_keys() can be used to get the board keys for all channels in the montage
+✅ completed
 
 we need to change edt to have keys then we can reference them using the mapping we made.
+
+✅ completed
 
 ### ETD Buffer Manager Channel References
 
@@ -309,19 +314,25 @@ Currently: `self.electrode_and_timestamp_data = [[] for _ in range(channel_count
 
 **Needs**: Wrapper with `DataWithBrainFlowDataKey` to track board position mapping:
 
+✅ completed
+
 ```python
 # Current access pattern
 self.electrode_and_timestamp_data[i]  # Line 281, 204, etc.
 
-# Should become  
+# Should become
 self.electrode_and_timestamp_data.get_by_key(board_position)
 ```
+
+✅ completed
 
 **2. Channel Selection Logic - `electrode_and_timestamp_channels`**
 **Lines 60, 67, 73, 272, 276, 280**
 
 Currently: `List[int]` of channel indices
 **Needs**: `List[ChannelIndexMapping]` with board positions
+
+✅ completed original code was correct.
 
 ```python
 # Current (Line 280)
@@ -334,6 +345,8 @@ for i, channel_mapping in enumerate(self.electrode_and_timestamp_channels):
     self.electrode_and_timestamp_data[i].extend(board_data_chunk[board_position].tolist())
 ```
 
+✅ completed with the extend_by_key method.
+
 **3. Board Data Access Pattern**
 **Line 281**
 
@@ -344,6 +357,8 @@ board_data_chunk[channel]
 # Should become (if board_data_chunk gets wrapped)
 board_data_chunk.get_by_key(channel)
 ```
+
+⭐️ skipped for nowsince board_data_chunk is the raw board data.
 
 **4. Timestamp Channel Index**
 **Lines 72, 90**
@@ -356,10 +371,11 @@ Currently: `self.timestamp_channel_index: int`
 return self.electrode_and_timestamp_data[self.timestamp_channel_index]
 
 # Should become
-return self.electrode_and_timestamp_data.get_by_key(self.timestamp_channel_mapping.board_position) 
+return self.electrode_and_timestamp_data.get_by_key(self.timestamp_channel_mapping.board_position)
 
 ```
-⭐️ or just change timestamp_channel_index to timestamp_key
+
+✅ completed
 
 **5. Channel Count and Validation**
 **Lines 74, 135, 272, 276**
@@ -367,7 +383,7 @@ return self.electrode_and_timestamp_data.get_by_key(self.timestamp_channel_mappi
 These remain as integers but validation logic needs updating:
 
 ```python
-# Current (Line 272)  
+# Current (Line 272)
 if board_data_chunk.shape[0] < len(self.electrode_and_timestamp_channels):
 
 # Should become
@@ -375,27 +391,33 @@ if board_data_chunk.shape[0] < len(self.electrode_and_timestamp_channels):
     # But with better error message referencing board positions
 ```
 
+✅ completed
+
 #### **Method Updates Required**
 
 **6. Constructor Updates**
 **Lines 60, 67, 72-74**
 
 ```python
-def __init__(self, max_buffer_size: int, timestamp_channel_mapping: ChannelIndexMapping, 
+def __init__(self, max_buffer_size: int, timestamp_channel_mapping: ChannelIndexMapping,
              channel_count: int, electrode_and_timestamp_channel_mappings: List[ChannelIndexMapping]):
 ```
 
-⭐️ timestamp_channel_mapping they think that this should be a channell maping object. does that mean all saved indices shoud be too?
+✅ completed but different from the original code.
 
 **7. Data Addition Method**
 **Lines 260-285**
 
 The `select_channel_data_and_add()` method needs complete refactor to use key-based access patterns.
 
+✅ completed
+s
 **8. Buffer Access Methods**
 **Lines 82, 90**
 
 All methods that access `electrode_and_timestamp_data` need to use `get_by_key()` instead of array indexing.
+
+✅ completed
 
 #### **Variables That Do NOT Need Updates in ETD Buffer Manager**
 
@@ -406,7 +428,6 @@ These work with processed data/metadata and should remain unchanged:
 - Shape access: `board_data_chunk.shape[0]`, `board_data_chunk.shape[1]` (Lines 272, 276)
 - List operations: `len()`, `range()`, slicing operations
 - Validation variables: `expected_size`, `actual_size`, `channel_lengths`
-
 
 ```python
 # Other channel counting and validation that remain unchanged
@@ -420,21 +441,31 @@ len(self.electrode_and_timestamp_channels)         # Expected channel count
 - Line 116: `new_data[board_timestamp_channel][0]` → `new_data.get_by_key(board_timestamp_channel)[0]`
 - Line 124: `new_data[board_timestamp_channel][-1]` → `new_data.get_by_key(board_timestamp_channel)[-1]`
 
+skip - new data is the raw board data.
+
 **File: main_realtime_stream.py**
 
 - Line 176: `raw_board_data_chunk[board_timestamp_channel][0]` → `raw_board_data_chunk.get_by_key(board_timestamp_channel)[0]`
+
+skip - raw board data chunk is the raw board data.
 
 **File: data_manager.py**
 
 - Line 198: `board_data_chunk[adjusted_channel_idx]` → `board_data_chunk.get_by_key(adjusted_channel_idx)`
 
+skip - board data chunk is the raw board data.
+
 **File: etd_buffer_manager.py**
 
 - Line 281: `board_data_chunk[channel]` → `board_data_chunk.get_by_key(channel)`
 
+skip - board data chunk is the raw board data.
+
 **File: utils/data_filtering_utils.py**
 
 - Line 61: `sanitized_board_data[board_timestamp_channel, :]` → `sanitized_board_data.get_by_key(board_timestamp_channel)`
+
+skip - sanitized board data is the raw board data.
 
 **File: core/brainflow_child_process_manager.py**
 
@@ -469,20 +500,6 @@ These access shape properties or work with already-processed data and should rem
 
 ## Data Manager Specific Updates (Comprehensive Analysis)
 
-### **Critical Priority - Hardcoded Channel Arrays (Lines 588-595)**
-
-These are the main targets that need immediate conversion to use `DataWithBrainFlowDataKey.get_by_keys()`:
-
-```python
-# CURRENT (Lines 588-595): t
-if all(ch_type == "EOG" for ch_type in channel_types):
-    eeg_combo_indices_electrode_channel_mapping = []        # Line 589 - NEEDS UPDATE
-    eog_combo_indices_electrode_channel_mapping = [10, 11]  # Line 590 - NEEDS UPDATE
-else:
-    eeg_combo_indices_electrode_channel_mapping = [1, 2, 3]  # Line 594 - NEEDS UPDATE
-    eog_combo_indices_electrode_channel_mapping = [10]       # Line 595 - NEEDS UPDATE
-```
-
 **Required Changes:**
 
 - Replace hardcoded arrays with board position keys
@@ -502,10 +519,14 @@ epoch_data = np.array([
 
 ⏳ this is mostly an etd buffer manager issue. need to update the etd buffer manager to use the new mapping.
 
+✅ completed
+
 **Required Changes:**
 
 - Add structured channel mapping to `etd_buffer_manager.electrode_and_timestamp_data`
 - Use board position keys instead of sequential array indices
+
+✅ completed
 
 ### **ETD Buffer Manager Integration**
 
@@ -520,6 +541,8 @@ self.etd_buffer_manager.electrode_and_timestamp_data.get_by_key(board_position)[
 ```
 
 ⏳ need to update the etd buffer manager to use the new mapping.
+
+✅ completed
 
 ### **Validation Method Updates (Line 197)**
 

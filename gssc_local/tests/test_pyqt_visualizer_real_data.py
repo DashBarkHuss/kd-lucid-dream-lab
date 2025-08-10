@@ -50,7 +50,7 @@ def test_pyqt_visualizer_with_real_data():
     ]
     
     # Wrap data with channel mapping
-    epoch_data_wrapper = NumPyDataWithBrainFlowDataKey(
+    epoch_data_keyed = NumPyDataWithBrainFlowDataKey(
         data=epoch_data,
         channel_mapping=channel_mapping
     )
@@ -69,7 +69,7 @@ def test_pyqt_visualizer_with_real_data():
     
     # Plot the data
     visualizer.plot_polysomnograph(
-        epoch_data_wrapper=epoch_data_wrapper,
+        epoch_data_keyed=epoch_data_keyed,
         sampling_rate=sampling_rate,
         sleep_stage=0,  # Wake stage
         time_offset=0,

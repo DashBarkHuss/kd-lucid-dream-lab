@@ -60,7 +60,7 @@ def test_predict_sleep_stage():
     ]
     
     # Wrap data with channel mapping
-    epoch_data_wrapper = NumPyDataWithBrainFlowDataKey(
+    epoch_data_keyed = NumPyDataWithBrainFlowDataKey(
         data=numpy_data,
         channel_mapping=channel_mapping
     )
@@ -71,7 +71,7 @@ def test_predict_sleep_stage():
     
     # Get predictions
     predicted_class, class_probs, new_hiddens = processor.predict_sleep_stage(
-        epoch_data_wrapper, 
+        epoch_data_keyed, 
         eeg_eog_combo_dict, 
         hiddens
     )

@@ -548,7 +548,7 @@ class DataManager:
                                if key != self.etd_buffer_manager.timestamp_board_key]
         
         epoch_data = np.array([
-            self.etd_buffer_manager.electrode_and_timestamp_data_pkwrapper.get_by_key(board_key)[start_idx_rel:end_idx_rel]
+            self.etd_buffer_manager.electrode_and_timestamp_data_keyed.get_by_key(board_key)[start_idx_rel:end_idx_rel]
             for board_key in electrode_board_keys
         ])
         num_electrode_channels = len(electrode_board_keys)
@@ -579,7 +579,7 @@ class DataManager:
         ]
         
         # Wrap epoch data with structured mapping
-        epoch_data_key_wrapper = NumPyDataWithBrainFlowDataKey(
+        epoch_data_keyed = NumPyDataWithBrainFlowDataKey(
             data=epoch_data,
             channel_mapping=epoch_data_channel_mapping
         )
@@ -602,7 +602,7 @@ class DataManager:
         
         # Get sleep stage prediction using SignalProcessor
         predicted_class, class_probs, new_hidden_states = self.signal_processor.predict_sleep_stage(
-            epoch_data_key_wrapper,
+            epoch_data_keyed,
             index_combinations,
             self.buffer_hidden_states[buffer_id]
         )
@@ -615,7 +615,7 @@ class DataManager:
         # Update visualization using Visualizer
         time_offset = start_idx_abs / self.sampling_rate
         self.visualizer.plot_polysomnograph(
-            epoch_data_key_wrapper, 
+            epoch_data_keyed, 
             self.sampling_rate, 
             predicted_class, 
             time_offset, 
@@ -751,7 +751,7 @@ class DataManager:
             self.last_saved_timestamp = None
             
             # Clear data buffers
-            self.etd_buffer_manager.electrode_and_timestamp_data_pkwrapper.clear_all()
+            self.etd_buffer_manager.electrode_and_timestamp_data_keyed.clear_all()
             self.last_processed_epoch_per_buffer = [None] * 6
             self.epochs_processed_count_per_buffer = [0] * 6
             

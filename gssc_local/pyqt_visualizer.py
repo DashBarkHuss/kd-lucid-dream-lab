@@ -286,7 +286,7 @@ class PyQtVisualizer:
         # Immediately replot with current data if available
         if self._cached_epoch_data is not None:
             self.plot_polysomnograph(
-                epoch_data_wrapper=self._cached_epoch_data_wrapper,
+                epoch_data_keyed=self._cached_epoch_data_keyed,
                 sampling_rate=self._cached_sampling_rate,
                 sleep_stage=self._cached_sleep_stage,
                 time_offset=self._cached_time_offset,
@@ -327,7 +327,7 @@ class PyQtVisualizer:
         filtered_data = filtfilt(b, a, data)
         return filtered_data
 
-    def apply_complete_filtering(self, montage_data_wrapper, sampling_rate):
+    def apply_complete_filtering(self, montage_data_keyed, sampling_rate):
         """Apply complete Northwestern filtering pipeline to selected channels
         
         Args:
@@ -336,13 +336,13 @@ class PyQtVisualizer:
             sampling_rate: Sampling rate in Hz
         """
         
-        # copy data andcreate a new wrapper to return
-        filtered_data_wrapper = NumPyDataWithBrainFlowDataKey(
-            data=montage_data_wrapper.data.copy(),
-            channel_mapping=montage_data_wrapper.channel_mapping
+        # copy data and create a new wrapper to return
+        filtered_data_keyed = NumPyDataWithBrainFlowDataKey(
+            data=montage_data_keyed.data.copy(),
+            channel_mapping=montage_data_keyed.channel_mapping
         )
         
-        for _, board_key in enumerate(filtered_data_wrapper.channel_mapping): 
+        for _, board_key in enumerate(filtered_data_keyed.channel_mapping): 
             board_position = board_key.board_position
             
             if board_position in self.northwestern_filters_cyton_daisy["bandpass_filters"]: 
@@ -350,29 +350,30 @@ class PyQtVisualizer:
                     # Step 1: Apply channel-specific bandpass filter
                     low_freq, high_freq = self.northwestern_filters_cyton_daisy["bandpass_filters"][board_position]
                     filtered_data = self.apply_bandpass_filter(
-                        filtered_data_wrapper.get_by_key(board_position), low_freq, high_freq, sampling_rate
+                        filtered_data_keyed.get_by_key(board_position), low_freq, high_freq, sampling_rate
                     )
-                    filtered_data_wrapper.set_by_key(board_position, filtered_data)
+                    filtered_data_keyed.set_by_key(board_position, filtered_data)
                     
                     # Step 2: Apply notch filters for power line noise
                     for notch_freq in self.northwestern_filters_cyton_daisy["notch_filters"]:
                         filtered_data = self.apply_notch_filter(
-                            filtered_data_wrapper.get_by_key(board_position), notch_freq, sampling_rate
+                            filtered_data_keyed.get_by_key(board_position), notch_freq, sampling_rate
                         )
-                        filtered_data_wrapper.set_by_key(board_position, filtered_data)
+                        filtered_data_keyed.set_by_key(board_position, filtered_data)
                         
                 except Exception as e:
                     logger.error(f"Filter failed on channel {board_key} ({low_freq}-{high_freq} Hz): {e}")
                     raise FilterError(f"Channel {board_key} filtering failed. Check sampling rate and data quality.")
         
-        return filtered_data_wrapper
+        return filtered_data_keyed
             
-    def plot_polysomnograph(self, epoch_data_wrapper, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
+    def plot_polysomnograph(self, epoch_data_keyed, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
         """Update polysomnograph plot with new data"""
         # Extract data from wrapper for processing
         
         # Cache the current display parameters for immediate filter toggling
-        self._cached_epoch_data = epoch_data_wrapper.data.copy()
+        self._cached_epoch_data = epoch_data_keyed.data.copy()
+        self._cached_epoch_data_keyed = epoch_data_keyed  # Cache the wrapper for replotting with filters
         self._cached_sampling_rate = sampling_rate
         self._cached_sleep_stage = sleep_stage
         self._cached_time_offset = time_offset
@@ -400,15 +401,15 @@ class PyQtVisualizer:
             self.title_label.setText(title_text)
         
         # Create time axis
-        time_axis = np.arange(epoch_data_wrapper.data.shape[1]) / sampling_rate + time_offset
+        time_axis = np.arange(epoch_data_keyed.data.shape[1]) / sampling_rate + time_offset
 
         # Extract only the channels defined in the montage from the full epoch_data
         montage_pkeys = self.montage.get_board_keys(self.electrode_channels) 
-        montage_electrode_data = epoch_data_wrapper.get_by_keys(montage_pkeys)
+        montage_electrode_data = epoch_data_keyed.get_by_keys(montage_pkeys)
 
         # make montage data wrapper
         channel_mappings = [ChannelIndexMapping(board_position=key) for key in self.montage.get_board_keys(self.electrode_channels)]
-        montage_data_wrapper = NumPyDataWithBrainFlowDataKey(
+        montage_data_keyed = NumPyDataWithBrainFlowDataKey(
             data=montage_electrode_data,
             channel_mapping=channel_mappings
         )
@@ -416,12 +417,12 @@ class PyQtVisualizer:
         # Apply Northwestern filtering if enabled (for display only)
         if hasattr(self, 'visual_filter_enabled') and self.visual_filter_enabled:
             # Get actual channel numbers for proper filter mapping
-            filtered_display_montage_pkwrapper = self.apply_complete_filtering(montage_data_wrapper, sampling_rate)
+            filtered_display_montage_keyed = self.apply_complete_filtering(montage_data_keyed, sampling_rate)
         else:
-            filtered_display_montage_pkwrapper = montage_data_wrapper
+            filtered_display_montage_keyed = montage_data_keyed
 
         # Update each channel's plot
-        for data, plot, curve in zip(filtered_display_montage_pkwrapper, self.plots, self.curves):
+        for data, plot, curve in zip(filtered_display_montage_keyed, self.plots, self.curves):
             # Update curve data
             curve.setData(time_axis, data)
             

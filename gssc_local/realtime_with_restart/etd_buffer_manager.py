@@ -78,7 +78,7 @@ class ETDBufferManager:
         
         # Create structured buffer with channel mapping
         raw_data = [[] for _ in range(channel_count)]
-        self.electrode_and_timestamp_data_pkwrapper = ListDataWithBrainFlowDataKey(
+        self.electrode_and_timestamp_data_keyed = ListDataWithBrainFlowDataKey(
             data=raw_data,
             channel_mapping=channel_mappings
         )
@@ -89,7 +89,7 @@ class ETDBufferManager:
         Returns:
             Number of data points in buffer (length of any channel's data list)
         """
-        return len(self.electrode_and_timestamp_data_pkwrapper[0]) if self.electrode_and_timestamp_data_pkwrapper else 0
+        return len(self.electrode_and_timestamp_data_keyed[0]) if self.electrode_and_timestamp_data_keyed else 0
         
     def _get_timestamps(self) -> List[float]:
         """Get timestamps from electrode_and_timestamp_data buffer.
@@ -97,7 +97,7 @@ class ETDBufferManager:
         Returns:
             List of timestamps from the buffer (from the timestamp channel)
         """
-        return self.electrode_and_timestamp_data_pkwrapper.get_by_key(self.timestamp_board_key)
+        return self.electrode_and_timestamp_data_keyed.get_by_key(self.timestamp_board_key)
         
     def _verify_timestamp_continuity(self, timestamps: List[float]) -> None:
         """Verify timestamp continuity in the buffer.
@@ -142,7 +142,7 @@ class ETDBufferManager:
             )
             
         # Verify all channels have the same length
-        channel_lengths = [len(channel) for channel in self.electrode_and_timestamp_data_pkwrapper]
+        channel_lengths = [len(channel) for channel in self.electrode_and_timestamp_data_keyed]
         if not all(length == expected_size for length in channel_lengths):
             raise ValueError(
                 f"Channel synchronization failed: lengths {channel_lengths} should all be {expected_size}"
@@ -187,7 +187,7 @@ class ETDBufferManager:
         Raises:
             ValueError: If validation fails after trim
         """
-        if not self.electrode_and_timestamp_data_pkwrapper or max_next_expected is None or max_next_expected <= 0:
+        if not self.electrode_and_timestamp_data_keyed or max_next_expected is None or max_next_expected <= 0:
             return
             
         current_size = self._get_total_data_points()
@@ -211,7 +211,7 @@ class ETDBufferManager:
             return
             
         # Remove oldest data points from each channel
-        for channel in self.electrode_and_timestamp_data_pkwrapper:
+        for channel in self.electrode_and_timestamp_data_keyed:
             channel[:safe_remove_points] = []
             
         # Update offset tracking - this must happen after removing the data
@@ -288,7 +288,7 @@ class ETDBufferManager:
         
         # Only store channels we want in the correct order
         for board_key in self.electrode_and_timestamp_board_keys:
-            self.electrode_and_timestamp_data_pkwrapper.extend_by_key(board_key, board_data_chunk[board_key].tolist())
+            self.electrode_and_timestamp_data_keyed.extend_by_key(board_key, board_data_chunk[board_key].tolist())
                 
         # Update total streamed samples using the dedicated method
         self.update_total_streamed_samples(board_data_chunk) 

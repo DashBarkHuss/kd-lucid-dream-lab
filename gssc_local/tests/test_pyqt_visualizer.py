@@ -67,14 +67,14 @@ def test_synthetic_data():
         ]
         
         # Wrap data with channel mapping
-        epoch_data_wrapper = NumPyDataWithBrainFlowDataKey(
+        epoch_data_keyed = NumPyDataWithBrainFlowDataKey(
             data=data,
             channel_mapping=channel_mapping
         )
         
         # Test visualization
         visualizer.plot_polysomnograph(
-            epoch_data_wrapper=epoch_data_wrapper,
+            epoch_data_keyed=epoch_data_keyed,
             sampling_rate=125,
             sleep_stage=2,  # N2 sleep stage
             time_offset=0,
@@ -143,7 +143,7 @@ def test_real_data():
     ]
     
     # Wrap data with channel mapping
-    epoch_data_wrapper = NumPyDataWithBrainFlowDataKey(
+    epoch_data_keyed = NumPyDataWithBrainFlowDataKey(
         data=epoch_data,
         channel_mapping=channel_mapping
     )
@@ -162,7 +162,7 @@ def test_real_data():
     
     # Plot the data
     visualizer.plot_polysomnograph(
-        epoch_data_wrapper=epoch_data_wrapper,
+        epoch_data_keyed=epoch_data_keyed,
         sampling_rate=sampling_rate,
         sleep_stage=0,  # Wake stage
         time_offset=0,

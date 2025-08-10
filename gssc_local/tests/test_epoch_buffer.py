@@ -169,7 +169,7 @@ class TestEpochBuffer:
                 f"Buffer should maintain at least {min_buffer_size} points after processing buffer {buffer_id}, got {current_buffer_size}"
             
             # Verify data continuity
-            timestamps = data_manager.etd_buffer_manager.electrode_and_timestamp_data_pkwrapper.get_by_key(data_manager.etd_buffer_manager.timestamp_board_key)
+            timestamps = data_manager.etd_buffer_manager.electrode_and_timestamp_data_keyed.get_by_key(data_manager.etd_buffer_manager.timestamp_board_key)
             data_manager.etd_buffer_manager._verify_timestamp_continuity(timestamps)
             
             # Verify offset tracking
@@ -183,7 +183,7 @@ class TestEpochBuffer:
             assert data_manager.etd_buffer_manager.timestamp_board_key == metadata['timestamp_channel'], \
                 "Timestamp board key should match expected timestamp channel"
             # assert that the timestamp channel first value is a timestamp
-            timestamp_data = data_manager.etd_buffer_manager.electrode_and_timestamp_data_pkwrapper.get_by_key(data_manager.etd_buffer_manager.timestamp_board_key)
+            timestamp_data = data_manager.etd_buffer_manager.electrode_and_timestamp_data_keyed.get_by_key(data_manager.etd_buffer_manager.timestamp_board_key)
             first_timestamp = timestamp_data[0]
             assert first_timestamp > 1700000000, \
                 f"First value of last channel should be a Unix timestamp after 2023, got {first_timestamp}"
