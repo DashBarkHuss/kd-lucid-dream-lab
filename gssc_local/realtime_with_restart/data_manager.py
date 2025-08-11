@@ -30,7 +30,7 @@ from gssc_local.realtime_with_restart.export.csv.test_utils import compare_csv_f
 from gssc_local.realtime_with_restart.export.csv.validation import validate_file_path
 from gssc_local.realtime_with_restart.export.csv.exceptions import CSVExportError, CSVDataError
 from .etd_buffer_manager import ETDBufferManager
-from .channel_mapping import ChannelIndexMapping, NumPyDataWithBrainFlowDataKey
+from .channel_mapping import ChannelIndexMapping, NumPyDataWithBrainFlowDataKey, RawBoardDataWithKeys
 import pandas as pd
 import time
 import os
@@ -172,7 +172,7 @@ class DataManager:
         This is useful for testing with synthetic data where we expect consecutive values.
         
         Args:
-            data: New data chunk
+            board_data_chunk: Raw board data chunk (RawBoardDataWithKeys wrapper)
             channel_idx: Channel index to validate (defaults to self.validation_channel)
             
         Returns:
@@ -189,11 +189,10 @@ class DataManager:
         # Adjust for CSV structure where first column is not EEG data
         # The first EEG channel is actually at index 1 in the CSV
         adjusted_channel_idx = channel_idx + 1
-            
-        if adjusted_channel_idx >= len(board_data_chunk):
+        
+        if adjusted_channel_idx >= board_data_chunk.shape[0]:
             return False, f"Channel index {adjusted_channel_idx} out of range"
-            
-        channel_data = board_data_chunk[adjusted_channel_idx]
+        channel_data = board_data_chunk.get_by_key(adjusted_channel_idx)
         
         # For the first validation, just store the last value
         if self.last_validated_value_for_consecutive_data_validation is None:
@@ -218,7 +217,7 @@ class DataManager:
         """Validate incoming board data format and values.
         
         Args:
-            board_data_chunk: Array containing the board data to validate. Must be in (n_channels, n_samples) format.
+            board_data_chunk: Raw board data (RawBoardDataWithKeys wrapper). Must be in (n_channels, n_samples) format.
             
         Returns:
             bool: True if data is valid, False if validation failed
@@ -228,7 +227,7 @@ class DataManager:
             Exception: If consecutive value validation fails (when enabled)
         """
         # Validate data values 
-        if np.any(np.isnan(board_data_chunk)) or np.any(np.isinf(board_data_chunk)):
+        if np.any(np.isnan(board_data_chunk.data)) or np.any(np.isinf(board_data_chunk.data)):
             logging.warning("Data contains NaN or infinite values!")
             return False
         # Validate consecutive values if enabled

@@ -106,3 +106,41 @@ class ListDataWithBrainFlowDataKey:
         """Clear all channel data"""
         for channel_list in self.data:
             channel_list.clear()
+
+
+@dataclass
+class RawBoardDataWithKeys:
+    """Wrapper for raw BrainFlow board data where array index = board position
+    
+    This class makes explicit that we're working with raw board data where
+    the array index directly corresponds to the board position (0-32).
+    This eliminates ambiguity about whether data uses board positions or array indices.
+    """
+    data: np.ndarray
+    
+    def get_by_key(self, board_position: int) -> np.ndarray:
+        """Get data by board position key (board position = array index for raw data)
+        
+        Args:
+            board_position: Board position (0-32) corresponding to BrainFlow channel
+            
+        Returns:
+            np.ndarray: Data for the specified board position
+        """
+        if not (0 <= board_position < self.data.shape[0]):
+            raise IndexError(f"Board position {board_position} out of range [0, {self.data.shape[0]-1}]")
+        return self.data[board_position]
+    
+    def __getitem__(self, key):
+        """Allow direct array access for compatibility, but prefer get_by_key()"""
+        return self.data[key]
+    
+    @property
+    def shape(self):
+        """Expose shape of underlying data"""
+        return self.data.shape
+    
+    @property
+    def size(self):
+        """Expose size of underlying data for numpy compatibility"""
+        return self.data.size

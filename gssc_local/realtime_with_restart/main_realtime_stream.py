@@ -37,6 +37,7 @@ sys.path.append(workspace_root)
 # Now use absolute imports
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 from gssc_local.realtime_with_restart.utils.logging_utils import setup_colored_logger
+from gssc_local.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
 from gssc_local.montage import Montage
 
 import time
@@ -94,7 +95,11 @@ class StreamingBoardManager:
         self.board_shim.start_stream()
         
     def get_new_raw_data_chunk(self):
-        """Get new data from the stream."""
+        """Get new data from the stream.
+        
+        Returns:
+            numpy.ndarray: Raw board data from BrainFlow
+        """
         new_raw_board_chunk = self.board_shim.get_board_data()  # Get all new data since last call
         
         # Debug logging to investigate duplicate timestamps
@@ -160,10 +165,13 @@ def main(handler_class=ReceivedStreamedDataHandler, montage=None):
         
         # Main processing loop
         while True:
-            # Get new data chunk
-            raw_board_data_chunk = streaming_board_manager.get_new_raw_data_chunk()
+            # Get new data chunk (raw numpy array from board manager)
+            raw_board_data = streaming_board_manager.get_new_raw_data_chunk()
             
-            if raw_board_data_chunk.size > 0:
+            # Wrap raw data for explicit keying
+            board_data_keyed = RawBoardDataWithKeys(data=raw_board_data)
+            
+            if board_data_keyed.size > 0:
 
 
                 #  all inter batch data sanitization like removing old timestamps, needs to happen where the last saved timestamp is in scope               
@@ -173,11 +181,11 @@ def main(handler_class=ReceivedStreamedDataHandler, montage=None):
                 
                 # If this is the first data chunk, set the start timestamp
                 if start_first_data_ts is None and board_timestamp_channel is not None:
-                    start_first_data_ts = float(raw_board_data_chunk[board_timestamp_channel][0])
+                    start_first_data_ts = float(board_data_keyed.get_by_key(board_timestamp_channel)[0])
                     logger.info(f"Started processing data at timestamp: {start_first_data_ts}")
                 
                 # Process the data through the pipeline
-                received_streamed_data_handler.process_board_data_chunk(raw_board_data_chunk)
+                received_streamed_data_handler.process_board_data_chunk(board_data_keyed)
                 
             else:
                 # No data received

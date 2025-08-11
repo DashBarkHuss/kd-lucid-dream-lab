@@ -35,6 +35,7 @@ from gssc_local.realtime_with_restart.speed_controlled_board_manager import Spee
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 from gssc_local.realtime_with_restart.utils.logging_utils import setup_colored_logger
 from gssc_local.realtime_with_restart.utils.file_utils import create_trimmed_csv
+from gssc_local.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
 # Note: timestamp utilities available if needed for future logging
 
 import time
@@ -107,21 +108,24 @@ def main(handler_class=ReceivedStreamedDataHandler):
             
             # Monitor stream and handle incoming data
             while True:
-                # Get new data chunk
-                new_data = mock_board_manager_speed_control.get_new_data()
+                # Get new data chunk (raw numpy array from board manager)
+                raw_board_data = mock_board_manager_speed_control.get_new_data()
                 
-                if new_data.size > 0:
+                # Wrap raw data for explicit keying
+                board_data_keyed = RawBoardDataWithKeys(data=raw_board_data)
+                
+                if board_data_keyed.size > 0:
                     # If this is the first data chunk, set the start timestamp
                     if start_first_data_ts is None and board_timestamp_channel is not None:
-                        start_first_data_ts = float(new_data[board_timestamp_channel][0])
+                        start_first_data_ts = float(board_data_keyed.get_by_key(board_timestamp_channel)[0])
                         logger.info(f"Set start_first_data_ts to: {start_first_data_ts}")
                     
                     # Process the data through the pipeline
-                    received_streamed_data_handler.process_board_data_chunk(new_data)
+                    received_streamed_data_handler.process_board_data_chunk(board_data_keyed)
                     
                     # Update last good timestamp for gap detection
                     if board_timestamp_channel is not None:
-                        last_good_ts = float(new_data[board_timestamp_channel][-1])
+                        last_good_ts = float(board_data_keyed.get_by_key(board_timestamp_channel)[-1])
 
                 else:
                     # No more data - equivalent to gap detection in main.py
