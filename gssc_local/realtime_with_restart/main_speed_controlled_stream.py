@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 """
 Main script for running the speed-controlled board stream simulation.
 
@@ -13,14 +11,22 @@ Key Features:
 - Gap detection and handling
 - Timestamp tracking and validation
 - Colored logging for better debugging
+- **NEW: Sleep stage event system** - responds to sleep stage detections in real-time
 
 Usage:
     python main_speed_controlled_stream.py
+
+Event System:
+    - Events are ENABLED by default - you'll see sleep stage event messages in the console
+    - To disable events, change enable_events=False in the main() call at the bottom
+    - Example events: "REM SLEEP DETECTED!", stage counters, confidence alerts
+    - Customize handlers in create_event_dispatcher() function
 
 Configuration:
     - Modify playback_file path to use different data files
     - Adjust speed_multiplier in SpeedControlledBoardManager initialization to change playback speed
     - Configure logging level and format as needed
+    - Add/remove event handlers in create_event_dispatcher()
 """
 
 import sys
@@ -36,6 +42,10 @@ from gssc_local.realtime_with_restart.received_stream_data_handler import Receiv
 from gssc_local.realtime_with_restart.utils.logging_utils import setup_colored_logger
 from gssc_local.realtime_with_restart.utils.file_utils import create_trimmed_csv
 from gssc_local.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
+
+# Event system imports (for sleep stage event handling)
+from gssc_local.realtime_with_restart.event_system import EventDispatcher
+from gssc_local.experiments.handlers import handler
 # Note: timestamp utilities available if needed for future logging
 
 import time
@@ -52,7 +62,27 @@ BoardShim.disable_board_logger()
 # Timestamp utility functions moved to gssc_local.realtime_with_restart.utils.timestamp_utils
 
 
-def main(handler_class=ReceivedStreamedDataHandler):
+def create_event_dispatcher():
+    """Create and configure the event dispatcher with unified handler.
+    
+    Returns:
+        EventDispatcher: Configured event dispatcher with unified handler
+    """
+    dispatcher = EventDispatcher()
+    
+    # Register single unified handler
+    dispatcher.register_handler(handler)
+    
+    logger.info("Event dispatcher configured with unified handler")
+    
+    # Print registered handlers
+    stats = dispatcher.get_stats()
+    logger.info(f"Registered handlers: {stats['registered_handlers']}")
+    
+    return dispatcher
+
+
+def main(handler_class=ReceivedStreamedDataHandler, enable_events=True):
     """Main function that manages the data acquisition and processing.
     
     This function:
@@ -90,7 +120,16 @@ def main(handler_class=ReceivedStreamedDataHandler):
     
     # Create montage for proper initialization
     montage = Montage.eog_only_montage()
-    received_streamed_data_handler = handler_class(mock_board_manager_speed_control, logger, montage)
+    
+    # Create event dispatcher if events are enabled
+    event_dispatcher = None
+    if enable_events:
+        event_dispatcher = create_event_dispatcher()
+        logger.info("🎯 Event system enabled - sleep stage events will be processed!")
+    else:
+        logger.info("Event system disabled - running in standard mode")
+    
+    received_streamed_data_handler = handler_class(mock_board_manager_speed_control, logger, montage, event_dispatcher)
 
     # Get the PyQt application instance from the visualizer
     qt_app = received_streamed_data_handler.data_manager.visualizer.app

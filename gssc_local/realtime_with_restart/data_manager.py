@@ -41,10 +41,11 @@ logger = logging.getLogger(__name__)
 
 class DataManager:
     """Manages data buffers and their processing"""
-    def __init__(self, board_shim, sampling_rate, montage: Montage = None):
+    def __init__(self, board_shim, sampling_rate, montage: Montage = None, event_dispatcher=None):
         self.board_shim = board_shim
         self.sampling_rate = sampling_rate
-        self.montage = montage 
+        self.montage = montage
+        self.event_dispatcher = event_dispatcher 
         self.seconds_per_epoch = 30
         self.seconds_per_step = 5
         # Buffer configuration
@@ -610,6 +611,16 @@ class DataManager:
         self.epochs_scored += 1
         print(f"Sleep stage: {self.visualizer.get_sleep_stage_text(predicted_class)}")
         print(f"Total epochs scored: {self.epochs_scored}")
+        
+        # Emit event if event dispatcher is available
+        if self.event_dispatcher is not None:
+            self.event_dispatcher.emit_sleep_stage_event(
+                sleep_stage=predicted_class,
+                timestamp=epoch_start_time,
+                class_probabilities=class_probs,
+                epoch_data=epoch_data_keyed,
+                buffer_id=buffer_id
+            )
         
         # Update visualization using Visualizer
         time_offset = start_idx_abs / self.sampling_rate
