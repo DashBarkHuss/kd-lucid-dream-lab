@@ -27,8 +27,14 @@ from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.etd_buffer_manager import ETDBufferManager
 from gssc_local.tests.test_utils import create_brainflow_test_data, transform_to_stream_format
 from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
+from gssc_local.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
 import tempfile
 import os
+
+def add_keyed_data_to_buffer(data_manager, stream_data):
+    """Helper function to wrap stream data in RawBoardDataWithKeys and add to buffer"""
+    keyed_data = RawBoardDataWithKeys(stream_data)
+    data_manager.etd_buffer_manager.select_channel_data_and_add(keyed_data)
 
 class TestEpochBuffer:
     @pytest.fixture
@@ -131,7 +137,8 @@ class TestEpochBuffer:
         # Add initial data to buffer (40 seconds worth)
         initial_data = data[:initial_data_size, :]  # shape: (n_samples, n_channels)
         initial_data_stream = transform_to_stream_format(initial_data)  # transform to (n_channels, n_samples)
-        data_manager.etd_buffer_manager.select_channel_data_and_add(initial_data_stream)
+        # Add to buffer using helper function for Phase 2 processing pipeline
+        add_keyed_data_to_buffer(data_manager, initial_data_stream)
         
         # Verify initial buffer size
         initial_buffer_size = data_manager.etd_buffer_manager._get_total_data_points()
@@ -141,7 +148,8 @@ class TestEpochBuffer:
         # Add more data to exceed 35 seconds
         additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
         additional_data_stream = transform_to_stream_format(additional_data)  # transform to (n_channels, n_samples)
-        data_manager.etd_buffer_manager.select_channel_data_and_add(additional_data_stream)
+        # Add to buffer using helper function for Phase 2 processing pipeline
+        add_keyed_data_to_buffer(data_manager, additional_data_stream)
         
         # Try to trim buffer before processing any epochs - should not trim
         next_epoch_start_idx_abs, _ = data_manager._get_next_epoch_indices(0)  # Next buffer to process
@@ -217,7 +225,7 @@ class TestEpochBuffer:
         initial_data_size = 40 * sampling_rate
         initial_data = data[:initial_data_size, :]  # shape: (n_samples, n_channels)
         initial_data_stream = transform_to_stream_format(initial_data)  # transform to (n_channels, n_samples)
-        data_manager.etd_buffer_manager.select_channel_data_and_add(initial_data_stream)
+        add_keyed_data_to_buffer(data_manager, initial_data_stream)
         
         # Test absolute to relative conversion before trimming
         test_absolute_idx = 20 * sampling_rate  # 20 seconds into the data
@@ -228,7 +236,7 @@ class TestEpochBuffer:
         # Add more data and trim buffer
         additional_data = data[initial_data_size:initial_data_size + 20 * sampling_rate, :]  # shape: (n_samples, n_channels)
         additional_data_stream = transform_to_stream_format(additional_data)  # transform to (n_channels, n_samples)
-        data_manager.etd_buffer_manager.select_channel_data_and_add(additional_data_stream)
+        add_keyed_data_to_buffer(data_manager, additional_data_stream)
         next_epoch_start_idx_abs, _ = data_manager._get_next_epoch_indices(data_manager.last_processed_buffer + 1)
         data_manager.etd_buffer_manager.trim_buffer(next_epoch_start_idx_abs)  # Trim buffer to max_buffer_size
         
@@ -283,7 +291,7 @@ class TestEpochBuffer:
         initial_data_size = 40 * sampling_rate
         initial_data = data[:initial_data_size, :]  # shape: (n_samples, n_channels)
         initial_data_stream = transform_to_stream_format(initial_data)  # transform to (n_channels, n_samples)
-        data_manager.etd_buffer_manager.select_channel_data_and_add(initial_data_stream)
+        add_keyed_data_to_buffer(data_manager, initial_data_stream)
     
         # Process first epoch
         first_epoch_start = 0
@@ -300,7 +308,7 @@ class TestEpochBuffer:
         # Add more data and process second epoch before trimming
         additional_data = data[initial_data_size:initial_data_size + 25 * sampling_rate, :]  # shape: (n_samples, n_channels) - increased to 25 seconds
         additional_data_stream = transform_to_stream_format(additional_data)  # transform to (n_channels, n_samples)
-        data_manager.etd_buffer_manager.select_channel_data_and_add(additional_data_stream)
+        add_keyed_data_to_buffer(data_manager, additional_data_stream)
     
         # Process second epoch before trimming  
         second_epoch_start = points_per_epoch
@@ -339,7 +347,7 @@ class TestEpochBuffer:
     
         # Add gap data
         gap_data_stream = transform_to_stream_format(gap_data)  # transform to (n_channels, n_samples)
-        data_manager.etd_buffer_manager.select_channel_data_and_add(gap_data_stream)
+        add_keyed_data_to_buffer(data_manager, gap_data_stream)
     
         # Test gap detection
         # Get updated timestamps from the buffer
@@ -418,7 +426,7 @@ class TestEpochBuffer:
             chunk_data_stream = transform_to_stream_format(chunk_data)
 
             # add simulated stream data to buffer
-            data_manager.etd_buffer_manager.select_channel_data_and_add(chunk_data_stream)
+            add_keyed_data_to_buffer(data_manager, chunk_data_stream)
             data_start_idx = chunk_end_idx
             
             print(f"\nCycle {cycle + 1}: Added data chunk, total samples: {data_manager.etd_buffer_manager.total_streamed_samples}")
@@ -585,8 +593,9 @@ class TestEpochBuffer:
                 pre_process_buffer_size = handler.data_manager._get_total_data_points_etd()
                 pre_process_epochs = handler.data_manager.epochs_scored
                 
-                # Process chunk using production code path
-                handler.process_board_data_chunk(chunk_data)
+                # Process chunk using production code path (wrap in keyed data like real application)
+                board_data_keyed = RawBoardDataWithKeys(chunk_data)
+                handler.process_board_data_chunk(board_data_keyed)
                 
                 # Track metrics after processing
                 post_process_buffer_size = handler.data_manager._get_total_data_points_etd()

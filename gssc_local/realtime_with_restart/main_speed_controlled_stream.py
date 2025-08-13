@@ -112,7 +112,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
                 raw_board_data = mock_board_manager_speed_control.get_new_data()
                 
                 # Wrap raw data for explicit keying
-                board_data_keyed = RawBoardDataWithKeys(data=raw_board_data)
+                board_data_keyed = RawBoardDataWithKeys(raw_board_data)
                 
                 if board_data_keyed.size > 0:
                     # If this is the first data chunk, set the start timestamp

@@ -3,6 +3,7 @@ from gssc_local.realtime_with_restart.board_manager import BoardManager
 from logging import Logger
 from gssc_local.montage import Montage
 from gssc_local.realtime_with_restart.utils.data_filtering_utils import sanitize_data
+import numpy as np
 
 
 
@@ -43,8 +44,8 @@ class ReceivedStreamedDataHandler:
         
         self.sample_count +=  sanitized_board_data_chunk.shape[1]  # Increment total sample count
 
-        # Queue data for CSV writing
-        self.data_manager.queue_data_for_csv_write(sanitized_board_data_chunk, is_initial)
+        # Queue data for CSV writing (extract raw data for CSV manager)
+        self.data_manager.queue_data_for_csv_write(sanitized_board_data_chunk.data, is_initial)
     
     
        

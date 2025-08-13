@@ -27,6 +27,7 @@ See individual method docstrings for detailed documentation.
 """
 
 import numpy as np
+from gssc_local.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
 import logging
 from typing import List, Tuple
 from .channel_mapping import ListDataWithBrainFlowDataKey, ChannelIndexMapping
@@ -227,13 +228,15 @@ class ETDBufferManager:
         """Update the total number of samples streamed.
         
         Args:
-            new_data: Array of shape (n_channels, n_samples) containing the data
+            new_data (RawBoardDataWithKeys): Keyed data of shape (n_channels, n_samples)
                 - Each row represents a channel
                 - Each column represents a time point
                 - The number of samples is extracted from the data shape
         """
         # Extract number of samples from the data shape (second dimension)
-        new_samples = len(new_data[0]) if len(new_data) > 0 else 0
+        if not isinstance(new_data, RawBoardDataWithKeys):
+            raise TypeError(f"Expected RawBoardDataWithKeys object, got {type(new_data)}. ETD buffer manager is part of the Phase 2 processing pipeline and requires keyed data.")
+        new_samples = len(new_data.data[0]) if len(new_data.data) > 0 else 0
         self.total_streamed_samples += new_samples
 
     def _adjust_index_with_offset(self, index: int, to_etd: bool = True) -> int:

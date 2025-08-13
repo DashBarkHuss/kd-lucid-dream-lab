@@ -14,6 +14,7 @@ sys.path.append(project_root)
 from gssc_local.tests.test_utils import create_brainflow_test_data, save_brainflow_data_to_csv
 from gssc_local.realtime_with_restart.data_manager import DataManager
 from gssc_local.realtime_with_restart.speed_controlled_board_manager import SpeedControlledBoardManager
+from gssc_local.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
 
 class TestSpeedControlledBoardManager(unittest.TestCase):
     def setUp(self):
@@ -369,7 +370,9 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         print(f"[DEBUG] Current position after initial data: {self.mock.current_position}")
         
         if initial_data.size > 0:
-            data_manager.etd_buffer_manager.select_channel_data_and_add(initial_data)
+            # Wrap in keyed data for Phase 2 processing pipeline
+            initial_data_keyed = RawBoardDataWithKeys(initial_data)
+            data_manager.etd_buffer_manager.select_channel_data_and_add(initial_data_keyed)
             data_manager.queue_data_for_csv_write(initial_data, is_initial=True)
             print(f"[DEBUG] Queued initial data with shape: {initial_data.shape} to CSV")
             print(f"[DEBUG] CSV buffer length after initial: {len(data_manager.csv_manager.main_csv_buffer)}")
@@ -383,7 +386,9 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
             if data.size == 0:
                 break
             print(f"[DEBUG] Got new data chunk with shape: {data.shape}")
-            data_manager.etd_buffer_manager.select_channel_data_and_add(data)
+            # Wrap in keyed data for Phase 2 processing pipeline
+            data_keyed = RawBoardDataWithKeys(data)
+            data_manager.etd_buffer_manager.select_channel_data_and_add(data_keyed)
             data_manager.queue_data_for_csv_write(data)
             total_samples += data.shape[1]
             print(f"[DEBUG] Total samples processed: {total_samples}")

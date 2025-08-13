@@ -12,6 +12,7 @@ Extracted from main.py and main_speed_controlled_stream.py for better testabilit
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
 import numpy as np
+from gssc_local.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
 
 
 def format_timestamp(ts: Optional[float]) -> str:
@@ -87,26 +88,30 @@ def calculate_elapsed_time(start_timestamp: float, end_timestamp: float) -> floa
     return end_timestamp - start_timestamp
 
 
-def reorder_samples_by_timestamp(data: np.ndarray, timestamp_channel: int, logger=None) -> Tuple[np.ndarray, bool]:
+def reorder_samples_by_timestamp(data_keyed, timestamp_board_position: int, logger=None):
     """Reorder samples by timestamp to ensure monotonically increasing order.
     
     This function sorts the data samples by their timestamps to fix any out-of-order
     samples that may occur during data streaming or processing.
     
     Args:
-        data (np.ndarray): 2D array where each column is a sample and each row is a channel
-        timestamp_channel (int): Row index of the timestamp channel
+        data_keyed (RawBoardDataWithKeys): 2D keyed data where each column is a sample and each row is a channel
+        timestamp_board_position (int): Board position of the timestamp channel (use BoardShim.get_timestamp_channel())
         logger (Optional[logging.Logger]): Logger instance for reporting
         
     Returns:
-        Tuple[np.ndarray, bool]: Tuple containing:
-            - Reordered data array with monotonically increasing timestamps
+        Tuple containing:
+            - Reordered data (RawBoardDataWithKeys)
             - Boolean indicating whether reordering was necessary
     """
-    if data.size == 0:
-        return data, False
     
-    timestamps = data[timestamp_channel, :]
+    if not isinstance(data_keyed, RawBoardDataWithKeys):
+        raise TypeError(f"Expected RawBoardDataWithKeys object, got {type(data_keyed)}")
+    
+    if data_keyed.size == 0:
+        return data_keyed, False
+    
+    timestamps = data_keyed.get_by_key(timestamp_board_position)
     
     # Check if timestamps are already sorted
     is_sorted = np.all(timestamps[:-1] <= timestamps[1:])
@@ -114,16 +119,16 @@ def reorder_samples_by_timestamp(data: np.ndarray, timestamp_channel: int, logge
     if is_sorted:
         if logger:
             logger.debug("Timestamps are already in monotonically increasing order")
-        return data, False
+        return data_keyed, False
     
     # Get sorting indices
     sorted_indices = np.argsort(timestamps)
     
     # Reorder all channels by timestamp
-    reordered_data = data[:, sorted_indices]
+    reordered_data = RawBoardDataWithKeys(data_keyed.data[:, sorted_indices])
     
     if logger:
-        logger.info(f"Reordered {data.shape[1]} samples by timestamp to ensure monotonic order")
+        logger.info(f"Reordered {data_keyed.shape[1]} samples by timestamp to ensure monotonic order")
         
     return reordered_data, True
 

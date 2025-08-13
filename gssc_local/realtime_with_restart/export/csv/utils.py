@@ -13,6 +13,7 @@ from .validation import (
     find_duplicates,
     validate_sleep_stage_timestamps
 )
+from gssc_local.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
 
 # Format specifier for main BrainFlow data:
 # - all columns use 6 decimal places for consistency
@@ -144,6 +145,7 @@ def transform_data_to_rows(new_data: np.ndarray, logger=None) -> List[List[float
     Raises:
         CSVDataError: If transformed rows are empty
     """
+    
     transformed_rows = new_data.T.tolist()
     validate_transformed_rows_not_empty(transformed_rows, logger)
     return transformed_rows
@@ -178,7 +180,7 @@ def filter_previously_seen_timestamps(new_rows: List[List[float]], timestamp_cha
     return rows_to_add, duplicate_count
 
 
-def filter_duplicate_timestamps_within_batch(data: np.ndarray, timestamp_channel: int, logger=None) -> Tuple[np.ndarray, int]:
+def filter_duplicate_timestamps_within_batch(data_keyed, timestamp_board_position: int, logger=None):
     """Filter out samples with exact duplicate timestamps within a data batch.
     
     This function removes samples that have identical timestamps within the same data batch,
@@ -186,29 +188,33 @@ def filter_duplicate_timestamps_within_batch(data: np.ndarray, timestamp_channel
     issue where the same sample data appears multiple times after OpenBCI GUI stream restarts.
     
     Args:
-        data (np.ndarray): 2D array where each column is a sample and each row is a channel
-        timestamp_channel (int): Row index of the timestamp channel
+        data_keyed (RawBoardDataWithKeys): 2D keyed data where each column is a sample and each row is a channel
+        timestamp_board_position (int): Board position of the timestamp channel (use BoardShim.get_timestamp_channel())
         logger (Optional[logging.Logger]): Logger instance for reporting
         
     Returns:
-        Tuple[np.ndarray, int]: Tuple containing:
-            - Filtered data array with only unique timestamps
+        Tuple containing:
+            - Filtered data (RawBoardDataWithKeys)
             - Number of duplicate samples that were removed
     """
-    if data.size == 0:
-        return data, 0
     
-    timestamps = data[timestamp_channel, :]
+    if not isinstance(data_keyed, RawBoardDataWithKeys):
+        raise TypeError(f"Expected RawBoardDataWithKeys object, got {type(data_keyed)}")
+    
+    if data_keyed.size == 0:
+        return data_keyed, 0
+    
+    timestamps = data_keyed.get_by_key(timestamp_board_position)
     
     # Find unique timestamps and their first occurrence indices
     _, unique_indices = np.unique(timestamps, return_index=True)
     unique_indices = np.sort(unique_indices)  # Maintain original order
     
     # Calculate number of duplicates removed
-    duplicate_count = data.shape[1] - len(unique_indices)
+    duplicate_count = data_keyed.shape[1] - len(unique_indices)
     
     # Filter data to keep only unique timestamp samples
-    filtered_data = data[:, unique_indices]
+    filtered_data = RawBoardDataWithKeys(data_keyed.data[:, unique_indices])
     
     if logger and duplicate_count > 0:
         logger.info(f"Filtered out {duplicate_count} exact duplicate timestamps from data batch")

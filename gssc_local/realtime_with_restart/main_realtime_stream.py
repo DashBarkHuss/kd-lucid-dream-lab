@@ -169,7 +169,7 @@ def main(handler_class=ReceivedStreamedDataHandler, montage=None):
             raw_board_data = streaming_board_manager.get_new_raw_data_chunk()
             
             # Wrap raw data for explicit keying
-            board_data_keyed = RawBoardDataWithKeys(data=raw_board_data)
+            board_data_keyed = RawBoardDataWithKeys(raw_board_data)
             
             if board_data_keyed.size > 0:
 
