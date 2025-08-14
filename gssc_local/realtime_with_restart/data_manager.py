@@ -607,6 +607,10 @@ class DataManager:
         # Validate that our hardcoded indices match the expected channel types
         self.montage.validate_channel_indices_combination_types(eeg_combo_pk, eog_combo_pk)
         
+        # IMPORTANT: The GSSC was mostly trained on EEG channels C3, C4, F3, F4, and using other channels
+        # is unlikely to improve accuracy and could even make accuracy worse. For EOG, the GSSC was trained
+        # on the HEOG channel (left EOG - right EOG differential), and seems to also perform well with left
+        # and/or right EOG alone (without the subtraction). Effectiveness of using VEOG is unknown and not recommended.
         index_combinations = self.signal_processor.get_index_combinations(eeg_combo_pk, eog_combo_pk)
         
         # Get sleep stage prediction using SignalProcessor
