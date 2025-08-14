@@ -327,13 +327,14 @@ class PyQtVisualizer:
         filtered_data = filtfilt(b, a, data)
         return filtered_data
 
-    def apply_complete_filtering(self, montage_data_keyed, sampling_rate):
+    def apply_complete_filtering(self, montage_data_keyed, sampling_rate, channel_error_states=None):
         """Apply complete Northwestern filtering pipeline to selected channels
         
         Args:
-            epoch_data: Array of shape (n_channels, n_samples) containing data for selected channels
-            channel_numbers: List of actual channel numbers (1-based) corresponding to each row in epoch_data
+            montage_data_keyed: Keyed data object with channel data
             sampling_rate: Sampling rate in Hz
+            channel_error_states: List of booleans indicating which channels have errors (flat lines)
+                                 If provided, channels with errors will not be filtered to avoid artifacts
         """
         
         # copy data and create a new wrapper to return
@@ -342,8 +343,14 @@ class PyQtVisualizer:
             channel_mapping=montage_data_keyed.channel_mapping
         )
         
-        for _, board_key in enumerate(filtered_data_keyed.channel_mapping): 
+        for channel_idx, board_key in enumerate(filtered_data_keyed.channel_mapping): 
             board_position = board_key.board_position
+            
+            # Skip filtering for channels with error conditions (flat lines) to avoid filter artifacts
+            if channel_error_states is not None and channel_error_states[channel_idx]:
+                logger.info(f"Skipping filtering for channel {board_position} due to error condition (flat line)")
+                # Keep original raw data for this channel - no filtering applied
+                continue
             
             if board_position in self.northwestern_filters_cyton_daisy["bandpass_filters"]: 
                 try:
@@ -414,15 +421,29 @@ class PyQtVisualizer:
             channel_mapping=channel_mappings
         )
 
+        # Detect error conditions on RAW data before filtering to prevent filters from masking issues
+        channel_error_states = []
+        original_raw_values = []
+        for i, raw_data in enumerate(montage_data_keyed):
+            # Check if all values in this channel are identical (indicates hardware/stream problems)
+            if np.allclose(raw_data, raw_data[0]):
+                channel_error_states.append(True)
+                original_raw_values.append(raw_data[0])  # Store the actual raw value for display
+            else:
+                channel_error_states.append(False)
+                original_raw_values.append(None)
+        
         # Apply Northwestern filtering if enabled (for display only)
         if hasattr(self, 'visual_filter_enabled') and self.visual_filter_enabled:
-            # Get actual channel numbers for proper filter mapping
-            filtered_display_montage_keyed = self.apply_complete_filtering(montage_data_keyed, sampling_rate)
+            # Pass error states to avoid filtering channels with flat lines (prevents filter artifacts)
+            filtered_display_montage_keyed = self.apply_complete_filtering(
+                montage_data_keyed, sampling_rate, channel_error_states
+            )
         else:
             filtered_display_montage_keyed = montage_data_keyed
 
         # Update each channel's plot
-        for data, plot, curve in zip(filtered_display_montage_keyed, self.plots, self.curves):
+        for channel_idx, (data, plot, curve) in enumerate(zip(filtered_display_montage_keyed, self.plots, self.curves)):
             # Update curve data
             curve.setData(time_axis, data)
             
@@ -452,10 +473,11 @@ class PyQtVisualizer:
             plot.getAxis('left').setStyle(tickTextOffset=5)  # Adjust text offset for better visibility
             plot.getAxis('left').setTickSpacing(major=(y_max_with_margin - y_min_with_margin) / (self.Y_AXIS_TICK_COUNT - 1))
             
-            # Show "All values are ---" text if needed
-            if np.allclose(data, data[0]):
-                # Create text item for "All values are ---" message
-                text = pg.TextItem(f"All values are {data[0]:.1f}", color='r', anchor=(0, 0))  # Changed anchor to (0, 0) for left alignment
+            # Show "All values are ---" text if needed - using RAW data error detection
+            if channel_error_states[channel_idx]:
+                # Create text item for "All values are ---" message using ORIGINAL raw value
+                raw_value = original_raw_values[channel_idx]
+                text = pg.TextItem(f"All values are {raw_value:.1f}", color='r', anchor=(0, 0))  # Changed anchor to (0, 0) for left alignment
                 plot.addItem(text)
                 # Position the text at the left side of the plot
                 text.setPos(time_offset, y_max_with_margin - margin/2)  # Changed x position to time_offset
