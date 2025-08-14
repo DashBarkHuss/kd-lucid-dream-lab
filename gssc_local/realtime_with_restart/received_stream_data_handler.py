@@ -3,6 +3,7 @@ from gssc_local.realtime_with_restart.board_manager import BoardManager
 from logging import Logger
 from gssc_local.montage import Montage
 from gssc_local.realtime_with_restart.utils.data_filtering_utils import sanitize_data
+from gssc_local.realtime_with_restart.utils.session_utils import generate_session_timestamp
 import numpy as np
 
 
@@ -16,10 +17,16 @@ import numpy as np
 
 class ReceivedStreamedDataHandler: 
     """Handles processing and storage of incoming EEG data"""
-    def __init__(self, board_manager: BoardManager, logger: Logger, montage: Montage = None, event_dispatcher=None):
+    def __init__(self, board_manager: BoardManager, logger: Logger, montage: Montage = None, event_dispatcher=None, session_timestamp=None):
         self.sample_count = 0  # Total number of samples processed
         self.board_manager = board_manager
-        self.data_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, montage, event_dispatcher)
+        
+        # Generate session timestamp if not provided
+        if session_timestamp is None:
+            session_timestamp = generate_session_timestamp()
+        self.session_timestamp = session_timestamp
+        
+        self.data_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, montage, event_dispatcher, session_timestamp)
         self.logger = logger
 
     def process_board_data_chunk(self, raw_board_data_chunk):

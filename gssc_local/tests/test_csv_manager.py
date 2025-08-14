@@ -136,8 +136,10 @@ def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, te
     print(f"DEBUG: After save_all_data - result: {result}")
     print(f"DEBUG: After save_all_data - main_csv_path: {csv_manager.main_csv_path}")
     assert result is True
-    csv_manager.cleanup(reset_paths=False)  # Don't reset paths
-    print(f"DEBUG: After cleanup - main_csv_path: {csv_manager.main_csv_path}")
+    # Note: cleanup() now always resets paths, so we save the path before cleanup
+    saved_main_path = csv_manager.main_csv_path
+    csv_manager.cleanup()  # This will reset paths
+    print(f"DEBUG: After cleanup - main_csv_path was: {saved_main_path}")
 
     # Create a reference CSV
     ref_path = temp_csv_path + '.ref'
@@ -497,22 +499,24 @@ def test_cleanup_with_path_reset(csv_manager, sample_data, temp_csv_path):
     assert csv_manager.main_csv_path is None
     assert csv_manager.sleep_stage_csv_path is None
 
-def test_cleanup_without_path_reset(csv_manager, sample_data, temp_csv_path):
-    """Test cleanup without path reset."""
+def test_cleanup_resets_everything(csv_manager, sample_data, temp_csv_path):
+    """Test that cleanup resets all state including paths (session finalization)."""
     # Set up some initial state
     csv_manager.main_csv_buffer = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
     csv_manager.last_saved_timestamp = 123.456
     csv_manager.main_csv_path = temp_csv_path
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
+    csv_manager._session_finalized = True
     
-    # Call cleanup with reset_paths=False
-    csv_manager.cleanup(reset_paths=False)
+    # Call cleanup (now always resets everything)
+    csv_manager.cleanup()
     
-    # Verify state is reset but paths are preserved
+    # Verify everything is reset for session finalization
     assert len(csv_manager.main_csv_buffer) == 0
     assert csv_manager.last_saved_timestamp is None
-    assert csv_manager.main_csv_path == temp_csv_path
-    assert csv_manager.sleep_stage_csv_path == temp_csv_path + '.sleep'
+    assert csv_manager.main_csv_path is None
+    assert csv_manager.sleep_stage_csv_path is None
+    assert csv_manager._session_finalized is False
 
 def test_save_main_buffer_to_csv(csv_manager, sample_data, temp_csv_path):
     """Test saving data to CSV file."""

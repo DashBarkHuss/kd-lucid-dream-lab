@@ -35,6 +35,7 @@ from gssc_local.realtime_with_restart.core.brainflow_child_process_manager impor
 from gssc_local.realtime_with_restart.utils.timestamp_utils import format_elapsed_time
 from gssc_local.realtime_with_restart.utils.logging_utils import setup_colored_logger
 from gssc_local.realtime_with_restart.utils.file_utils import create_trimmed_csv
+from gssc_local.realtime_with_restart.utils.session_utils import generate_session_timestamp, save_session_csv_files, setup_signal_handlers
 
 import time
 import multiprocessing
@@ -43,6 +44,10 @@ from brainflow.board_shim import BoardShim, BoardIds
 
 # Set up logging with colors
 logger = setup_colored_logger(__name__)
+
+# Global variables to track resources for signal handlers
+received_streamed_data_handler = None
+session_timestamp = None
 
 # Disable BrainFlow's internal logging to avoid interference with our logging
 BoardShim.disable_board_logger()
@@ -54,11 +59,12 @@ def main(handler_class=ReceivedStreamedDataHandler):
     """Main function that manages the data acquisition and processing.
     
     This function:
-    1. Initializes the board with child process streaming via BrainFlowChildProcessManager
-    2. Sets up the data handler and visualization components
-    3. Manages the main processing loop with inter-process communication
-    4. Handles data streaming and gap detection through message passing
-    5. Manages cleanup on exit
+    1. Generates a session timestamp for unique file naming
+    2. Initializes the board with child process streaming via BrainFlowChildProcessManager
+    3. Sets up the data handler and visualization components
+    4. Manages the main processing loop with inter-process communication
+    5. Handles data streaming and gap detection through message passing
+    6. Manages cleanup on exit
     
     The function runs until either:
     - No more data is available
@@ -68,6 +74,10 @@ def main(handler_class=ReceivedStreamedDataHandler):
     Args:
         handler_class: The data handler class to instantiate (for dependency injection)
     """
+    # Generate session timestamp for unique file naming
+    global session_timestamp, received_streamed_data_handler
+    session_timestamp = generate_session_timestamp()
+    logger.info(f"🕐 Session started at: {session_timestamp}")
     # Initialize playback file and timestamp tracking
     # original_data_file_path = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
     original_data_file_path = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
@@ -87,7 +97,13 @@ def main(handler_class=ReceivedStreamedDataHandler):
     board_manager.set_board_shim()
     board_timestamp_channel = board_manager.board_timestamp_channel
     board_timestamp_channel_9 = board_manager.board_shim.get_timestamp_channel(board_id)
-    received_streamed_data_handler = handler_class(board_manager, logger)
+    received_streamed_data_handler = handler_class(board_manager, logger, session_timestamp=session_timestamp)
+    
+    # Setup signal handlers after we have the data handler
+    setup_signal_handlers(
+        received_streamed_data_handler,
+        session_timestamp,
+    )
 
     # Get the PyQt application instance from the visualizer
     qt_app = received_streamed_data_handler.data_manager.visualizer.app
@@ -157,7 +173,7 @@ def main(handler_class=ReceivedStreamedDataHandler):
                 # validate the saved csv
                 logger.info(f"Main csv buffer path before final save: {received_streamed_data_handler.data_manager.csv_manager.main_csv_path}")        
                 output_csv_path = received_streamed_data_handler.data_manager.csv_manager.main_csv_path
-                received_streamed_data_handler.data_manager.csv_manager.save_all_and_cleanup(merge_files=True, merge_output_path="merged_data.csv")
+                save_session_csv_files(received_streamed_data_handler, session_timestamp)
                 received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file_path, output_csv_path)
                 break
 
@@ -178,11 +194,19 @@ def main(handler_class=ReceivedStreamedDataHandler):
         import traceback
         logger.error(f"Error in main loop: {str(e)}\n{traceback.format_exc()}")
     finally:
-        # Clean up resources
+        # Clean up resources and save CSV as fallback
         try:
-            if 'received_streamed_data_handler' in locals():
+            # Try to save CSV data as fallback (signal handlers handle normal termination)
+            try:
+                if received_streamed_data_handler is not None:
+                    save_session_csv_files(received_streamed_data_handler, session_timestamp)
+                    logger.info("✅ CSV files saved and merged successfully")
+            except Exception as save_error:
+                logger.error(f"Failed to save CSV in finally block: {save_error}")
+                
+            if received_streamed_data_handler is not None:
                 received_streamed_data_handler.data_manager.cleanup()
-            if 'stream_manager' in locals() and brainflow_child_process_manager is not None:
+            if 'brainflow_child_process_manager' in locals() and brainflow_child_process_manager is not None:
                 brainflow_child_process_manager.stop_stream()  # Clean up multiprocessing streams
         except Exception as e:
             logger.error(f"Error during cleanup: {str(e)}")

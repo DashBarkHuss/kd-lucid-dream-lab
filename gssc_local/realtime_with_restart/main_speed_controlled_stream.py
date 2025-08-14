@@ -41,6 +41,7 @@ from gssc_local.realtime_with_restart.speed_controlled_board_manager import Spee
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 from gssc_local.realtime_with_restart.utils.logging_utils import setup_colored_logger
 from gssc_local.realtime_with_restart.utils.file_utils import create_trimmed_csv
+from gssc_local.realtime_with_restart.utils.session_utils import generate_session_timestamp, save_session_csv_files, setup_signal_handlers
 from gssc_local.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
 
 # Event system imports (for sleep stage event handling)
@@ -56,10 +57,16 @@ from brainflow.board_shim import BoardShim, BoardIds
 # Set up logging with colors
 logger = setup_colored_logger(__name__)
 
+# Global variables to track data handler and session info for signal handlers
+received_streamed_data_handler = None
+session_timestamp = None
+
 # Disable BrainFlow's internal logging to avoid interference with our logging
 BoardShim.disable_board_logger()
 
 # Timestamp utility functions moved to gssc_local.realtime_with_restart.utils.timestamp_utils
+
+
 
 
 def create_event_dispatcher():
@@ -83,6 +90,25 @@ def create_event_dispatcher():
 
 
 def main(handler_class=ReceivedStreamedDataHandler, enable_events=True):
+    """Main function that manages the data acquisition and processing.
+    
+    This function:
+    1. Generates a session timestamp for unique file naming
+    2. Initializes the mock board with the specified data file
+    3. Sets up the data handler and visualization
+    4. Manages the main processing loop
+    5. Handles data streaming and gap detection
+    6. Manages cleanup on exit
+    
+    The function runs until either:
+    - No more data is available
+    - A gap is detected
+    - An error occurs
+    """
+    # Generate session timestamp for unique file naming
+    global session_timestamp
+    session_timestamp = generate_session_timestamp()
+    logger.info(f"🕐 Session started at: {session_timestamp}")
     """Main function that manages the data acquisition and processing.
     
     This function:
@@ -119,7 +145,8 @@ def main(handler_class=ReceivedStreamedDataHandler, enable_events=True):
     board_timestamp_channel = mock_board_manager_speed_control.board_timestamp_channel
     
     # Create montage for proper initialization
-    montage = Montage.eog_only_montage()
+    montage = Montage.default_sleep_montage()
+    # montage = Montage.eog_only_montage()
     
     # Create event dispatcher if events are enabled
     event_dispatcher = None
@@ -129,7 +156,14 @@ def main(handler_class=ReceivedStreamedDataHandler, enable_events=True):
     else:
         logger.info("Event system disabled - running in standard mode")
     
-    received_streamed_data_handler = handler_class(mock_board_manager_speed_control, logger, montage, event_dispatcher)
+    global received_streamed_data_handler
+    received_streamed_data_handler = handler_class(mock_board_manager_speed_control, logger, montage, event_dispatcher, session_timestamp)
+    
+    # Setup signal handlers after we have the data handler
+    setup_signal_handlers(
+        received_streamed_data_handler,
+        session_timestamp,
+    )
 
     # Get the PyQt application instance from the visualizer
     qt_app = received_streamed_data_handler.data_manager.visualizer.app
@@ -197,7 +231,7 @@ def main(handler_class=ReceivedStreamedDataHandler, enable_events=True):
                 # validate the saved csv
                 logger.info(f"Main csv buffer path before final save: {received_streamed_data_handler.data_manager.csv_manager.main_csv_path}")        
                 output_csv_path = received_streamed_data_handler.data_manager.csv_manager.main_csv_path
-                received_streamed_data_handler.data_manager.csv_manager.save_all_and_cleanup(merge_files=True, merge_output_path="merged_data.csv")
+                save_session_csv_files(received_streamed_data_handler, session_timestamp)
                 received_streamed_data_handler.data_manager.validate_saved_csv(original_data_file, output_csv_path)
                 break
                 
@@ -232,10 +266,16 @@ def main(handler_class=ReceivedStreamedDataHandler, enable_events=True):
         import traceback
         logger.error(f"Error in main loop: {str(e)}\n{traceback.format_exc()}")
     finally:
-        # Clean up resources
+        # Clean up resources and save CSV as fallback
         try:
-            if 'received_streamed_data_handler' in locals():
-                received_streamed_data_handler.data_manager.cleanup()
+            # Try to save CSV data as fallback (signal handlers handle normal termination)
+            try:
+                save_session_csv_files(received_streamed_data_handler, session_timestamp)
+                logger.info("✅ CSV files saved and merged successfully")
+            except Exception as save_error:
+                logger.error(f"Failed to save CSV in finally block: {save_error}")
+                
+            received_streamed_data_handler.data_manager.cleanup()
             # No multiprocess_stream_manager cleanup needed (uses SpeedControlledBoardManager directly)
         except Exception as e:
             logger.error(f"Error during cleanup: {str(e)}")

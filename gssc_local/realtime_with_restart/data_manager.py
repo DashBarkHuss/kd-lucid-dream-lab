@@ -29,19 +29,19 @@ from gssc_local.realtime_with_restart.export.csv.manager import CSVManager
 from gssc_local.realtime_with_restart.export.csv.test_utils import compare_csv_files
 from gssc_local.realtime_with_restart.export.csv.validation import validate_file_path
 from gssc_local.realtime_with_restart.export.csv.exceptions import CSVExportError, CSVDataError
+from gssc_local.realtime_with_restart.utils.session_utils import generate_session_timestamp
 from .etd_buffer_manager import ETDBufferManager
 from .channel_mapping import ChannelIndexMapping, NumPyDataWithBrainFlowDataKey, RawBoardDataWithKeys
 import pandas as pd
 import time
 import os
-from datetime import datetime
 from .core.gap_handler import GapHandler
 
 logger = logging.getLogger(__name__)
 
 class DataManager:
     """Manages data buffers and their processing"""
-    def __init__(self, board_shim, sampling_rate, montage: Montage = None, event_dispatcher=None):
+    def __init__(self, board_shim, sampling_rate, montage: Montage = None, event_dispatcher=None, session_timestamp=None):
         self.board_shim = board_shim
         self.sampling_rate = sampling_rate
         self.montage = montage
@@ -97,13 +97,22 @@ class DataManager:
         self.output_csv_path = None
         self.last_saved_timestamp = None  # Track last saved timestamp to prevent duplicates
         
+        # Generate timestamp for session if not provided
+        if session_timestamp is None:
+            session_timestamp = generate_session_timestamp()
+        self.session_timestamp = session_timestamp
+        
+        # Create timestamped CSV filenames
+        main_csv_filename = f'data_{session_timestamp}.csv'
+        sleep_stage_csv_filename = f'sleep_stages_{session_timestamp}.csv'
+        
         # Initialize CSVManager
         self.csv_manager = CSVManager(
             self.board_shim,
             main_buffer_size=1000,  # Increased from 500
             sleep_stage_buffer_size=200,  # Kept the same
-            main_csv_path='memory_manager_test.csv',
-            sleep_stage_csv_path='memory_manager_test_sleep_stages.csv'
+            main_csv_path=main_csv_filename,
+            sleep_stage_csv_path=sleep_stage_csv_filename
         )
         
         # Initialize gap handler
@@ -751,7 +760,7 @@ class DataManager:
             
             # Clean up CSVManager - reset paths since we're done
             if hasattr(self, 'csv_manager'):
-                self.csv_manager.cleanup(reset_paths=True)
+                self.csv_manager.cleanup()
             
             # Reset state variables
             self.last_processed_buffer = -1

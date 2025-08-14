@@ -37,6 +37,7 @@ sys.path.append(workspace_root)
 # Now use absolute imports
 from gssc_local.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 from gssc_local.realtime_with_restart.utils.logging_utils import setup_colored_logger
+from gssc_local.realtime_with_restart.utils.session_utils import generate_session_timestamp, save_session_csv_files, setup_signal_handlers
 from gssc_local.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
 from gssc_local.montage import Montage
 
@@ -46,8 +47,15 @@ from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 # Set up logging with colors
 logger = setup_colored_logger(__name__)
 
+# Global variables to track resources for signal handlers
+received_streamed_data_handler = None
+streaming_board_manager = None
+session_timestamp = None
+
 # Disable BrainFlow's internal logging to avoid interference with our logging
 BoardShim.disable_board_logger()
+
+
 
 
 class StreamingBoardManager:
@@ -121,11 +129,12 @@ def main(handler_class=ReceivedStreamedDataHandler, montage=None):
     """Main function that manages the real-time data acquisition and processing.
     
     This function:
-    1. Initializes the streaming board connection to OpenBCI GUI
-    2. Sets up the data handler and visualization
-    3. Manages the main processing loop
-    4. Handles data streaming and basic error conditions
-    5. Manages cleanup and CSV export on exit
+    1. Generates a session timestamp for unique file naming
+    2. Initializes the streaming board connection to OpenBCI GUI
+    3. Sets up the data handler and visualization
+    4. Manages the main processing loop
+    5. Handles data streaming and basic error conditions
+    6. Manages cleanup and CSV export on exit
     
     The function runs until either:
     - A keyboard interrupt (Ctrl+C)
@@ -137,15 +146,27 @@ def main(handler_class=ReceivedStreamedDataHandler, montage=None):
         montage: Montage configuration to use
 
     """
+    # Generate session timestamp for unique file naming
+    global session_timestamp
+    session_timestamp = generate_session_timestamp()
+    logger.info(f"🕐 Session started at: {session_timestamp}")
     logger.info("Starting real-time OpenBCI stream processor")
     
     # Initialize streaming board manager
+    global streaming_board_manager, received_streamed_data_handler
     streaming_board_manager = StreamingBoardManager()
     streaming_board_manager.set_board_shim()
     board_timestamp_channel = streaming_board_manager.board_timestamp_channel
     
     # Create data handler with optional montage configuration
-    received_streamed_data_handler = handler_class(streaming_board_manager, logger, montage)
+    received_streamed_data_handler = handler_class(streaming_board_manager, logger, montage, session_timestamp=session_timestamp)
+    
+    # Setup signal handlers after we have the resources
+    setup_signal_handlers(
+        received_streamed_data_handler,
+        session_timestamp,
+        streaming_board_manager
+    )
 
     # Get the PyQt application instance from the visualizer
     qt_app = received_streamed_data_handler.data_manager.visualizer.app
@@ -195,6 +216,9 @@ def main(handler_class=ReceivedStreamedDataHandler, montage=None):
                 
                 if no_data_count >= max_no_data_cycles:
                     logger.error("No data received for extended period. Check OpenBCI GUI stream.")
+                    # Save CSV data before exiting due to no data
+                    logger.info("Saving CSV data before exit...")
+                    save_session_csv_files(received_streamed_data_handler, session_timestamp)
                     break
                     
             # Process Qt events to update the GUI
@@ -210,14 +234,20 @@ def main(handler_class=ReceivedStreamedDataHandler, montage=None):
         # Clean up resources
         try:
             logger.info("Cleaning up and saving data...")
-            if 'received_streamed_data_handler' in locals():
-                # Save all collected data to CSV
-                logger.info(f"Main csv buffer path before final save: {received_streamed_data_handler.data_manager.csv_manager.main_csv_path}")        
-                received_streamed_data_handler.data_manager.csv_manager.save_all_and_cleanup(merge_files=True, merge_output_path="realtime_stream_data.csv")
-                received_streamed_data_handler.data_manager.cleanup()
-            if 'streaming_board_manager' in locals():
+            
+            # Try to save CSV data as fallback (signal handlers handle normal termination)
+            try:
+                save_session_csv_files(received_streamed_data_handler, session_timestamp)
+                logger.info("✅ CSV files saved and merged successfully")
+            except Exception as save_error:
+                logger.error(f"Failed to save CSV in finally block: {save_error}")
+            
+            # Clean up resources
+            received_streamed_data_handler.data_manager.cleanup()
+            
+            if streaming_board_manager is not None:
                 streaming_board_manager.stop_stream()
-            logger.info("Cleanup complete. Data saved to CSV files.")
+            logger.info("Cleanup complete.")
         except Exception as e:
             logger.error(f"Error during cleanup: {str(e)}")
 

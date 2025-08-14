@@ -164,6 +164,7 @@ class CSVManager:
         
         # Initialize other attributes
         self.sleep_stage_buffer: List[Tuple[float, float, float, float]] = []  # (timestamp_start, timestamp_end, sleep_stage, buffer_id)
+        self._session_finalized: bool = False  # Track if session has been finalized
         
    
     def _check_buffer_overflow(self, buffer: List[Tuple[float, float, float, float]], buffer_size: int) -> bool:
@@ -342,8 +343,11 @@ class CSVManager:
 
 
 
-    def save_all_and_cleanup(self, output_path: Optional[Union[str, Path]] = None, merge_files: bool = False, merge_output_path: Optional[Union[str, Path]] = None) -> bool:
+    def save_all_and_cleanup(self, output_path: Optional[Union[str, Path]] = None, merge_files: bool = False, merge_output_path: Optional[Union[str, Path]] = None, force_finalize: bool = False) -> bool:
         """Save all remaining data and perform cleanup.
+        
+        This method is idempotent - it can be called multiple times safely.
+        Only the first call (or calls with force_finalize=True) will perform the full operation.
         
         This is a convenience method that combines save_all_data() and cleanup().
         It saves all remaining data in both buffers and then performs cleanup.
@@ -351,6 +355,9 @@ class CSVManager:
         Args:
             output_path (Optional[Union[str, Path]]): Path where to save the main CSV file.
                 If not provided, uses the existing main_csv_path.
+            merge_files (bool): Whether to merge the main and sleep stage files
+            merge_output_path (Optional[Union[str, Path]]): Path for merged output file
+            force_finalize (bool): Force finalization even if already done (for testing)
             
         Returns:
             bool: True if save and cleanup were successful
@@ -361,6 +368,13 @@ class CSVManager:
         """
         try:
             self.logger.info(f"\n=== CSVManager.save_all_and_cleanup() ===")
+            
+            # Check if already finalized (idempotent behavior)
+            if self._session_finalized and not force_finalize:
+                self.logger.info("✅ Session already finalized - skipping duplicate save_all_and_cleanup() call")
+                self.logger.info("=== End save_all_and_cleanup() (skipped) ===\n")
+                return True
+            
             # Use existing output path if none provided
             path_to_use = output_path if output_path is not None else self.main_csv_path
             validate_output_path_set(path_to_use, "main CSV", "No main CSV path provided and no existing main_csv_path set")
@@ -377,7 +391,12 @@ class CSVManager:
             if merge_files:
                 self.merge_files(self.main_csv_path, self.sleep_stage_csv_path, merge_output_path)
 
-            self.cleanup(reset_paths=True)
+            # This is session finalization
+            self.cleanup()
+            # Set finalized after cleanup (since cleanup resets this flag)
+            self._session_finalized = True
+            
+            self.logger.info("✅ Session finalized - subsequent calls will be skipped")
             self.logger.info("=== End save_all_and_cleanup() ===\n")
             return result
         except Exception as e:
@@ -441,15 +460,13 @@ class CSVManager:
         """Reset the last saved timestamp to None."""
         self.last_saved_timestamp = None
 
-    def cleanup(self, reset_paths: bool = True) -> None:
-        """Clean up resources and reset state.
+    def cleanup(self) -> None:
+        """Clean up resources and reset state for session end.
         
         This method should be called when the CSVManager is no longer needed
         to ensure proper resource release and state reset.
         
-        Args:
-            reset_paths (bool): Whether to reset output paths. Defaults to True.
-                Set to False if you want to keep the paths for future saves.
+        Always resets paths since cleanup indicates session finalization.
                 
         Raises:
             CSVExportError: If cleanup fails
@@ -462,14 +479,15 @@ class CSVManager:
             # Reset state
             self._reset_last_saved_timestamp()
             
-            # Optionally reset paths
-            if reset_paths:
-                self.main_csv_path = None
-                self.sleep_stage_csv_path = None
+            # Always reset paths and finalization flag for session end
+            self.main_csv_path = None
+            self.sleep_stage_csv_path = None
+            self._session_finalized = False  # Reset for next session
             
         except Exception as e:
             self.logger.error(f"Error during CSVManager cleanup: {e}")
             raise CSVExportError(f"Failed to cleanup CSVManager: {e}")
+
 
     def _prepare_main_csv_data_for_save(self) -> Tuple[np.ndarray, List[str], int]:
         """Prepare main CSV buffer data for saving by validating and converting formats.
@@ -629,9 +647,18 @@ class CSVManager:
             MissingOutputPathError: If no output path is set
         """
         try:
-            # Handle empty buffer case
+            # Handle empty buffer case - but DON'T delete existing files with data
             if not self.sleep_stage_buffer:
-                clean_empty_sleep_stage_file(self.sleep_stage_csv_path)
+                # Only clean if file exists and is truly empty (header only or completely empty)
+                if self.sleep_stage_csv_path and os.path.exists(self.sleep_stage_csv_path):
+                    with open(self.sleep_stage_csv_path, 'r') as f:
+                        content = f.read().strip()
+                        # Only delete if completely empty or header-only
+                        if content == "" or content == "timestamp_start\ttimestamp_end\tsleep_stage\tbuffer_id":
+                            self.logger.debug(f"Cleaning empty sleep stage file: {self.sleep_stage_csv_path}")
+                            clean_empty_sleep_stage_file(self.sleep_stage_csv_path)
+                        else:
+                            self.logger.debug(f"Sleep stage buffer empty but file has data - preserving file: {self.sleep_stage_csv_path}")
                 return True
             
             # Validate path exists using existing validation function
@@ -734,10 +761,23 @@ class CSVManager:
         merged_df['sleep_stage'] = np.nan
         merged_df['buffer_id'] = np.nan
         
+        # Inline validation: Check if sleep stage data is empty
+        if sleep_stage_df.empty:
+            self.logger.warning("❌ MERGE VALIDATION: Sleep stage DataFrame is empty - no sleep stages will be merged")
+            return merged_df
+        
+        self.logger.info(f"✅ MERGE VALIDATION: Starting merge with {len(sleep_stage_df)} sleep stage entries")
+        
+        # Track successful merges for validation
+        successful_merges = 0
+        
         # Process each sleep stage entry
         for sleep_row in sleep_stage_df.itertuples():
             end_mask = merged_df['timestamp_str'] == sleep_row.timestamp_end_str
             matching_samples = merged_df[end_mask]
+            
+            # Inline validation: Log timestamp matching attempt
+            self.logger.debug(f"MERGE VALIDATION: Attempting to match timestamp_end {sleep_row.timestamp_end_str}")
             
             # Validate timestamps match
             validate_matching_timestamps(matching_samples, sleep_row.timestamp_end_str, self.logger)
@@ -748,7 +788,20 @@ class CSVManager:
             # Assign values
             merged_df.loc[end_mask, 'sleep_stage'] = sleep_row.sleep_stage
             merged_df.loc[end_mask, 'buffer_id'] = sleep_row.buffer_id
+            successful_merges += 1
             
+            self.logger.debug(f"✅ MERGE VALIDATION: Successfully merged sleep_stage={sleep_row.sleep_stage}, buffer_id={sleep_row.buffer_id} at timestamp {sleep_row.timestamp_end_str}")
+            
+        # Inline validation: Report merge success rate
+        self.logger.info(f"✅ MERGE VALIDATION: Successfully merged {successful_merges}/{len(sleep_stage_df)} sleep stage entries")
+        
+        # Inline validation: Check if any sleep stages were actually merged
+        merged_count = merged_df['sleep_stage'].notna().sum()
+        if merged_count == 0:
+            self.logger.error("❌ MERGE VALIDATION FAILED: No sleep stages were successfully merged into the main data. This indicates a timestamp matching problem.")
+        else:
+            self.logger.info(f"✅ MERGE VALIDATION: Final merged DataFrame has {merged_count} rows with sleep stage data")
+        
         return merged_df
 
     def merge_files(self, main_csv_path: Union[str, Path],
@@ -793,9 +846,22 @@ class CSVManager:
             sleep_stage_path = validate_file_path(sleep_stage_csv_path)
             output_path = validate_file_path(output_path)
             
+            # Inline validation: Log file paths and existence
+            self.logger.info(f"✅ MERGE VALIDATION: Main CSV path: {main_path}")
+            self.logger.info(f"✅ MERGE VALIDATION: Sleep stage CSV path: {sleep_stage_path}")
+            self.logger.info(f"✅ MERGE VALIDATION: Sleep stage file exists: {sleep_stage_path.exists()}")
+            
             # Read and validate input files
             main_df = self._read_and_validate_main_csv(main_path)
+            self.logger.info(f"✅ MERGE VALIDATION: Main CSV loaded with {len(main_df)} rows")
+            
             sleep_stage_df = self._read_and_validate_sleep_stage_csv(sleep_stage_path)
+            
+            # Inline validation: Report sleep stage file status
+            if sleep_stage_df is None:
+                self.logger.warning("❌ MERGE VALIDATION: Sleep stage CSV file does not exist or is invalid")
+            else:
+                self.logger.info(f"✅ MERGE VALIDATION: Sleep stage CSV loaded with {len(sleep_stage_df)} rows")
             
             # Create initial merged DataFrame
             merged_df = main_df.copy()
@@ -807,10 +873,26 @@ class CSVManager:
                 # Initialize empty sleep stage columns
                 merged_df['sleep_stage'] = np.nan
                 merged_df['buffer_id'] = np.nan
+                self.logger.warning("❌ MERGE VALIDATION: No sleep stage data to merge - columns will be empty")
             
             # Finalize and save
             merged_df = finalize_merged_data(merged_df)
+            
+            # Inline validation: Final merge statistics
+            total_rows = len(merged_df)
+            rows_with_sleep_stages = merged_df['sleep_stage'].notna().sum()
+            merge_percentage = (rows_with_sleep_stages / total_rows * 100) if total_rows > 0 else 0
+            
+            self.logger.info(f"✅ MERGE VALIDATION SUMMARY:")
+            self.logger.info(f"  - Total rows in merged file: {total_rows}")
+            self.logger.info(f"  - Rows with sleep stage data: {rows_with_sleep_stages}")
+            self.logger.info(f"  - Sleep stage coverage: {merge_percentage:.2f}%")
+            
+            if rows_with_sleep_stages == 0:
+                self.logger.error("❌ MERGE VALIDATION FAILED: Final merged file has NO sleep stage data!")
+            
             merged_df.to_csv(output_path, sep='\t', index=False, float_format='%.6f')
+            self.logger.info(f"✅ MERGE VALIDATION: Merged file saved to {output_path}")
             
             return True
             
