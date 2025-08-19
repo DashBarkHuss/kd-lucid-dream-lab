@@ -19,7 +19,7 @@ import os
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from montage import Montage
-from gssc_helper import realtime_inference, compare_sleep_stages
+from .gssc_helper import realtime_inference, compare_sleep_stages
 from convert_csv_to_fif import convert_csv_to_raw, save_raw_to_fif, convert_csv_to_fif
 
 

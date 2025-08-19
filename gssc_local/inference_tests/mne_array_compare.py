@@ -17,7 +17,7 @@ from sklearn.metrics import confusion_matrix, classification_report
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from gssc_helper import realtime_inference
+from .gssc_helper import realtime_inference
 
 
 # Path to your .set file
