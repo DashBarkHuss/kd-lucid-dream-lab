@@ -1,77 +1,20 @@
 """
-TEMPORARILY BROKEN FILE FOR TESTING - DO NOT USE
-This script uses the gssc_array_inference_with_fif.py as a starting point. then we replace the old ArrayInfer class with the new one.
+GSSC Helper Module for Inference Tests
 
-The gssc_array_inference_with_fif.py script performs sleep stage classification on EEG data stored in .fif format.
-It loads EEG data, applies bandpass filtering, and uses a pre-trained GSSC model
-to predict sleep stages for each epoch. The script processes both EEG and EOG channels,
-handles signal permutations, and outputs predicted sleep stage classes with their
-corresponding probabilities for each epoch.
+This module provides helper functions for sleep stage classification using the GSSC model.
+It includes utilities for EEG data preprocessing, inference execution, and result comparison.
 
-The script logs the predicted classes and class probabilities for each epoch.
+The script performs sleep stage classification on EEG data, applies bandpass filtering, 
+and uses a pre-trained GSSC model to predict sleep stages for each epoch. It processes 
+both EEG and EOG channels, handles signal permutations, and outputs predicted sleep 
+stage classes with their corresponding probabilities for each epoch.
 
-Example output for epoch 299:
-Predicted classes for epoch 299: [[2]
- [1]
- [2]
- [2]
- [2]
- [0]
- [1]]
-  Predicted class: 2
-  Class probabilities:
-    Class 0: 20.06%
-    Class 1: 24.22%
-    Class 2: 54.38%
-    Class 3: 0.92%
-    Class 4: 0.42%
-  Predicted class: 1
-  Class probabilities:
-    Class 0: 2.32%
-    Class 1: 61.03%
-    Class 2: 36.27%
-    Class 3: 0.02%
-    Class 4: 0.35%
-  Predicted class: 2
-  Class probabilities:
-    Class 0: 0.80%
-    Class 1: 13.76%
-    Class 2: 85.23%
-    Class 3: 0.08%
-    Class 4: 0.13%
-  Predicted class: 2
-  Class probabilities:
-    Class 0: 2.44%
-    Class 1: 23.62%
-    Class 2: 72.93%
-    Class 3: 0.45%
-    Class 4: 0.56%
-  Predicted class: 2
-  Class probabilities:
-    Class 0: 0.65%
-    Class 1: 31.00%
-    Class 2: 67.79%
-    Class 3: 0.54%
-    Class 4: 0.01%
-  Predicted class: 0
-  Class probabilities:
-    Class 0: 44.16%
-    Class 1: 36.65%
-    Class 2: 18.15%
-    Class 3: 0.44%
-    Class 4: 0.60%
-  Predicted class: 1
-  Class probabilities:
-    Class 0: 27.10%
-    Class 1: 50.51%
-    Class 2: 21.87%
-    Class 3: 0.06%
-    Class 4: 0.47%
-
-It doesn't log a summary of the predicted classes and class probabilities for all epochs. It doesn't log an accuracy comparison with the ground truth.
+Functions include:
+- realtime_inference: Main inference function for processing EEG data
+- compare_sleep_stages: Compare predicted vs ground truth sleep stages
+- preprocess_eeg_epoch_for_gssc: Preprocess EEG data for GSSC model input
+- Various utility functions for data preparation and result analysis
 """
-
-raise ImportError("TEMPORARILY BROKEN FILE FOR TESTING gssc_helper.py - seeing if this is used anywhere important")
 from gssc.infer import ArrayInfer
 import numpy as np
 import torch
