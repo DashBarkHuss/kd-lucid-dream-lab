@@ -42,6 +42,19 @@
       },
       "justMyCode": false,
       "stopOnEntry": false
+    },
+    {
+      "name": "Debug Main Realtime Stream",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/gssc_local/realtime_with_restart/main_realtime_stream.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false,
+      "stopOnEntry": false
     }
   ]
 }

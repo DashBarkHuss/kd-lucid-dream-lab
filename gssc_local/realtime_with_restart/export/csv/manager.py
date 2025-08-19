@@ -479,10 +479,9 @@ class CSVManager:
             # Reset state
             self._reset_last_saved_timestamp()
             
-            # Always reset paths and finalization flag for session end
+            # Reset paths for session end (preserve finalization state)
             self.main_csv_path = None
             self.sleep_stage_csv_path = None
-            self._session_finalized = False  # Reset for next session
             
         except Exception as e:
             self.logger.error(f"Error during CSVManager cleanup: {e}")
@@ -844,8 +843,7 @@ class CSVManager:
             # Validate paths
             main_path = validate_file_path(main_csv_path)
             sleep_stage_path = validate_file_path(sleep_stage_csv_path)
-            output_path = validate_file_path(output_path)
-            
+            output_path = validate_file_path(output_path)           
             # Inline validation: Log file paths and existence
             self.logger.info(f"✅ MERGE VALIDATION: Main CSV path: {main_path}")
             self.logger.info(f"✅ MERGE VALIDATION: Sleep stage CSV path: {sleep_stage_path}")

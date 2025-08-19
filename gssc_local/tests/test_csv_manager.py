@@ -500,7 +500,7 @@ def test_cleanup_with_path_reset(csv_manager, sample_data, temp_csv_path):
     assert csv_manager.sleep_stage_csv_path is None
 
 def test_cleanup_resets_everything(csv_manager, sample_data, temp_csv_path):
-    """Test that cleanup resets all state including paths (session finalization)."""
+    """Test that cleanup resets all state including paths but preserves finalization state."""
     # Set up some initial state
     csv_manager.main_csv_buffer = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
     csv_manager.last_saved_timestamp = 123.456
@@ -508,15 +508,16 @@ def test_cleanup_resets_everything(csv_manager, sample_data, temp_csv_path):
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
     csv_manager._session_finalized = True
     
-    # Call cleanup (now always resets everything)
+    # Call cleanup (resets everything except finalization state)
     csv_manager.cleanup()
     
-    # Verify everything is reset for session finalization
+    # Verify everything is reset except finalization state
     assert len(csv_manager.main_csv_buffer) == 0
     assert csv_manager.last_saved_timestamp is None
     assert csv_manager.main_csv_path is None
     assert csv_manager.sleep_stage_csv_path is None
-    assert csv_manager._session_finalized is False
+    # Finalization state is preserved to maintain idempotency
+    assert csv_manager._session_finalized is True
 
 def test_save_main_buffer_to_csv(csv_manager, sample_data, temp_csv_path):
     """Test saving data to CSV file."""
@@ -1504,6 +1505,35 @@ def test_backward_compatibility_save_all_and_cleanup(csv_manager, sample_data, t
     assert csv_manager.last_saved_timestamp is None
     assert csv_manager.main_csv_path is None
     assert csv_manager.sleep_stage_csv_path is None
+
+def test_save_all_and_cleanup_idempotency(csv_manager, sample_data, temp_csv_path):
+    """Test that save_all_and_cleanup() is truly idempotent - multiple calls are safe."""
+    # Set main path
+    csv_manager.main_csv_path = temp_csv_path
+    
+    # Save some data
+    csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
+    csv_manager.add_sleep_stage_to_sleep_stage_csv(2.0, 1.0, 0.0, 30.0)
+    
+    # First call should work normally
+    result1 = csv_manager.save_all_and_cleanup()
+    assert result1 is True
+    assert csv_manager._session_finalized is True
+    
+    # Second call should be safely ignored
+    result2 = csv_manager.save_all_and_cleanup()
+    assert result2 is True
+    assert csv_manager._session_finalized is True
+    
+    # Third call should also be safely ignored
+    result3 = csv_manager.save_all_and_cleanup()
+    assert result3 is True
+    assert csv_manager._session_finalized is True
+    
+    # Force finalize should still work when given a path (since paths are cleared after cleanup)
+    result4 = csv_manager.save_all_and_cleanup(output_path=temp_csv_path, force_finalize=True)
+    assert result4 is True
+    assert csv_manager._session_finalized is True
 
 def test_save_all_data(csv_manager, sample_data, temp_csv_path):
     """Test saving all data without cleanup.
