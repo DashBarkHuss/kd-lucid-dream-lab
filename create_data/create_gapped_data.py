@@ -6,7 +6,7 @@ from brainflow.board_shim import BoardShim, BoardIds
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from gssc_local.realtime_with_restart.export.csv.utils import create_format_string
+from sleep_scoring_toolkit.realtime_with_restart.export.csv.utils import create_format_string
 
 def create_gapped_data(output_file, duration=38, gap_position=10, gap_size=3):
     """
