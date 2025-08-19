@@ -551,6 +551,9 @@ class DataManager:
         start_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(start_idx_abs, to_etd=True)
         end_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(end_idx_abs, to_etd=True)
         
+        # Validate epoch duration
+        self._validate_epoch_duration(start_idx_abs, end_idx_abs)
+        
         # Extract EXACTLY points_per_epoch data points from the correct slice
         # Get electrode board keys (exclude timestamp channel)
         electrode_board_keys = [key for key in self.etd_buffer_manager.electrode_and_timestamp_board_keys 
@@ -792,6 +795,36 @@ class DataManager:
         except Exception as e:
             logging.error(f"Error during DataManager cleanup: {str(e)}")
             raise
+
+    def _validate_epoch_duration(self, start_idx_abs: int, end_idx_abs: int) -> None:
+        """Validate that epoch duration is exactly 30 seconds.
+        
+        Args:
+            start_idx_abs: Start index absolute in the total streamed data
+            end_idx_abs: End index absolute in the total streamed data
+            
+        Raises:
+            ValueError: If epoch duration is not 30 seconds within tolerance
+        """
+        # Convert absolute indices to relative indices for buffer access
+        start_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(start_idx_abs, to_etd=True)
+        end_idx_rel = self.etd_buffer_manager._adjust_index_with_offset(end_idx_abs, to_etd=True)
+        
+        timestamp_data = self.etd_buffer_manager._get_timestamps()
+        epoch_start_timestamp = timestamp_data[start_idx_rel]
+        epoch_end_timestamp = timestamp_data[end_idx_rel - 1]  # -1 because end_idx_rel is exclusive
+        
+        epoch_duration = epoch_end_timestamp - epoch_start_timestamp
+        expected_duration = 30.0
+        tolerance = 0.1  # Allow 100ms tolerance for floating point precision
+        
+        if abs(epoch_duration - expected_duration) > tolerance:
+            raise ValueError(
+                f"Epoch duration validation failed: Expected {expected_duration}s, "
+                f"got {epoch_duration:.6f}s (difference: {epoch_duration - expected_duration:.6f}s). "
+                f"Start: {epoch_start_timestamp:.6f}, End: {epoch_end_timestamp:.6f}, "
+                f"Indices: {start_idx_abs}-{end_idx_abs} (abs), {start_idx_rel}-{end_idx_rel} (rel)"
+            )
 
 
 
