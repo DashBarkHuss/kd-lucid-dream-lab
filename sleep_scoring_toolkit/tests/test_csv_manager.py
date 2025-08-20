@@ -1575,4 +1575,4 @@ if __name__ == '__main__':
     print("\nRunning tests directly...")
     pytest.main([__file__, '-v'])
 
-# python -m pytest gssc_local/realtime_with_restart/export/test_csv_manager.py -v
+# python -m pytest sleep_scoring_toolkit/tests/test_csv_manager.py -v

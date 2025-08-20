@@ -34,7 +34,7 @@
       "name": "Debug Main Speed Controlled Stream",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/gssc_local/realtime_with_restart/main_speed_controlled_stream.py",
+      "program": "${workspaceFolder}/sleep_scoring_toolkit/realtime_with_restart/main_speed_controlled_stream.py",
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
       "env": {
@@ -47,7 +47,7 @@
       "name": "Debug Main Realtime Stream",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/gssc_local/realtime_with_restart/main_realtime_stream.py",
+      "program": "${workspaceFolder}/sleep_scoring_toolkit/realtime_with_restart/main_realtime_stream.py",
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
       "env": {

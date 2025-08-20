@@ -1,3 +1,3 @@
 """
-Test package for gssc_local.
+Test package for sleep_scoring_toolkit.
 """ 

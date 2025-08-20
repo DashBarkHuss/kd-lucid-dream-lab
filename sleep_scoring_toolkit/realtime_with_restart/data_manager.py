@@ -45,7 +45,8 @@ class DataManager:
         self.board_shim = board_shim
         self.sampling_rate = sampling_rate
         self.montage = montage
-        self.event_dispatcher = event_dispatcher 
+        self.event_dispatcher = event_dispatcher
+        self.logger = logger 
         self.seconds_per_epoch = 30
         self.seconds_per_step = 5
         # Buffer configuration

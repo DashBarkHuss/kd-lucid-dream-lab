@@ -19,12 +19,12 @@ import os
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from montage import Montage
-from .gssc_helper import realtime_inference, compare_sleep_stages
+from gssc_helper import realtime_inference, compare_sleep_stages
 from convert_csv_to_fif import convert_csv_to_raw, save_raw_to_fif, convert_csv_to_fif
 
 
 
-csv_file_path = '/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/realtime_inference_test/BrainFlow-RAW_2025-03-29_23-14-54_0.csv'
+csv_file_path = '/Users/dashiellbarkhuss/Documents/openbci_and_python_playgound/kd-lucid-dream-lab/data/realtime_inference_test/8-16-25/BrainFlow-RAW_2025-08-16_04-33-14_0.csv'
 # Read the .set file
 raw_csv = convert_csv_to_raw(csv_file_path)
 
@@ -32,16 +32,16 @@ raw_csv = convert_csv_to_raw(csv_file_path)
 raw_csv.resample(1000)
 
 
-start = 3000
-end = 6000
+start = 0
+end = 18000
 
 # Slice the data 
 raw_csv_sliced = raw_csv.copy().crop(tmin=start, tmax=end) 
 # get channel labels from default montage
 montage = Montage.default_sleep_montage()
 montage_ch_names = montage.get_channel_labels()
-eeg_channels = ['C4', 'O1', 'O2']  #  Adjust based on your data
-eog_channels = []  # Adjust based on your data
+eeg_channels = ['C4', 'C3', 'F4', 'F3']  #  Adjust based on your data
+eog_channels = ['L-HEOG', 'R-HEOG']  # Adjust based on your data
 
 
 channel_names = raw_csv_sliced.ch_names
@@ -53,7 +53,7 @@ eog_indices = [i for i, ch in enumerate(channel_names) if ch in eog_channels]
 # Initialize the EEGInfer class
 eeg_infer = EEGInfer()
 
-mat_file_path = 'data/realtime_inference_test/scoring.mat'
+mat_file_path = 'data/realtime_inference_test/8-16-25/8-16-25_scoring.mat'
 
 # Open the .mat file
 with h5py.File(mat_file_path, 'r') as file:

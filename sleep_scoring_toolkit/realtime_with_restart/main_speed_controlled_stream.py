@@ -126,7 +126,8 @@ def main(handler_class=ReceivedStreamedDataHandler, enable_events=True):
     # Initialize playback file and timestamp tracking
     # original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
     # original_data_file = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
-    original_data_file = os.path.join(workspace_root, "data/test_data/gapped_data.csv")  # Test gap detection
+    # original_data_file = os.path.join(workspace_root, "data/test_data/gapped_data.csv")  # Test gap detection
+    original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/8-16-25/BrainFlow-RAW_2025-08-16_04-33-14_0.csv")
     playback_file = original_data_file
     
     # Verify input file exists
