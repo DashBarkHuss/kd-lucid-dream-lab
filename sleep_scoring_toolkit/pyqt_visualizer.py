@@ -153,6 +153,7 @@ class PyQtVisualizer:
         self._cached_epoch_data = None
         self._cached_sampling_rate = None
         self._cached_sleep_stage = None
+        self._cached_researcher_score = None
         self._cached_time_offset = None
         self._cached_epoch_start_time = None
         
@@ -290,7 +291,8 @@ class PyQtVisualizer:
                 sampling_rate=self._cached_sampling_rate,
                 sleep_stage=self._cached_sleep_stage,
                 time_offset=self._cached_time_offset,
-                epoch_start_time=self._cached_epoch_start_time
+                epoch_start_time=self._cached_epoch_start_time,
+                researcher_score=self._cached_researcher_score
             )
     
     def apply_bandpass_filter(self, channel_data, low_freq, high_freq, sampling_rate):
@@ -373,8 +375,38 @@ class PyQtVisualizer:
                     raise FilterError(f"Channel {board_key} filtering failed. Check sampling rate and data quality.")
         
         return filtered_data_keyed
+    
+    def _generate_comparison_title(self, sleep_stage, researcher_score, relative_time_str):
+        """Generate title text with researcher comparison styling.
+        
+        Args:
+            sleep_stage: Model predicted sleep stage (0-7)
+            researcher_score: Researcher annotated sleep stage (0-7) or None
+            relative_time_str: Formatted time string (HH:MM:SS)
             
-    def plot_polysomnograph(self, epoch_data_keyed, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None):
+        Returns:
+            HTML formatted title string with appropriate color coding
+        """
+        model_stage_text = self.get_sleep_stage_text(sleep_stage)
+        
+        if researcher_score is not None:
+            researcher_stage_text = self.get_sleep_stage_text(researcher_score)
+            # Determine comparison color
+            if sleep_stage == researcher_score:
+                # Match - green
+                comparison_color = "#00AA00"
+                comparison_status = "✓"
+            else:
+                # Mismatch - red  
+                comparison_color = "#CC0000"
+                comparison_status = "✗"
+            
+            return f'<span style="color: {comparison_color};">Model: {model_stage_text} | Researcher: {researcher_stage_text} {comparison_status}</span> | Time: {relative_time_str}'
+        else:
+            # No researcher score - yellow/orange
+            return f'<span style="color: #FF8800;">Model: {model_stage_text} | Researcher: N/A</span> | Time: {relative_time_str}'
+            
+    def plot_polysomnograph(self, epoch_data_keyed, sampling_rate, sleep_stage, time_offset=0, epoch_start_time=None, researcher_score=None):
         """Update polysomnograph plot with new data"""
         # Extract data from wrapper for processing
         
@@ -385,6 +417,7 @@ class PyQtVisualizer:
         self._cached_sleep_stage = sleep_stage
         self._cached_time_offset = time_offset
         self._cached_epoch_start_time = epoch_start_time
+        self._cached_researcher_score = researcher_score
         
         # Stop countdown if it's still running
         if self.is_counting_down:
@@ -402,8 +435,9 @@ class PyQtVisualizer:
         seconds = int(elapsed_seconds % 60)
         relative_time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         
-        # Update title with proper styling
-        title_text = f'Sleep Stage: {self.get_sleep_stage_text(sleep_stage)} | Time from Start: {relative_time_str}'
+        # Update title with proper styling including researcher comparison
+        title_text = self._generate_comparison_title(sleep_stage, researcher_score, relative_time_str)
+        
         if not self.headless and self.title_label:
             self.title_label.setText(title_text)
         

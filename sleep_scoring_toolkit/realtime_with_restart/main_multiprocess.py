@@ -29,6 +29,7 @@ workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(workspace_root)
 
 # Now use absolute imports
+from sleep_scoring_toolkit.montage import Montage
 from sleep_scoring_toolkit.realtime_with_restart.board_manager import BoardManager
 from sleep_scoring_toolkit.realtime_with_restart.received_stream_data_handler import ReceivedStreamedDataHandler
 from sleep_scoring_toolkit.realtime_with_restart.core.brainflow_child_process_manager import BrainFlowChildProcessManager
@@ -36,6 +37,7 @@ from sleep_scoring_toolkit.realtime_with_restart.utils.timestamp_utils import fo
 from sleep_scoring_toolkit.realtime_with_restart.utils.logging_utils import setup_colored_logger
 from sleep_scoring_toolkit.realtime_with_restart.utils.file_utils import create_trimmed_csv
 from sleep_scoring_toolkit.realtime_with_restart.utils.session_utils import generate_session_timestamp, save_session_csv_files, setup_signal_handlers
+from sleep_scoring_toolkit.realtime_with_restart.channel_mapping import RawBoardDataWithKeys
 
 import time
 import multiprocessing
@@ -80,9 +82,13 @@ def main(handler_class=ReceivedStreamedDataHandler):
     logger.info(f"🕐 Session started at: {session_timestamp}")
     # Initialize playback file and timestamp tracking
     # original_data_file_path = os.path.join(workspace_root, "data/realtime_inference_test/BrainFlow-RAW_2025-03-29_copy_moved_gap_earlier.csv")
-    original_data_file_path = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
     # original_data_file_path = os.path.join(workspace_root, "data/test_data/consecutive_data.csv")
+    original_data_file_path = os.path.join(workspace_root, "data/realtime_inference_test/8-16-25/BrainFlow-RAW_2025-08-16_04-33-14_0.csv")
     current_playback_file = original_data_file_path
+    
+    # Optional researcher scoring file for real-time comparison
+    scoring_file_path = os.path.join(workspace_root, "data/realtime_inference_test/8-16-25/8-16-25_scoring.mat")
+    # scoring_file_path = None  # Set to None to disable comparison
     
     # Verify input file exists
     if not os.path.isfile(current_playback_file):
@@ -97,7 +103,12 @@ def main(handler_class=ReceivedStreamedDataHandler):
     board_manager.set_board_shim()
     board_timestamp_channel = board_manager.board_timestamp_channel
     board_timestamp_channel_9 = board_manager.board_shim.get_timestamp_channel(board_id)
-    received_streamed_data_handler = handler_class(board_manager, logger, session_timestamp=session_timestamp)
+    
+    # Create montage for proper initialization
+    montage = Montage.default_sleep_montage()
+    # montage = Montage.eog_only_montage()
+    
+    received_streamed_data_handler = handler_class(board_manager, logger, montage, event_dispatcher=None, session_timestamp=session_timestamp, scoring_file_path=scoring_file_path)
     
     # Setup signal handlers after we have the data handler
     setup_signal_handlers(
@@ -137,8 +148,10 @@ def main(handler_class=ReceivedStreamedDataHandler):
                         break
                         
                     elif msg_type == 'data':
-
-                        received_streamed_data_handler.process_board_data_chunk(received['board_data'])
+                        # Wrap raw numpy data in RawBoardDataWithKeys for compatibility
+                        raw_board_data = received['board_data']
+                        board_data_keyed = RawBoardDataWithKeys(raw_board_data)
+                        received_streamed_data_handler.process_board_data_chunk(board_data_keyed)
 
                     elif msg_type == 'error':
                         # Handle error from child process

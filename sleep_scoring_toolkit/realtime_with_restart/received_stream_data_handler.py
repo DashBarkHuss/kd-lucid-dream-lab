@@ -17,7 +17,7 @@ import numpy as np
 
 class ReceivedStreamedDataHandler: 
     """Handles processing and storage of incoming EEG data"""
-    def __init__(self, board_manager: BoardManager, logger: Logger, montage: Montage = None, event_dispatcher=None, session_timestamp=None):
+    def __init__(self, board_manager: BoardManager, logger: Logger, montage: Montage = None, event_dispatcher=None, session_timestamp=None, scoring_file_path: str = None):
         self.sample_count = 0  # Total number of samples processed
         self.board_manager = board_manager
         
@@ -26,7 +26,7 @@ class ReceivedStreamedDataHandler:
             session_timestamp = generate_session_timestamp()
         self.session_timestamp = session_timestamp
         
-        self.data_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, montage, event_dispatcher, session_timestamp)
+        self.data_manager = DataManager(self.board_manager.board_shim, self.board_manager.sampling_rate, montage, event_dispatcher, session_timestamp, scoring_file_path)
         self.logger = logger
 
     def process_board_data_chunk(self, raw_board_data_chunk):

@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 class DataManager:
     """Manages data buffers and their processing"""
-    def __init__(self, board_shim, sampling_rate, montage: Montage = None, event_dispatcher=None, session_timestamp=None):
+    def __init__(self, board_shim, sampling_rate, montage: Montage = None, event_dispatcher=None, session_timestamp=None, scoring_file_path: Optional[str] = None):
         self.board_shim = board_shim
         self.sampling_rate = sampling_rate
         self.montage = montage
@@ -102,6 +102,9 @@ class DataManager:
         if session_timestamp is None:
             session_timestamp = generate_session_timestamp()
         self.session_timestamp = session_timestamp
+        
+        # Initialize researcher scoring configuration
+        self._configure_researcher_scoring(scoring_file_path)
         
         # Create timestamped CSV filenames
         main_csv_filename = f'data_{session_timestamp}.csv'
@@ -515,7 +518,7 @@ class DataManager:
                 self.logger.error(f"  - trying to access index: {epoch_start_idx_abs-1}")
                 self.logger.error(f"  - timestamps array: {timestamps[:10] if len(timestamps) > 0 else 'EMPTY'}")
                 self.logger.error(f"  - buffer offsets: {[self._get_data_point_delay_for_buffer(i) for i in range(6)]}")
-                self.logger.error(f"  - total ETD buffer size: {len(self.etd_buffer_manager.get_buffer_data())}")
+                self.logger.error(f"  - total ETD buffer size: {self.etd_buffer_manager._get_total_data_points()}")
                 raise e  # Re-raise to maintain original behavior
        
         # Update buffer status
@@ -572,6 +575,9 @@ class DataManager:
         # Get the timestamp data for this epoch
         timestamp_data = self.etd_buffer_manager._get_timestamps()[start_idx_rel:end_idx_rel]
         epoch_start_time = timestamp_data[0]  # First timestamp in the epoch
+        
+        # Get researcher score for this epoch
+        researcher_score = self._get_researcher_score_for_epoch(epoch_start_time)
         
         # Get index combinations for EEG and EOG channels
         # 
@@ -646,7 +652,8 @@ class DataManager:
             self.sampling_rate, 
             predicted_class, 
             time_offset, 
-            epoch_start_time
+            epoch_start_time,
+            researcher_score
         )
         
         self.buffer_hidden_states[buffer_id] = new_hidden_states
@@ -826,6 +833,70 @@ class DataManager:
                 f"Start: {epoch_start_timestamp:.6f}, End: {epoch_end_timestamp:.6f}, "
                 f"Indices: {start_idx_abs}-{end_idx_abs} (abs), {start_idx_rel}-{end_idx_rel} (rel)"
             )
+    
+    def _configure_researcher_scoring(self, scoring_file_path: Optional[str]):
+        """Configure researcher scoring functionality.
+        
+        Args:
+            scoring_file_path: Path to researcher scoring file or None to disable
+        """
+        # Initialize attributes
+        self.researcher_scoring_loader = None
+        self._scoring_file_path = scoring_file_path  # Always set this attribute
+        self._eeg_recording_start_timestamp = None   # Always set this attribute
+        
+        # Configure scoring if file path provided
+        if scoring_file_path is not None:
+            try:
+                from sleep_scoring_toolkit.realtime_with_restart.utils.researcher_scoring_loader import ResearcherScoringLoader
+                # Note: EEG recording start timestamp will be set when first data arrives
+                logger.info(f"Researcher scoring file configured: {scoring_file_path}")
+            except ImportError as e:
+                logger.warning(f"Could not import ResearcherScoringLoader: {e}. Researcher scoring disabled.")
+                self._scoring_file_path = None
+
+    def _get_researcher_score_for_epoch(self, epoch_start_time: float) -> Optional[int]:
+        """Get researcher score for epoch, handling initialization and errors.
+        
+        Args:
+            epoch_start_time: Timestamp of the epoch start
+            
+        Returns:
+            Researcher sleep stage (0-7) or None if unavailable
+        """
+        # Initialize researcher scoring loader on first epoch if needed
+        if self._scoring_file_path and self.researcher_scoring_loader is None:
+            self._init_researcher_scoring_loader(epoch_start_time)
+        
+        # Get researcher score for this timestamp
+        if self.researcher_scoring_loader is not None:
+            try:
+                return self.researcher_scoring_loader.get_researcher_score_for_timestamp(epoch_start_time)
+            except Exception as e:
+                logger.warning(f"Error getting researcher score: {e}")
+        
+        return None
+    
+    def _init_researcher_scoring_loader(self, eeg_recording_start_timestamp: float):
+        """Initialize the researcher scoring loader with EEG recording start timestamp."""
+        try:
+            from sleep_scoring_toolkit.realtime_with_restart.utils.researcher_scoring_loader import ResearcherScoringLoader
+            self.researcher_scoring_loader = ResearcherScoringLoader(
+                self._scoring_file_path, 
+                eeg_recording_start_timestamp
+            )
+            self._eeg_recording_start_timestamp = eeg_recording_start_timestamp
+            
+            # Log scoring info
+            scoring_info = self.researcher_scoring_loader.get_scoring_info()
+            logger.info(f"Researcher scoring initialized:")
+            logger.info(f"  - Duration: {scoring_info['duration_minutes']:.1f} minutes ({scoring_info['duration_seconds']:.0f} seconds)")
+            logger.info(f"  - Epochs: {scoring_info['num_epochs']}")
+            logger.info(f"  - Stage distribution: {scoring_info['stage_counts']}")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize researcher scoring loader: {e}")
+            self.researcher_scoring_loader = None
 
 
 

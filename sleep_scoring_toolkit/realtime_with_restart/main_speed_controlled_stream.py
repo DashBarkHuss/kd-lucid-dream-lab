@@ -130,6 +130,10 @@ def main(handler_class=ReceivedStreamedDataHandler, enable_events=True):
     original_data_file = os.path.join(workspace_root, "data/realtime_inference_test/8-16-25/BrainFlow-RAW_2025-08-16_04-33-14_0.csv")
     playback_file = original_data_file
     
+    # Optional researcher scoring file for real-time comparison
+    scoring_file_path = os.path.join(workspace_root, "data/realtime_inference_test/8-16-25/8-16-25_scoring.mat")
+    # scoring_file_path = None  # Set to None to disable comparison
+    
     # Verify input file exists
     if not os.path.isfile(playback_file):
         logger.error(f"File not found: {playback_file}")
@@ -158,7 +162,7 @@ def main(handler_class=ReceivedStreamedDataHandler, enable_events=True):
         logger.info("Event system disabled - running in standard mode")
     
     global received_streamed_data_handler
-    received_streamed_data_handler = handler_class(mock_board_manager_speed_control, logger, montage, event_dispatcher, session_timestamp)
+    received_streamed_data_handler = handler_class(mock_board_manager_speed_control, logger, montage, event_dispatcher, session_timestamp, scoring_file_path)
     
     # Setup signal handlers after we have the data handler
     setup_signal_handlers(
