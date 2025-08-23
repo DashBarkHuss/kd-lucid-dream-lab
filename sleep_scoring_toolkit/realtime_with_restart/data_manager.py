@@ -23,6 +23,7 @@ import torch
 from pathlib import Path
 from typing import Union, Optional, Tuple, List
 from sleep_scoring_toolkit.realtime_with_restart.processor import SignalProcessor
+from sleep_scoring_toolkit.constants import GSSCStages
 from sleep_scoring_toolkit.pyqt_visualizer import PyQtVisualizer
 from sleep_scoring_toolkit.montage import Montage
 from sleep_scoring_toolkit.realtime_with_restart.export.csv.manager import CSVManager
@@ -632,7 +633,7 @@ class DataManager:
         
         # Increment epochs scored counter
         self.epochs_scored += 1
-        print(f"Sleep stage: {self.visualizer.get_sleep_stage_text(predicted_class)}")
+        print(f"Sleep stage: {GSSCStages.to_name(predicted_class)}")
         print(f"Total epochs scored: {self.epochs_scored}")
         
         # Emit event if event dispatcher is available

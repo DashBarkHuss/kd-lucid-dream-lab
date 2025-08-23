@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Any, Callable
 import numpy as np
 
+from sleep_scoring_toolkit.constants import GSSCStages
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,7 +21,7 @@ logger = logging.getLogger(__name__)
 class SleepStageEvent:
     """Data class representing a sleep stage detection event."""
     
-    sleep_stage: int  # 0=Wake, 1=N1, 2=N2, 3=N3, 4=REM
+    sleep_stage: int  # GSSC model output (see GSSCStages constants)
     timestamp: float  # Epoch start timestamp
     confidence: float # Prediction confidence (0.0-1.0)
     class_probabilities: np.ndarray  # Array of probabilities for all classes
@@ -29,14 +31,7 @@ class SleepStageEvent:
     @property
     def stage_text(self) -> str:
         """Get human-readable sleep stage text."""
-        stage_map = {
-            0: 'Wake',
-            1: 'N1', 
-            2: 'N2',
-            3: 'N3',
-            4: 'REM'
-        }
-        return stage_map.get(self.sleep_stage, 'Unknown')
+        return GSSCStages.to_name(self.sleep_stage)
 
 
 # No need for handler classes - we'll use simple functions
@@ -114,19 +109,12 @@ class EventDispatcher:
         """Convert sleep stage integer to name.
         
         Args:
-            sleep_stage: Sleep stage integer (0-4)
+            sleep_stage: Sleep stage integer (0-4, see GSSCStages)
             
         Returns:
             str: Sleep stage name
         """
-        stage_map = {
-            0: 'Wake',
-            1: 'N1',
-            2: 'N2', 
-            3: 'N3',
-            4: 'REM'
-        }
-        return stage_map.get(sleep_stage, 'Unknown')
+        return GSSCStages.to_name(sleep_stage)
         
     def enable(self):
         """Enable the event dispatcher."""

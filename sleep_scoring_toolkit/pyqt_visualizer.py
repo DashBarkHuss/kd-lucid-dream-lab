@@ -8,6 +8,7 @@ from scipy.signal import butter, filtfilt, iirnotch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from sleep_scoring_toolkit.montage import Montage
+from sleep_scoring_toolkit.constants import GSSCStages, ResearcherStages
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -44,12 +45,6 @@ class PyQtVisualizer:
     AXIS_LABEL_FONT_SIZE = 8
     TICK_FONT_SIZE = 7
     
-    # Sleep Stage Constants
-    SLEEP_STAGE_WAKE = 0
-    SLEEP_STAGE_N1 = 1
-    SLEEP_STAGE_N2 = 2
-    SLEEP_STAGE_N3 = 3
-    SLEEP_STAGE_REM = 4
     
     def __init__(self, seconds_per_epoch=30, board_shim=None, montage: Montage = None, headless=False):
         self.recording_start_time = None
@@ -250,17 +245,6 @@ class PyQtVisualizer:
                 self.plot_widget.ci.layout.setSpacing(self.PLOT_SPACING)
                 self.plot_widget.nextRow()
         
-    @staticmethod
-    def get_sleep_stage_text(sleep_stage):
-        """Convert sleep stage number to text representation"""
-        stages = {
-            PyQtVisualizer.SLEEP_STAGE_WAKE: 'Wake',
-            PyQtVisualizer.SLEEP_STAGE_N1: 'N1',
-            PyQtVisualizer.SLEEP_STAGE_N2: 'N2',
-            PyQtVisualizer.SLEEP_STAGE_N3: 'N3',
-            PyQtVisualizer.SLEEP_STAGE_REM: 'REM'
-        }
-        return stages.get(sleep_stage, 'Unknown')
     
     def _update_countdown(self):
         """Update the countdown timer and title"""
@@ -387,10 +371,10 @@ class PyQtVisualizer:
         Returns:
             HTML formatted title string with appropriate color coding
         """
-        model_stage_text = self.get_sleep_stage_text(sleep_stage)
+        model_stage_text = GSSCStages.to_name(sleep_stage)
         
         if researcher_score is not None:
-            researcher_stage_text = self.get_sleep_stage_text(researcher_score)
+            researcher_stage_text = ResearcherStages.to_name(researcher_score)
             # Determine comparison color
             if sleep_stage == researcher_score:
                 # Match - green
