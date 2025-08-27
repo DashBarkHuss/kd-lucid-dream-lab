@@ -6,6 +6,8 @@ import os
 import time
 from brainflow.board_shim import BoardShim, BoardIds
 import pytest
+import logging
+logger = logging.getLogger(__name__)
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -31,7 +33,7 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         # Print the number of lines in the CSV file for debugging
         with open(self.csv_path, 'r') as f:
             line_count = sum(1 for _ in f)
-        print(f"[DEBUG] test_data.csv line count after save: {line_count}")
+        logger.debug(f"test_data.csv line count after save: {line_count}")
         
         # Initialize the mock with test data
         self.mock = SpeedControlledBoardManager(csv_file_path=self.csv_path, speed_multiplier=1.0)
@@ -359,66 +361,66 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         # Set up CSV path BEFORE processing any data (following CSV manager test pattern)
         output_file = 'test_output.csv'
         data_manager.csv_manager.main_csv_path = output_file
-        print(f"[DEBUG] Set CSV path to: {output_file}")
+        logger.debug(f"Set CSV path to: {output_file}")
         
         # Start the stream
         self.mock.start_stream()
         
         # Get initial data
         initial_data = self.mock.get_initial_data()
-        print(f"\n[DEBUG] Initial data shape: {initial_data.shape if initial_data is not None else 'None'}")
-        print(f"[DEBUG] Current position after initial data: {self.mock.current_position}")
+        logger.debug(f"\nInitial data shape: {initial_data.shape if initial_data is not None else 'None'}")
+        logger.debug(f"Current position after initial data: {self.mock.current_position}")
         
         if initial_data.size > 0:
             # Wrap in keyed data for Phase 2 processing pipeline
             initial_data_keyed = RawBoardDataWithKeys(initial_data)
             data_manager.etd_buffer_manager.select_channel_data_and_add(initial_data_keyed)
             data_manager.queue_data_for_csv_write(initial_data, is_initial=True)
-            print(f"[DEBUG] Queued initial data with shape: {initial_data.shape} to CSV")
-            print(f"[DEBUG] CSV buffer length after initial: {len(data_manager.csv_manager.main_csv_buffer)}")
+            logger.debug(f"Queued initial data with shape: {initial_data.shape} to CSV")
+            logger.debug(f"CSV buffer length after initial: {len(data_manager.csv_manager.main_csv_buffer)}")
         
         # Process all data
         total_samples = initial_data.shape[1] if initial_data.size > 0 else 0
-        print(f"[DEBUG] Starting with {total_samples} samples from initial data")
+        logger.debug(f"Starting with {total_samples} samples from initial data")
         
         while True:
             data = self.mock.get_new_data()
             if data.size == 0:
                 break
-            print(f"[DEBUG] Got new data chunk with shape: {data.shape}")
+            logger.debug(f"Got new data chunk with shape: {data.shape}")
             # Wrap in keyed data for Phase 2 processing pipeline
             data_keyed = RawBoardDataWithKeys(data)
             data_manager.etd_buffer_manager.select_channel_data_and_add(data_keyed)
             data_manager.queue_data_for_csv_write(data)
             total_samples += data.shape[1]
-            print(f"[DEBUG] Total samples processed: {total_samples}")
-            print(f"[DEBUG] CSV buffer length: {len(data_manager.csv_manager.main_csv_buffer)}")
+            logger.debug(f"Total samples processed: {total_samples}")
+            logger.debug(f"CSV buffer length: {len(data_manager.csv_manager.main_csv_buffer)}")
         
-        print(f"[DEBUG] Final total samples: {total_samples}")
-        print(f"[DEBUG] Expected total samples: {len(self.mock.file_data)}")
+        logger.debug(f"Final total samples: {total_samples}")
+        logger.debug(f"Expected total samples: {len(self.mock.file_data)}")
         
         # Save any remaining buffered data (following CSV manager test pattern)
         result = data_manager.csv_manager.save_all_data()
-        print(f"[DEBUG] save_all_data() result: {result}")
+        logger.debug(f"save_all_data() result: {result}")
         
         try:
             # Verify the data matches exactly
             original_data = pd.read_csv(self.csv_path, sep='\t', header=None)
             saved_data = pd.read_csv(output_file, sep='\t', header=None)
             
-            print(f"\n[DEBUG] Original data shape: {original_data.shape}")
-            print(f"[DEBUG] Saved data shape: {saved_data.shape}")
+            logger.debug(f"\nOriginal data shape: {original_data.shape}")
+            logger.debug(f"Saved data shape: {saved_data.shape}")
             
             # Check which samples are saved - first column is the sample index
             if len(saved_data) > 0:
                 first_saved_idx = saved_data.iloc[0, 0]  # First column, first row
                 last_saved_idx = saved_data.iloc[-1, 0]  # First column, last row
-                print(f"[DEBUG] Saved data range: samples {first_saved_idx} to {last_saved_idx}")
-                print(f"[DEBUG] Original data range: samples {original_data.iloc[0, 0]} to {original_data.iloc[-1, 0]}")
+                logger.debug(f"Saved data range: samples {first_saved_idx} to {last_saved_idx}")
+                logger.debug(f"Original data range: samples {original_data.iloc[0, 0]} to {original_data.iloc[-1, 0]}")
                 
                 # Show first few and last few saved samples
-                print(f"[DEBUG] First 3 saved samples: {saved_data.iloc[0:3, 0].values}")
-                print(f"[DEBUG] Last 3 saved samples: {saved_data.iloc[-3:, 0].values}")
+                logger.debug(f"First 3 saved samples: {saved_data.iloc[0:3, 0].values}")
+                logger.debug(f"Last 3 saved samples: {saved_data.iloc[-3:, 0].values}")
             
             # Compare line counts
             if len(original_data) != len(saved_data):
@@ -465,11 +467,11 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         # Count lines in the CSV file
         with open(self.csv_path, 'r') as f:
             csv_line_count = sum(1 for _ in f)
-        print(f"[DEBUG] test_csv_row_integrity: CSV file line count: {csv_line_count}")
+        logger.debug(f"test_csv_row_integrity: CSV file line count: {csv_line_count}")
 
         # Load with np.loadtxt
         loaded_data = np.loadtxt(self.csv_path, delimiter='\t', dtype=float)
-        print(f"[DEBUG] test_csv_row_integrity: np.loadtxt loaded shape: {loaded_data.shape}")
+        logger.debug(f"test_csv_row_integrity: np.loadtxt loaded shape: {loaded_data.shape}")
 
         # If 1D, reshape to (1, N)
         if loaded_data.ndim == 1:
@@ -483,25 +485,25 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         # First verify CSV and initial load
         with open(self.csv_path, 'r') as f:
             csv_line_count = sum(1 for _ in f)
-        print(f"[DEBUG] test_data_shape_through_flow: CSV file line count: {csv_line_count}")
+        logger.debug(f"test_data_shape_through_flow: CSV file line count: {csv_line_count}")
         
         # Load with np.loadtxt
         loaded_data = np.loadtxt(self.csv_path, delimiter='\t', dtype=float)
-        print(f"[DEBUG] test_data_shape_through_flow: np.loadtxt loaded shape: {loaded_data.shape}")
+        logger.debug(f"test_data_shape_through_flow: np.loadtxt loaded shape: {loaded_data.shape}")
         
         # Initialize mock and check shape after set_board_shim
         mock = SpeedControlledBoardManager(csv_file_path=self.csv_path, speed_multiplier=1.0)
         mock.set_board_shim()
-        print(f"[DEBUG] test_data_shape_through_flow: shape after set_board_shim: {mock.file_data.shape}")
+        logger.debug(f"test_data_shape_through_flow: shape after set_board_shim: {mock.file_data.shape}")
         
         # Start stream and check shape
         mock.start_stream()
-        print(f"[DEBUG] test_data_shape_through_flow: shape after start_stream: {mock.file_data.shape}")
+        logger.debug(f"test_data_shape_through_flow: shape after start_stream: {mock.file_data.shape}")
         
         # Get initial data and check shape
         initial_data = mock.get_initial_data()
-        print(f"[DEBUG] test_data_shape_through_flow: initial_data shape: {initial_data.shape if initial_data is not None else 'None'}")
-        print(f"[DEBUG] test_data_shape_through_flow: current_position after initial data: {mock.current_position}")
+        logger.debug(f"test_data_shape_through_flow: initial_data shape: {initial_data.shape if initial_data is not None else 'None'}")
+        logger.debug(f"test_data_shape_through_flow: current_position after initial data: {mock.current_position}")
         
         # Assertions
         self.assertEqual(csv_line_count, loaded_data.shape[0], "CSV line count doesn't match loaded data")
@@ -513,15 +515,15 @@ class TestSpeedControlledBoardManager(unittest.TestCase):
         # Count lines in the CSV file
         with open(self.csv_path, 'r') as f:
             csv_line_count = sum(1 for _ in f)
-        print(f"[DEBUG] test_csv_loading_methods: CSV file line count: {csv_line_count}")
+        logger.debug(f"test_csv_loading_methods: CSV file line count: {csv_line_count}")
         
         # Load with np.loadtxt
         np_data = np.loadtxt(self.csv_path, delimiter='\t', dtype=float)
-        print(f"[DEBUG] test_csv_loading_methods: np.loadtxt loaded shape: {np_data.shape}")
+        logger.debug(f"test_csv_loading_methods: np.loadtxt loaded shape: {np_data.shape}")
         
         # Load with pd.read_csv
         pd_data = pd.read_csv(self.csv_path, sep='\t', dtype=float, header=None)
-        print(f"[DEBUG] test_csv_loading_methods: pd.read_csv loaded shape: {pd_data.shape}")
+        logger.debug(f"test_csv_loading_methods: pd.read_csv loaded shape: {pd_data.shape}")
         
         # Print first and last few rows of each
         print("\nFirst 3 rows from np.loadtxt:")
