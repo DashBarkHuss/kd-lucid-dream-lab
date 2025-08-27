@@ -33,6 +33,7 @@ from ..realtime_with_restart.export.csv.exceptions import (
     BufferStateError, BufferValidationError
 )
 from ..realtime_with_restart.export.csv.utils import MAIN_DATA_FMT
+logger = logging.getLogger(__name__)
 
 # Configure logging
 logging.basicConfig(
@@ -119,40 +120,40 @@ def test_validate_data_shape_invalid(csv_manager, csv_manager_large_index):
 
 def test_validate_saved_csv_matches_original_source(csv_manager, sample_data, temp_csv_path):
     """Test validation against original source."""
-    print(f"\nDEBUG: sample_data shape: {sample_data.shape}")
-    print(f"DEBUG: sample_data first row: {sample_data[0, :5]}")  # First 5 elements of first row
+    logger.debug(f"\nsample_data shape: {sample_data.shape}")
+    logger.debug(f"sample_data first row: {sample_data[0, :5]}")  # First 5 elements of first row
 
     # Save data to CSV
-    print(f"DEBUG: Before queue_data_for_csv_write - main_csv_path: {csv_manager.main_csv_path}")
+    logger.debug(f"Before queue_data_for_csv_write - main_csv_path: {csv_manager.main_csv_path}")
     csv_manager.queue_data_for_csv_write(sample_data, is_initial=True)
-    print(f"DEBUG: After queue_data_for_csv_write - main_csv_path: {csv_manager.main_csv_path}")
+    logger.debug(f"After queue_data_for_csv_write - main_csv_path: {csv_manager.main_csv_path}")
     
     # Set both paths
     csv_manager.main_csv_path = temp_csv_path
     csv_manager.sleep_stage_csv_path = temp_csv_path + '.sleep'
-    print(f"DEBUG: After setting paths - main_csv_path: {csv_manager.main_csv_path}")
+    logger.debug(f"After setting paths - main_csv_path: {csv_manager.main_csv_path}")
     
     result = csv_manager.save_all_data()
-    print(f"DEBUG: After save_all_data - result: {result}")
-    print(f"DEBUG: After save_all_data - main_csv_path: {csv_manager.main_csv_path}")
+    logger.debug(f"After save_all_data - result: {result}")
+    logger.debug(f"After save_all_data - main_csv_path: {csv_manager.main_csv_path}")
     assert result is True
     # Note: cleanup() now always resets paths, so we save the path before cleanup
     saved_main_path = csv_manager.main_csv_path
     csv_manager.cleanup()  # This will reset paths
-    print(f"DEBUG: After cleanup - main_csv_path was: {saved_main_path}")
+    logger.debug(f"After cleanup - main_csv_path was: {saved_main_path}")
 
     # Create a reference CSV
     ref_path = temp_csv_path + '.ref'
     np.savetxt(ref_path, sample_data.T, delimiter='\t', fmt=MAIN_DATA_FMT)
-    print(f"DEBUG: Created reference CSV at: {ref_path}")
+    logger.debug(f"Created reference CSV at: {ref_path}")
 
     # Print contents of both files
-    print("\nDEBUG: Contents of saved CSV:")
+    logger.debug("\nContents of saved CSV:")
     with open(temp_csv_path, 'r') as f:
         saved_lines = f.readlines()
         print(f"First 3 lines of saved CSV:\n{''.join(saved_lines[:3])}")
 
-    print("\nDEBUG: Contents of reference CSV:")
+    logger.debug("\nContents of reference CSV:")
     with open(ref_path, 'r') as f:
         ref_lines = f.readlines()
         print(f"First 3 lines of reference CSV:\n{''.join(ref_lines[:3])}")

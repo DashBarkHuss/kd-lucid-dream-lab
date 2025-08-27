@@ -4,6 +4,7 @@ import numpy as np
 import logging
 from typing import Optional, Tuple
 from .board_manager import BoardManager
+logger = logging.getLogger(__name__)
 
 class SpeedControlledBoardManager(BoardManager):
     """Speed-controlled implementation of BoardManager that allows configurable playback speed.
@@ -68,14 +69,14 @@ class SpeedControlledBoardManager(BoardManager):
         # Using tab separator and no header to match real board format
         # dtype=float ensures consistent data type handling
         self.file_data = pd.read_csv(self.file_path, sep='\t', header=None, dtype=float)
-        print(f"[DEBUG] set_board_shim: After loading, shape: {self.file_data.shape}")
-        print(f"[DEBUG] Last 3 rows:\n{self.file_data.tail(3)}")
+        logger.debug(f"set_board_shim: After loading, shape: {self.file_data.shape}")
+        logger.debug(f"Last 3 rows:\n{self.file_data.tail(3)}")
         
         # Setup real board (but we won't use its streaming)
         # This ensures we have all the necessary board configuration
-        print(f"[DEBUG] set_board_shim: Before super().set_board_shim(), shape: {self.file_data.shape}")
+        logger.debug(f"set_board_shim: Before super().set_board_shim(), shape: {self.file_data.shape}")
         result = super().set_board_shim()
-        print(f"[DEBUG] set_board_shim: After super().set_board_shim(), shape: {self.file_data.shape}")
+        logger.debug(f"set_board_shim: After super().set_board_shim(), shape: {self.file_data.shape}")
         return result
 
     def start_stream(self):
@@ -115,20 +116,20 @@ class SpeedControlledBoardManager(BoardManager):
         Returns:
             numpy.ndarray: Initial data chunk with shape (channels, samples)
         """
-        print(f"[DEBUG] get_initial_data: self.file_data.shape before chunking: {self.file_data.shape}")
+        logger.debug(f"get_initial_data: self.file_data.shape before chunking: {self.file_data.shape}")
         
         # Calculate chunk size based on sampling rate (1 second of data)
         chunk_size = self.sampling_rate
         
         # Ensure we don't try to read past the end of the file
         points_to_return = min(chunk_size, len(self.file_data))
-        print(f"[DEBUG] get_initial_data: points_to_return={points_to_return}")
+        logger.debug(f"get_initial_data: points_to_return={points_to_return}")
         
         if points_to_return > 0:
             # Get first chunk of data and transpose to match real board format
             # Real board returns data in shape (channels, samples)
             data = self.file_data.iloc[:points_to_return].values.T
-            print(f"[DEBUG] get_initial_data: returning samples 0:{points_to_return} (shape={data.shape})")
+            logger.debug(f"get_initial_data: returning samples 0:{points_to_return} (shape={data.shape})")
             
             # Update position for next read
             self.current_position = points_to_return
@@ -158,7 +159,7 @@ class SpeedControlledBoardManager(BoardManager):
             
             if elapsed_real_time >= gap_duration_real_time:
                 # Gap is over, exit gap mode
-                print(f"[DEBUG] Gap simulation complete. Elapsed: {elapsed_real_time:.3f}s, Expected: {gap_duration_real_time:.3f}s")
+                logger.debug(f"Gap simulation complete. Elapsed: {elapsed_real_time:.3f}s, Expected: {gap_duration_real_time:.3f}s")
                 self.in_gap_mode = False
                 self.gap_start_real_time = None
                 self.gap_duration_seconds = None
@@ -167,7 +168,7 @@ class SpeedControlledBoardManager(BoardManager):
                 # Continue with normal data processing below
             else:
                 # Still in gap, return empty array
-                print(f"[DEBUG] Still in gap mode. Elapsed: {elapsed_real_time:.3f}s / {gap_duration_real_time:.3f}s")
+                logger.debug(f"Still in gap mode. Elapsed: {elapsed_real_time:.3f}s / {gap_duration_real_time:.3f}s")
                 return np.array([])
         
         # Check if we've reached the end of the file
@@ -190,7 +191,7 @@ class SpeedControlledBoardManager(BoardManager):
             expected_interval = 1.0 / self.sampling_rate  # Time between individual samples
             if timestamp_diff > (expected_interval * 1.5):
                 # Gap detected! Enter gap simulation mode
-                print(f"[DEBUG] Gap detected! Expected: {self.expected_timestamp}, Got: {current_timestamp}, Diff: {timestamp_diff}")
+                logger.debug(f"Gap detected! Expected: {self.expected_timestamp}, Got: {current_timestamp}, Diff: {timestamp_diff}")
                 self.in_gap_mode = True
                 self.gap_start_real_time = time.time()
                 self.gap_duration_seconds = timestamp_diff
