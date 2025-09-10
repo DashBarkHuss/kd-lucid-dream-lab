@@ -27,6 +27,10 @@ from brainflow.board_shim import BrainFlowInputParams
 from sleep_scoring_toolkit.tests.test_utils import create_brainflow_test_data
 from ..realtime_with_restart.export.csv.test_utils import compare_csv_files
 from ..realtime_with_restart.export.csv.validation import validate_file_path
+
+# Get sampling rate using BrainFlow API - DRY principle for repeated use in tests
+CYTON_DAISY_SAMPLING_RATE = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD.value)
+
 from ..realtime_with_restart.export.csv.exceptions import (
     CSVExportError, CSVValidationError, CSVDataError, CSVFormatError,
     MissingOutputPathError, BufferError, BufferOverflowError,
@@ -66,7 +70,7 @@ def sample_data():
     # Create 10 seconds of realistic BrainFlow test data
     data, metadata = create_brainflow_test_data(
         duration_seconds=10.0,  # 10 seconds
-        sampling_rate=125,      # 125 Hz (Cyton Daisy standard)
+        sampling_rate=CYTON_DAISY_SAMPLING_RATE,      # Cyton Daisy sampling rate from BrainFlow API
         add_noise=False,        # Clean data for easier verification
         board_id=BoardIds.CYTON_DAISY_BOARD
     )
@@ -1058,7 +1062,7 @@ def test_csv_memory_management_full_flow():
         # Generate 5 minutes of test data
         data, metadata = create_brainflow_test_data(
             duration_seconds=300,  # 5 minutes
-            sampling_rate=125,     # 125 Hz
+            sampling_rate=CYTON_DAISY_SAMPLING_RATE,     # Cyton Daisy sampling rate from BrainFlow API
             add_noise=False,       # Clean data for easier verification
             board_id=BoardIds.CYTON_DAISY_BOARD
         )
@@ -1262,10 +1266,10 @@ def test_buffer_management_add_then_check(csv_manager, temp_csv_path):
     csv_manager.main_buffer_size = 5
     
     # Create test data using create_brainflow_test_data
-    # For 0.1 seconds at 125 Hz: 12.5 samples (rounded to 12)
+    # For 0.1 seconds at sampling rate: expected samples
     data, metadata = create_brainflow_test_data(
         duration_seconds=0.1,  # Short duration for small test
-        sampling_rate=125,     # 125 Hz (Cyton Daisy standard)
+        sampling_rate=CYTON_DAISY_SAMPLING_RATE,     # Cyton Daisy sampling rate from BrainFlow API
         add_noise=False,       # Clean data for easier verification
         board_id=BoardIds.CYTON_DAISY_BOARD,
         start_time=1700000000.1  # Explicit start time
@@ -1279,15 +1283,16 @@ def test_buffer_management_add_then_check(csv_manager, temp_csv_path):
     assert len(csv_manager.main_csv_buffer) == 0  # Buffer should be empty
     assert os.path.exists(temp_csv_path)
     saved_data = np.loadtxt(temp_csv_path, delimiter='\t')
-    assert len(saved_data) == 12  # 0.1 seconds * 125 Hz = 12.5 samples (rounded to 12)
+    expected_samples = int(0.1 * CYTON_DAISY_SAMPLING_RATE)  # 0.1 seconds * sampling_rate
+    assert len(saved_data) == expected_samples
     
     # Create more test data that would exceed buffer size
-    # For 0.1 seconds at 125 Hz: 12.5 samples (rounded to 12)
+    # For 0.1 seconds at sampling rate: expected samples
     # Start time should be after the first chunk's end time
     subsequent_start_time = 1700000000.1 + 0.1  # Initial start time + initial duration
     more_data, _ = create_brainflow_test_data(
         duration_seconds=0.1,  # Short duration for small test
-        sampling_rate=125,     # 125 Hz (Cyton Daisy standard)
+        sampling_rate=CYTON_DAISY_SAMPLING_RATE,     # Cyton Daisy sampling rate from BrainFlow API
         add_noise=False,       # Clean data for easier verification
         board_id=BoardIds.CYTON_DAISY_BOARD,
         start_time=subsequent_start_time  # Start after first chunk ends
@@ -1314,10 +1319,10 @@ def test_buffer_management_large_initial_data(csv_manager, temp_csv_path):
     csv_manager.main_buffer_size = 5
     
     # Create large initial data using create_brainflow_test_data
-    # For 0.2 seconds at 125 Hz: 25 samples
+    # For 0.2 seconds at sampling rate: expected samples
     data, metadata = create_brainflow_test_data(
         duration_seconds=0.2,  # Longer duration for larger test
-        sampling_rate=125,     # 125 Hz (Cyton Daisy standard)
+        sampling_rate=CYTON_DAISY_SAMPLING_RATE,     # Cyton Daisy sampling rate from BrainFlow API
         add_noise=False,       # Clean data for easier verification
         board_id=BoardIds.CYTON_DAISY_BOARD
     )
@@ -1329,7 +1334,8 @@ def test_buffer_management_large_initial_data(csv_manager, temp_csv_path):
     # Verify file exists and has correct content
     assert os.path.exists(temp_csv_path)
     saved_data = np.loadtxt(temp_csv_path, delimiter='\t')
-    assert len(saved_data) == 25  # 0.2 seconds * 125 Hz = 25 samples
+    expected_samples = int(0.2 * CYTON_DAISY_SAMPLING_RATE)  # 0.2 seconds * sampling_rate
+    assert len(saved_data) == expected_samples
     
     # Verify buffer is empty
     assert len(csv_manager.main_csv_buffer) == 0
@@ -1343,10 +1349,10 @@ def test_buffer_management_subsequent_data(csv_manager, temp_csv_path):
     csv_manager.main_buffer_size = 5
     
     # Add initial data using create_brainflow_test_data
-    # For 0.1 seconds at 125 Hz: 12.5 samples (rounded to 12)
+    # For 0.1 seconds at sampling rate: expected samples
     initial_data, metadata = create_brainflow_test_data(
         duration_seconds=0.1,  # Short duration for small test
-        sampling_rate=125,     # 125 Hz (Cyton Daisy standard)
+        sampling_rate=CYTON_DAISY_SAMPLING_RATE,     # Cyton Daisy sampling rate from BrainFlow API
         add_noise=False,       # Clean data for easier verification
         board_id=BoardIds.CYTON_DAISY_BOARD,
         start_time=1700000000.1  # Explicit start time
@@ -1354,12 +1360,12 @@ def test_buffer_management_subsequent_data(csv_manager, temp_csv_path):
     csv_manager.queue_data_for_csv_write(initial_data.T, is_initial=True)  # Transpose to match expected shape
     
     # Add subsequent data that would exceed buffer size
-    # For 0.2 seconds at 125 Hz: 25 samples
+    # For 0.2 seconds at sampling rate: expected samples
     # Start time should be after the initial data's last timestamp
     subsequent_start_time = 1700000000.1 + 0.1  # Initial start time + initial duration
     subsequent_data, _ = create_brainflow_test_data(
         duration_seconds=0.2,  # Longer duration for larger test
-        sampling_rate=125,     # 125 Hz (Cyton Daisy standard)
+        sampling_rate=CYTON_DAISY_SAMPLING_RATE,     # Cyton Daisy sampling rate from BrainFlow API
         add_noise=False,       # Clean data for easier verification
         board_id=BoardIds.CYTON_DAISY_BOARD,
         start_time=subsequent_start_time  # Start after initial data ends
@@ -1464,10 +1470,10 @@ def test_save_new_data_subsequent(csv_manager, sample_data):
     last_timestamp = sample_data[timestamp_channel, -1]
     
     # Create new data with timestamps after the last timestamp
-    duration_seconds = 0.1  # 0.1 seconds at 125 Hz = ~12 samples
+    duration_seconds = 0.1  # 0.1 seconds
     new_data, _ = create_brainflow_test_data(
         duration_seconds=duration_seconds,
-        sampling_rate=125,
+        sampling_rate=CYTON_DAISY_SAMPLING_RATE,
         add_noise=False,
         board_id=BoardIds.CYTON_DAISY_BOARD,
         start_time=last_timestamp + 0.1  # Start 0.1 seconds after last timestamp

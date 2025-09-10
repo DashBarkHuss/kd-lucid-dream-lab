@@ -115,10 +115,50 @@ class GapHandler:
         if np.isnan(timestamps).any():
             raise InvalidTimestampError("Timestamps cannot contain NaN values")
             
-        if not np.all(np.diff(timestamps) >= 0):
-            raise InvalidTimestampError("Timestamps must be monotonically increasing")
+        self._validate_monotonic_timestamps(timestamps)
             
         return timestamps
+    
+    def _validate_monotonic_timestamps(self, timestamps: np.ndarray) -> None:
+        """Validate that timestamps are monotonically increasing.
+        
+        Args:
+            timestamps: Array of timestamps to validate
+            
+        Raises:
+            InvalidTimestampError: If timestamps are not monotonically increasing
+        """
+        diffs = np.diff(timestamps)
+        if not np.all(diffs >= 0):
+            # Find all indices where timestamps go backwards
+            backward_indices = np.where(diffs < 0)[0]
+            
+            # Show details of first few problematic locations with context
+            error_details = []
+            for i in backward_indices[:5]:  # Show first 5 problems
+                # Show context around the backwards jump (±5 samples)
+                start_idx = max(0, i-5)
+                end_idx = min(len(timestamps), i+7)
+                
+                context_info = []
+                for j in range(start_idx, end_idx):
+                    marker = " >>> " if j == i else "     "
+                    if j < len(timestamps)-1:
+                        diff = timestamps[j+1] - timestamps[j]
+                        context_info.append(f"{marker}[{j}]: {timestamps[j]:.6f} (diff: {diff:+.6f})")
+                    else:
+                        context_info.append(f"{marker}[{j}]: {timestamps[j]:.6f}")
+                
+                error_details.append(
+                    f"Backwards jump at index {i}: {timestamps[i]:.6f} -> {timestamps[i+1]:.6f} "
+                    f"(diff: {diffs[i]:.6f})\nContext:\n" + "\n".join(context_info)
+                )
+            
+            error_msg = f"Timestamps must be monotonically increasing. Found {len(backward_indices)} backwards jumps:\n" + "\n".join(error_details)
+            if len(backward_indices) > 5:
+                error_msg += f"\n... and {len(backward_indices) - 5} more"
+                
+            raise InvalidTimestampError(error_msg)
             
     def _validate_epoch_indices(self, timestamps: np.ndarray, start_idx_rel: int, end_idx_rel: int) -> None:
         """Validate epoch indices.
@@ -142,21 +182,22 @@ class GapHandler:
                 f"Start index must be less than end index: start_idx={start_idx_rel}, end_idx={end_idx_rel}"
             )
         
-    def detect_gap(self, timestamps: np.ndarray, prev_timestamp: Optional[float] = None) -> Tuple[bool, float, Optional[int], Optional[int]]:
-        """Detect if there is a gap in the timestamps.
+    def detect_largest_gap(self, timestamps: np.ndarray, prev_timestamp: Optional[float] = None) -> Tuple[bool, float, Optional[int], Optional[int]]:
+        """Detect the largest gap in the timestamps.
         
-        Checks both between chunks and within the current chunk.
+        Checks both between chunks and within the current chunk, returning information
+        about the largest gap found (by absolute value).
         
         Args:
             timestamps: Array of Unix timestamps (seconds since epoch) from BrainFlow
             prev_timestamp: Previous timestamp to compare against (Unix timestamp)
             
         Returns:
-            tuple: (has_gap, gap_size, gap_start_idx, gap_end_idx)
-            - has_gap: True if a gap was detected
-            - gap_size: Size of the largest gap found in seconds
-            - gap_start_idx: Start index of the gap (or None if no gap)
-            - gap_end_idx: End index of the gap (or None if no gap)
+            tuple: (has_gap, largest_gap_size, gap_start_idx, gap_end_idx)
+            - has_gap: True if any gap above threshold was detected
+            - largest_gap_size: Size of the largest gap found in seconds
+            - gap_start_idx: Start index of the largest gap (or None if no gap)
+            - gap_end_idx: End index of the largest gap (or None if no gap)
             
         Raises:
             EmptyTimestampError: If timestamps array is empty
@@ -226,6 +267,6 @@ class GapHandler:
         prev_timestamp = timestamps[epoch_start_idx_rel-1] if epoch_start_idx_rel > 0 else None
         
         # Check for gaps
-        has_gap, gap_size, _, _ = self.detect_gap(epoch_timestamps, prev_timestamp)
+        has_gap, gap_size, _, _ = self.detect_largest_gap(epoch_timestamps, prev_timestamp)
         
         return has_gap, gap_size 

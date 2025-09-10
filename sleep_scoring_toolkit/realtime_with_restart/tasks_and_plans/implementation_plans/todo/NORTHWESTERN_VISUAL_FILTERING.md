@@ -207,7 +207,7 @@ def toggle_visual_filters(self, checked):
 - **Bandpass Filter:** 4th-order Butterworth 
 - **Notch Filter:** IIR notch filter
 - **Processing Method:** scipy.signal.filtfilt (zero-phase, forward-backward)
-- **Sampling Rate:** Uses actual data sampling rate (typically 250 Hz for OpenBCI)
+- **Sampling Rate:** Uses actual data sampling rate (125 Hz for Cyton+Daisy, Northwestern's standard hardware)
 
 ### Error Handling Philosophy
 - **Fail Fast:** No fallbacks or silent failures

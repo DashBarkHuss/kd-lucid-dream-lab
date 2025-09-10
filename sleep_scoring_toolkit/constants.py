@@ -2,11 +2,30 @@
 Sleep stage classification constants for the sleep scoring toolkit.
 
 This module defines standardized constants for sleep stage classifications
-to prevent hardcoded assumptions and inconsistencies across the codebase.
+and channel configurations to prevent hardcoded assumptions and 
+inconsistencies across the codebase.
 
 The main issue this solves: GSSC model outputs REM as 4, but researcher 
 scoring uses REM as 5, leading to confusion in tests and comparisons.
 """
+
+# =============================================================================
+# Standard Channel Configurations
+# =============================================================================
+
+# Standard EEG channels for sleep scoring
+STANDARD_EEG_CHANNELS = ["C4", "C3", "F3", "F4"]
+
+# Standard EOG channels for sleep scoring  
+STANDARD_EOG_CHANNELS = ["L-HEOG", "R-HEOG"]
+
+# =============================================================================
+# Processing Configuration Constants
+# =============================================================================
+
+# Real-time processing uses 6 buffers for round-robin approach (0s, 5s, 10s, 15s, 20s, 25s offsets)
+# Batch processing uses 1 buffer for sequential processing
+REALTIME_BUFFER_COUNT = 6
 
 # =============================================================================
 # Sleep Stage Classifications

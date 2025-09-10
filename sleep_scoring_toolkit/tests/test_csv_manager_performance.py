@@ -27,6 +27,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from sleep_scoring_toolkit.realtime_with_restart.export.csv.manager import CSVManager
 from sleep_scoring_toolkit.tests.test_utils import create_brainflow_test_data
 
+# Get sampling rate using BrainFlow API - DRY principle for repeated use in tests
+CYTON_DAISY_SAMPLING_RATE = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD.value)
+
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -86,7 +89,7 @@ def test_buffer_add_performance(csv_manager):
             # Test continuous streaming pattern
             for chunk_size in chunk_sizes:
                 # Calculate duration in seconds for this chunk
-                duration_seconds = chunk_size/125  # Convert samples to seconds at 125 Hz
+                duration_seconds = chunk_size/CYTON_DAISY_SAMPLING_RATE  # Convert samples to seconds
                 
                 # Record initial memory usage
                 initial_memory = get_memory_usage()
@@ -94,7 +97,7 @@ def test_buffer_add_performance(csv_manager):
                 # Generate test data with sequential start time
                 data, _ = create_brainflow_test_data(
                     duration_seconds=duration_seconds,
-                    sampling_rate=125,
+                    sampling_rate=CYTON_DAISY_SAMPLING_RATE,
                     add_noise=False,
                     board_id=BoardIds.CYTON_DAISY_BOARD,
                     start_time=last_timestamp
@@ -218,10 +221,10 @@ def test_buffer_save_performance(csv_manager):
             
             for save_idx in range(num_saves):
                 # Generate test data to fill the buffer
-                duration_seconds = buffer_size/125  # Convert samples to seconds at 125 Hz
+                duration_seconds = buffer_size/CYTON_DAISY_SAMPLING_RATE  # Convert samples to seconds
                 data, _ = create_brainflow_test_data(
                     duration_seconds=duration_seconds,
-                    sampling_rate=125,
+                    sampling_rate=CYTON_DAISY_SAMPLING_RATE,
                     add_noise=False,
                     board_id=BoardIds.CYTON_DAISY_BOARD,
                     start_time=last_timestamp

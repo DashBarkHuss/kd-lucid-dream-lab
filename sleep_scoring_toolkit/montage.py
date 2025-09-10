@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 @dataclass
 class ChannelConfig:
@@ -88,7 +88,7 @@ class Montage:
         
         This montage includes:
         - EEG: F3, F4, C3, C4, O1, O2
-        - EOG: R-LEOG, L-LEOG
+        - EOG: R-HEOG, L-HEOG
         - EMG: EMG1, EMG2
         
         Returns:
@@ -117,8 +117,8 @@ class Montage:
         
         # Add EOG channels with fixed indices
         eog_channels = [
-            (11, "R-LEOG", "Right Lateral EOG"),
-            (12, "L-LEOG", "Left Lateral EOG")
+            (11, "R-HEOG", "Right Horizontal EOG"),
+            (12, "L-HEOG", "Left Horizontal EOG")
         ]
         
         for channel_number, label, location in eog_channels:
@@ -152,7 +152,7 @@ class Montage:
         """Create an EOG-only montage with just lateral EOG channels.
         
         This montage includes only:
-        - EOG: R-LEOG (channel 11), L-LEOG (channel 12)
+        - EOG: R-HEOG (channel 11), L-HEOG (channel 12)
         
         Returns:
             Montage: A montage with only EOG channels 11 and 12
@@ -161,8 +161,8 @@ class Montage:
         
         # Add EOG channels with fixed indices (channels 11 and 12 from full montage)
         eog_channels = [
-            (11, "R-LEOG", "Right Lateral EOG"),
-            (12, "L-LEOG", "Left Lateral EOG")
+            (11, "R-HEOG", "Right Horizontal EOG"),
+            (12, "L-HEOG", "Left Horizontal EOG")
         ]
         
         for channel_number, label, location in eog_channels:
@@ -302,41 +302,83 @@ class Montage:
         return board_positions
     
     def validate_channel_indices_combination_types(self, eeg_combination_indices: List[int], eog_combination_indices: List[int]) -> None:
-        """Validate that electrode channel mapping indices correspond to expected channel types in the montage.
+        """Validate that board channel positions correspond to expected channel types in the montage.
         
-        This ensures that the electrode channel mapping indices (where index 0 = channel 1, index 10 = channel 11, etc.)
-        actually point to the right channel types (EEG/EOG) in the current montage configuration.
+        This ensures that the board channel positions (e.g., 1, 2, 11, 12) actually point to the right 
+        channel types (EEG/EOG) in the current montage configuration.
         
         Args:
-            eeg_combination_indices: Electrode channel mapping indices that should point to EEG channels (e.g., [0, 1, 2] for channels 1, 2, 3)
-            eog_combination_indices: Electrode channel mapping indices that should point to EOG channels (e.g., [10] for channel 11)
+            eeg_combination_indices: Board channel positions that should point to EEG channels (e.g., [1, 2, 3] for channels 1, 2, 3)
+            eog_combination_indices: Board channel positions that should point to EOG channels (e.g., [11] for channel 11)
             
         Raises:
-            ValueError: If any combination index doesn't match the expected channel type
+            ValueError: If any board channel position doesn't match the expected channel type
         """
-        # Convert electrode channel mapping indices to montage indices
-        eeg_montage_indices = self.convert_electrode_indices_to_montage_indices(eeg_combination_indices)
-        eog_montage_indices = self.convert_electrode_indices_to_montage_indices(eog_combination_indices)
-        
-        # Get ordered channel info for validation
-        channel_types = self.get_channel_types()
-        channel_labels = self.get_channel_labels()
-        sorted_channel_numbers = sorted(self.channels.keys())
-        
-        # Check EEG combination indices
-        for i, montage_idx in enumerate(eeg_montage_indices):
-            electrode_idx = eeg_combination_indices[i]
-            channel_num = sorted_channel_numbers[montage_idx]
+        # Check EEG channels directly
+        for board_pos in eeg_combination_indices:
+            if board_pos not in self.channels:
+                raise ValueError(f"Board position {board_pos} does not exist in current montage")
             
-            if channel_types[montage_idx] != 'EEG':
-                raise ValueError(f"Channel {channel_num} (from electrode index {electrode_idx}, label '{channel_labels[montage_idx]}') is not an EEG channel in current montage. "
-                               f"Channel type: {channel_types[montage_idx]}")
+            channel_config = self.channels[board_pos]
+            if channel_config.channel_type != 'EEG':
+                raise ValueError(f"Channel {board_pos} (label '{channel_config.label}') is not an EEG channel. "
+                               f"Channel type: {channel_config.channel_type}")
         
-        # Check EOG combination indices  
-        for i, montage_idx in enumerate(eog_montage_indices):
-            electrode_idx = eog_combination_indices[i]
-            channel_num = sorted_channel_numbers[montage_idx]
+        # Check EOG channels directly  
+        for board_pos in eog_combination_indices:
+            if board_pos not in self.channels:
+                raise ValueError(f"Board position {board_pos} does not exist in current montage")
+                
+            channel_config = self.channels[board_pos]
+            if channel_config.channel_type != 'EOG':
+                raise ValueError(f"Channel {board_pos} (label '{channel_config.label}') is not an EOG channel. "
+                               f"Channel type: {channel_config.channel_type}")
+
+    def get_channel_position_by_label(self, label: str) -> int:
+        """Convert channel label (e.g. 'C4') to board position (e.g. 4).
+        
+        Args:
+            label: Channel label as defined in the montage (e.g. 'C4', 'F3', 'L-HEOG')
             
-            if channel_types[montage_idx] != 'EOG':
-                raise ValueError(f"Channel {channel_num} (from electrode index {electrode_idx}, label '{channel_labels[montage_idx]}') is not an EOG channel in current montage. "
-                               f"Channel type: {channel_types[montage_idx]}") 
+        Returns:
+            Board position (channel number) for the given label
+            
+        Raises:
+            ValueError: If label is not found in the current montage
+        """
+        for position, config in self.channels.items():
+            if config.label == label:
+                return position
+        
+        available_labels = [config.label for config in self.channels.values()]
+        raise ValueError(f"Channel label '{label}' not found in montage. Available labels: {available_labels}")
+
+    def validate_and_convert_channel_names(self, eeg_names: List[str], eog_names: List[str]) -> Tuple[List[int], List[int]]:
+        """Convert channel names to positions and validate types.
+        
+        Args:
+            eeg_names: List of EEG channel labels (e.g. ['C4', 'C3', 'F3', 'F4'])
+            eog_names: List of EOG channel labels (e.g. ['L-HEOG', 'R-HEOG'])
+            
+        Returns:
+            Tuple of (eeg_positions, eog_positions) as lists of integers
+            
+        Raises:
+            ValueError: If any channel name is not found or has wrong type
+        """
+        # Step 1: Convert names to positions
+        eeg_positions = []
+        for name in eeg_names:
+            position = self.get_channel_position_by_label(name)
+            eeg_positions.append(position)
+        
+        eog_positions = []
+        for name in eog_names:
+            position = self.get_channel_position_by_label(name)
+            eog_positions.append(position)
+        
+        # Step 2: Use existing validation function to ensure types match
+        self.validate_channel_indices_combination_types(eeg_positions, eog_positions)
+        
+        # Step 3: Return the converted positions
+        return eeg_positions, eog_positions

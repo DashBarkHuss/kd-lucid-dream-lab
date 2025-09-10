@@ -4,7 +4,6 @@ Test utilities for creating mock data and other test helpers.
 
 import numpy as np
 import pandas as pd
-import time
 import unittest
 import pytest
 from brainflow.board_shim import BoardShim, BoardIds
@@ -13,6 +12,7 @@ import logging
 
 # Configure logging at module level
 logger = logging.getLogger(__name__)
+
 
 def create_brainflow_test_data(duration_seconds=1.0, sampling_rate=None, add_noise=False, board_id=None, start_time=1700000000.1, random_seed=42):
     """
@@ -59,6 +59,8 @@ def create_brainflow_test_data(duration_seconds=1.0, sampling_rate=None, add_noi
     
     # Generate EEG data
     t = np.arange(n_samples) / sampling_rate
+    
+    # Generate generic EEG data
     for i, channel in enumerate(eeg_channels):
         # Generate different frequencies and phases for each channel
         freq = (i + 1) * 2  # 2Hz, 4Hz, 6Hz, etc.
@@ -123,6 +125,7 @@ def transform_to_stream_format(data):
         numpy array of shape (n_channels, n_samples)
     """
     return data.T
+
 
 class TestBrainFlowDataGeneration(unittest.TestCase):
     def setUp(self):

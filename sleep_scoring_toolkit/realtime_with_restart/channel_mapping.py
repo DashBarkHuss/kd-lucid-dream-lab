@@ -144,3 +144,24 @@ class RawBoardDataWithKeys:
     def size(self):
         """Expose size of underlying data for numpy compatibility"""
         return self.data.size
+
+
+def create_numpy_data_with_brainflow_keys(data: np.ndarray, board_channels: List[int]) -> NumPyDataWithBrainFlowDataKey:
+    """Create NumPyDataWithBrainFlowDataKey with proper channel mapping.
+    
+    Args:
+        data: Raw data array (channels, samples) 
+        board_channels: List of BrainFlow board positions for each channel
+        
+    Returns:
+        NumPyDataWithBrainFlowDataKey: Structured data with channel mapping
+    """
+    channel_mapping = [
+        ChannelIndexMapping(board_position=board_channel)
+        for board_channel in board_channels
+    ]
+    
+    return NumPyDataWithBrainFlowDataKey(
+        data=data,
+        channel_mapping=channel_mapping
+    )

@@ -10,7 +10,7 @@ import h5py
 import pytest
 from sleep_scoring_toolkit.montage import Montage
 from sleep_scoring_toolkit.realtime_with_restart.processor import SignalProcessor
-from sleep_scoring_toolkit.realtime_with_restart.channel_mapping import ChannelIndexMapping, NumPyDataWithBrainFlowDataKey
+from sleep_scoring_toolkit.realtime_with_restart.channel_mapping import create_numpy_data_with_brainflow_keys
 from sleep_scoring_toolkit.convert_csv_to_fif import convert_csv_to_raw
 
 def test_predict_sleep_stage():
@@ -54,16 +54,10 @@ def test_predict_sleep_stage():
     
     # Create channel mapping for the data (assuming channels 1-16 mapping)
     num_channels = numpy_data.shape[0]
-    channel_mapping = [
-        ChannelIndexMapping(board_position=i+1)  # Board positions 1 to N
-        for i in range(num_channels)
-    ]
+    board_positions = [i+1 for i in range(num_channels)]  # Board positions 1 to N
     
     # Wrap data with channel mapping
-    epoch_data_keyed = NumPyDataWithBrainFlowDataKey(
-        data=numpy_data,
-        channel_mapping=channel_mapping
-    )
+    epoch_data_keyed = create_numpy_data_with_brainflow_keys(numpy_data, board_positions)
     
     # Get combinations and hidden states
     eeg_eog_combo_dict = processor.get_index_combinations(eeg_indices, eog_indices)

@@ -125,10 +125,14 @@ class ResearcherScoringLoader:
             return None
             
         # Verify timestamp falls within the calculated epoch (handle edge cases)
+        # Add tolerance for small timing variations (±2 seconds)
+        tolerance_seconds = 2.0
+        tolerance_minutes = tolerance_seconds / 60.0
+        
         epoch_start = epoch_index * 0.5
         epoch_end = epoch_start + 0.5
         
-        if epoch_start <= relative_minutes < epoch_end:
+        if (epoch_start - tolerance_minutes) <= relative_minutes < (epoch_end + tolerance_minutes):
             return epoch_index
             
         return None

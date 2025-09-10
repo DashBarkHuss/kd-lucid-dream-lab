@@ -23,9 +23,11 @@ import torch
 from pathlib import Path
 from typing import Union, Optional, Tuple, List
 from sleep_scoring_toolkit.realtime_with_restart.processor import SignalProcessor
-from sleep_scoring_toolkit.constants import GSSCStages
+from sleep_scoring_toolkit.stateful_inference_manager import StatefulInferenceManager
+from sleep_scoring_toolkit.constants import GSSCStages, STANDARD_EEG_CHANNELS, STANDARD_EOG_CHANNELS, REALTIME_BUFFER_COUNT
 from sleep_scoring_toolkit.pyqt_visualizer import PyQtVisualizer
 from sleep_scoring_toolkit.montage import Montage
+from sleep_scoring_toolkit.realtime_with_restart.channel_mapping import create_numpy_data_with_brainflow_keys
 from sleep_scoring_toolkit.realtime_with_restart.export.csv.manager import CSVManager
 from sleep_scoring_toolkit.realtime_with_restart.export.csv.test_utils import compare_csv_files
 from sleep_scoring_toolkit.realtime_with_restart.export.csv.validation import validate_file_path
@@ -74,15 +76,19 @@ class DataManager:
         # Optimized tracking of processed epochs - only store last epoch per buffer instead of full history
         # Each element is either None (no epochs processed) or (start_idx_abs, end_idx_abs) tuple for last epoch
         # Memory efficient: O(1) instead of O(total_epochs_processed)
-        self.last_processed_epoch_per_buffer = [None] * 6  # Last processed epoch per buffer
-        self.epochs_processed_count_per_buffer = [0] * 6   # Count of epochs processed per buffer (for monitoring)
+        self.last_processed_epoch_per_buffer = [None] * REALTIME_BUFFER_COUNT  # Last processed epoch per buffer
+        self.epochs_processed_count_per_buffer = [0] * REALTIME_BUFFER_COUNT   # Count of epochs processed per buffer (for monitoring)
         
-        # Initialize hidden states for each buffer
-        self.buffer_hidden_states = [
-            [torch.zeros(10, 1, 256) for _ in range(7)]  # 7 hidden states for 7 combinations
-            for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
-        ]
+        # Initialize StatefulInferenceManager with round-robin approach
         self.signal_processor = SignalProcessor(use_cuda=False)
+        
+        # Use explicit channel names (fail-fast - no defaults)
+        self.inference_manager = StatefulInferenceManager(
+            self.signal_processor, montage, 
+            eeg_channels_for_scoring=STANDARD_EEG_CHANNELS,  # Standard EEG channels for sleep scoring
+            eog_channels_for_scoring=STANDARD_EOG_CHANNELS,       # Standard EOG channels for sleep scoring (default_sleep_montage)
+            num_buffers=REALTIME_BUFFER_COUNT
+        )
         # self.visualizer = Visualizer(self.seconds_per_epoch, self.board_shim, montage)
         self.visualizer = PyQtVisualizer(self.seconds_per_epoch, self.board_shim, montage)
         self.expected_interval = 1.0 / sampling_rate
@@ -332,7 +338,7 @@ class DataManager:
         """Calculate the data point delay in the round robin for a given buffer.
         
         Args:
-            buffer_id: The ID of the buffer (0-5)
+            buffer_id: The ID of the buffer (0 to REALTIME_BUFFER_COUNT-1)
             
         Returns:
             int: Number of data points of delay for this buffer
@@ -424,9 +430,9 @@ class DataManager:
         """Calculate which buffer should be processed next in the round-robin sequence.
         
         Returns:
-            int: The ID of the next buffer to process (0-5)
+            int: The ID of the next buffer to process (0 to REALTIME_BUFFER_COUNT-1)
         """
-        return (self.last_processed_buffer + 1) % 6
+        return (self.last_processed_buffer + 1) % REALTIME_BUFFER_COUNT
 
     def _validate_epoch_availability(self, buffer_id, epoch_end_idx_abs, total_etd_points, buffer_data_point_delay):
         """Validate if an epoch is available for processing.
@@ -464,7 +470,7 @@ class DataManager:
         - We need enough time to have passed since the last epoch on any buffer
         
         Args:
-            buffer_id: The ID of the round robin buffer to check (0-5)
+            buffer_id: The ID of the round robin buffer to check (0 to REALTIME_BUFFER_COUNT-1)
             
         Returns:
             tuple: (can_process, reason, epoch_start_idx_abs, epoch_end_idx_abs)
@@ -518,7 +524,7 @@ class DataManager:
                 self.logger.error(f"  - timestamps length: {len(timestamps)}")
                 self.logger.error(f"  - trying to access index: {epoch_start_idx_abs-1}")
                 self.logger.error(f"  - timestamps array: {timestamps[:10] if len(timestamps) > 0 else 'EMPTY'}")
-                self.logger.error(f"  - buffer offsets: {[self._get_data_point_delay_for_buffer(i) for i in range(6)]}")
+                self.logger.error(f"  - buffer offsets: {[self._get_data_point_delay_for_buffer(i) for i in range(REALTIME_BUFFER_COUNT)]}")
                 self.logger.error(f"  - total ETD buffer size: {self.etd_buffer_manager._get_total_data_points()}")
                 raise e  # Re-raise to maintain original behavior
        
@@ -580,55 +586,13 @@ class DataManager:
         # Get researcher score for this epoch
         researcher_score = self._get_researcher_score_for_epoch(epoch_start_time)
         
-        # Get index combinations for EEG and EOG channels
-        # 
-        # CHANNEL MAPPING: epoch_data_all_electrodes_on_board is always 16 channels from physical OpenBCI channels 1-16
-        # Array index = physical_channel - 1 (0-based indexing)
-        # - epoch_data_all_electrodes_on_board[0] = physical channel 1
-        # - epoch_data_all_electrodes_on_board[10] = physical channel 11 (R-LEOG) 
-        # - epoch_data_all_electrodes_on_board[11] = physical channel 12 (L-LEOG)
-        #
-        # The montage type doesn't change this mapping - it only defines which channels are used.
+        # Prepare epoch data with structured channel mapping
+        epoch_data_keyed = create_numpy_data_with_brainflow_keys(epoch_data, electrode_board_keys)
         
-        channel_types = self.montage.get_channel_types()
-        
-        # Create structured channel mapping for epoch data using actual board keys
-        epoch_data_channel_mapping = [
-            ChannelIndexMapping(board_position=board_key)
-            for board_key in electrode_board_keys
-        ]
-        
-        # Wrap epoch data with structured mapping
-        epoch_data_keyed = NumPyDataWithBrainFlowDataKey(
-            data=epoch_data,
-            channel_mapping=epoch_data_channel_mapping
-        )
-        
-        if all(ch_type == "EOG" for ch_type in channel_types):
-            # EOG-only montage: no EEG channels, use both EOG channels
-            # Get data by board positions 11, 12 (physical channels 11, 12)
-            eeg_combo_pk = []        # No EEG channels
-            eog_combo_pk = [10, 11]  # Keep as array indices for backward compatibility
-        else:
-            # Default for minimal_sleep_montage and other montages
-            # Get data by board positions 1, 2, 3 and 11 (physical channels 1, 2, 3, 11)
-            eeg_combo_pk = [1, 2, 3]  # Keep as array indices for backward compatibility
-            eog_combo_pk = [10]       # Keep as array indices for backward compatibility
-        
-        # Validate that our hardcoded indices match the expected channel types
-        self.montage.validate_channel_indices_combination_types(eeg_combo_pk, eog_combo_pk)
-        
-        # IMPORTANT: The GSSC was mostly trained on EEG channels C3, C4, F3, F4, and using other channels
-        # is unlikely to improve accuracy and could even make accuracy worse. For EOG, the GSSC was trained
-        # on the HEOG channel (left EOG - right EOG differential), and seems to also perform well with left
-        # and/or right EOG alone (without the subtraction). Effectiveness of using VEOG is unknown and not recommended.
-        index_combinations = self.signal_processor.get_index_combinations(eeg_combo_pk, eog_combo_pk)
-        
-        # Get sleep stage prediction using SignalProcessor
-        predicted_class, class_probs, new_hidden_states = self.signal_processor.predict_sleep_stage(
+        # Use StatefulInferenceManager for inference - handles channel combinations, validation, and GSSC inference
+        predicted_class, class_probs, new_hidden_states = self.inference_manager.process_epoch(
             epoch_data_keyed,
-            index_combinations,
-            self.buffer_hidden_states[buffer_id]
+            buffer_id
         )
         
         # Increment epochs scored counter
@@ -657,7 +621,6 @@ class DataManager:
             researcher_score
         )
         
-        self.buffer_hidden_states[buffer_id] = new_hidden_states
         return np.array([predicted_class])  # Keep return format consistent
 
     def save_to_csv(self, output_path):
@@ -706,7 +669,7 @@ class DataManager:
         """
         # Convert timestamps to numpy array if not already
         timestamps = np.array(timestamps)
-        return self.gap_handler.detect_gap(timestamps=timestamps, prev_timestamp=prev_timestamp)
+        return self.gap_handler.detect_largest_gap(timestamps=timestamps, prev_timestamp=prev_timestamp)
         
         # OLD IMPLEMENTATION:
         # """
@@ -762,9 +725,7 @@ class DataManager:
             print(f"\nLarge gap detected ({gap_size:.2f}s): Resetting buffer {buffer_id}")
             
             # Reset hidden states
-            self.buffer_hidden_states[buffer_id] = [
-                torch.zeros(10, 1, 256) for _ in range(7)
-            ]
+            self.inference_manager.reset_buffer_hidden_states(buffer_id)
             
             print(f"Buffer {buffer_id} reset complete - hidden states cleared")
 
@@ -787,14 +748,11 @@ class DataManager:
             
             # Clear data buffers
             self.etd_buffer_manager.electrode_and_timestamp_data_keyed.clear_all()
-            self.last_processed_epoch_per_buffer = [None] * 6
-            self.epochs_processed_count_per_buffer = [0] * 6
+            self.last_processed_epoch_per_buffer = [None] * REALTIME_BUFFER_COUNT
+            self.epochs_processed_count_per_buffer = [0] * REALTIME_BUFFER_COUNT
             
             # Reset hidden states
-            self.buffer_hidden_states = [
-                [torch.zeros(10, 1, 256) for _ in range(7)]  # 7 hidden states for 7 combinations
-                for _ in range(6)  # 6 buffers (0s to 25s in 5s steps)
-            ]
+            self.inference_manager.reset_buffer_hidden_states()  # Reset all buffers
             
             # Clean up GapHandler
             if hasattr(self, 'gap_handler'):

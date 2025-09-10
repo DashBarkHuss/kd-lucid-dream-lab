@@ -261,7 +261,7 @@ def run_until_gap_or_end(self) -> ProcessingResult:
 ```python
 def main():
     # Core components using actual GapHandler interface
-    gap_handler = GapHandler(sampling_rate=250.0, gap_threshold=2.0)  # Already exists
+    gap_handler = GapHandler(sampling_rate=125.0, gap_threshold=2.0)  # Cyton+Daisy standard rate
     pipeline = DataProcessingPipeline(
         board_manager, data_handler, qt_app, gap_handler,
         loop_delay=0.1, timestamp_channel=board_timestamp_channel

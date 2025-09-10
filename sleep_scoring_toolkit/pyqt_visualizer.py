@@ -2,7 +2,7 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore, QtGui
 import sys, os
-from sleep_scoring_toolkit.realtime_with_restart.channel_mapping import NumPyDataWithBrainFlowDataKey, ChannelIndexMapping
+from sleep_scoring_toolkit.realtime_with_restart.channel_mapping import NumPyDataWithBrainFlowDataKey, create_numpy_data_with_brainflow_keys
 import logging
 from scipy.signal import butter, filtfilt, iirnotch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -433,10 +433,9 @@ class PyQtVisualizer:
         montage_electrode_data = epoch_data_keyed.get_by_keys(montage_pkeys)
 
         # make montage data wrapper
-        channel_mappings = [ChannelIndexMapping(board_position=key) for key in self.montage.get_board_keys(self.electrode_channels)]
-        montage_data_keyed = NumPyDataWithBrainFlowDataKey(
-            data=montage_electrode_data,
-            channel_mapping=channel_mappings
+        montage_data_keyed = create_numpy_data_with_brainflow_keys(
+            montage_electrode_data, 
+            self.montage.get_board_keys(self.electrode_channels)
         )
 
         # Detect error conditions on RAW data before filtering to prevent filters from masking issues

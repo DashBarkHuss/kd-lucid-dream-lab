@@ -21,6 +21,9 @@ from brainflow.board_shim import BrainFlowInputParams
 from sleep_scoring_toolkit.realtime_with_restart.export.csv.manager import CSVManager
 from sleep_scoring_toolkit.tests.test_utils import create_brainflow_test_data
 
+# Get sampling rate using BrainFlow API
+CYTON_DAISY_SAMPLING_RATE = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD.value)
+
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -54,22 +57,22 @@ def test_peak_memory_usage(csv_manager):
         csv_manager.main_csv_path = main_csv_path
         csv_manager.sleep_stage_csv_path = sleep_stage_csv_path
 
-        # Generate 10 minutes of test data at 125 Hz
+        # Generate 10 minutes of test data at Cyton Daisy sampling rate
         data, _ = create_brainflow_test_data(
             duration_seconds=600,  # 10 minutes
-            sampling_rate=125,     # 125 Hz
+            sampling_rate=CYTON_DAISY_SAMPLING_RATE,     # Cyton Daisy sampling rate from BrainFlow API
             add_noise=False,
             board_id=BoardIds.CYTON_DAISY_BOARD
         )
 
         # Process data in chunks to simulate real-time processing
-        chunk_size = 1250  # 10 seconds of data
+        chunk_size = int(10 * CYTON_DAISY_SAMPLING_RATE)  # 10 seconds of data
         for i in range(0, len(data), chunk_size):
             chunk = data[i:i + chunk_size]
             csv_manager.queue_data_for_csv_write(chunk.T, is_initial=(i == 0))
 
             # Add sleep stage data every minute
-            if i % (125 * 60) == 0:  # Every minute
+            if i % (CYTON_DAISY_SAMPLING_RATE * 60) == 0:  # Every minute
                 start_time = data[i, BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)]
                 end_time = data[min(i + chunk_size, len(data) - 1), 
                               BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)]
@@ -101,7 +104,7 @@ def test_memory_leak_detection(csv_manager):
             # Generate new data for each iteration with sequential timestamps
             data, _ = create_brainflow_test_data(
                 duration_seconds=60,  # 1 minute
-                sampling_rate=125,    # 125 Hz
+                sampling_rate=CYTON_DAISY_SAMPLING_RATE,    # Cyton Daisy sampling rate from BrainFlow API
                 add_noise=False,
                 board_id=BoardIds.CYTON_DAISY_BOARD,
                 start_time=1700000000.1 + (i * 60)  # Each chunk starts 60 seconds after the previous
@@ -139,7 +142,7 @@ def test_buffer_size_compliance(csv_manager):
         # Generate data that would exceed buffer size
         data, _ = create_brainflow_test_data(
             duration_seconds=10,  # 10 seconds
-            sampling_rate=125,    # 125 Hz
+            sampling_rate=CYTON_DAISY_SAMPLING_RATE,    # Cyton Daisy sampling rate from BrainFlow API
             add_noise=False,
             board_id=BoardIds.CYTON_DAISY_BOARD
         )
@@ -175,23 +178,23 @@ def test_large_file_handling(csv_manager):
         # Generate 30 minutes of test data
         data, _ = create_brainflow_test_data(
             duration_seconds=1800,  # 30 minutes
-            sampling_rate=125,      # 125 Hz
+            sampling_rate=CYTON_DAISY_SAMPLING_RATE,      # Cyton Daisy sampling rate from BrainFlow API
             add_noise=False,
             board_id=BoardIds.CYTON_DAISY_BOARD
         )
 
         # Process data in chunks
-        chunk_size = 1250  # 10 seconds of data
+        chunk_size = int(10 * CYTON_DAISY_SAMPLING_RATE)  # 10 seconds of data
         for i in range(0, len(data), chunk_size):
             chunk = data[i:i + chunk_size]
             csv_manager.queue_data_for_csv_write(chunk.T, is_initial=(i == 0))
 
         # Add sleep stages every minute
-        for i in range(0, len(data), 125 * 60):  # Every minute
+        for i in range(0, len(data), CYTON_DAISY_SAMPLING_RATE * 60):  # Every minute
             start_time = data[i, BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)]
-            end_time = data[min(i + 125 * 60, len(data) - 1), 
+            end_time = data[min(i + CYTON_DAISY_SAMPLING_RATE * 60, len(data) - 1), 
                           BoardShim.get_timestamp_channel(BoardIds.CYTON_DAISY_BOARD)]
-            csv_manager.add_sleep_stage_to_sleep_stage_csv(2.0, i // (125 * 60), start_time, end_time)
+            csv_manager.add_sleep_stage_to_sleep_stage_csv(2.0, i // (CYTON_DAISY_SAMPLING_RATE * 60), start_time, end_time)
 
         # Merge files
         csv_manager.merge_files(main_csv_path, sleep_stage_csv_path, final_output_path)

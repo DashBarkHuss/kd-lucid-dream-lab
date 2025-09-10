@@ -56,7 +56,7 @@ def filter_previously_seen_timestamps_array(data_keyed, timestamp_board_position
     return filtered_data_keyed, old_timestamps_removed
 
 
-def sanitize_data(raw_board_data_keyed, board_timestamp_channel, logger, last_saved_timestamp=None, expected_sample_rate=None):
+def sanitize_streaming_batch(raw_board_data_keyed, board_timestamp_channel, logger, last_saved_timestamp=None, expected_sample_rate=None):
     """Sanitize raw data by removing duplicates, reordering samples, and validating integrity before processing"""
     sanitized_board_data_keyed = raw_board_data_keyed
     

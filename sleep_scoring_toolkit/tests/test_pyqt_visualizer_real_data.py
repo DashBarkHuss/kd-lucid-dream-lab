@@ -9,8 +9,11 @@ import numpy as np
 import pandas as pd
 from montage import Montage
 from pyqt_visualizer import PyQtVisualizer
-from realtime_with_restart.channel_mapping import ChannelIndexMapping, NumPyDataWithBrainFlowDataKey
+from realtime_with_restart.channel_mapping import create_numpy_data_with_brainflow_keys
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
+
+# Get sampling rate using BrainFlow API - DRY principle for repeated use in tests
+CYTON_DAISY_SAMPLING_RATE = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD.value)
 
 def test_pyqt_visualizer_with_real_data():
     """Test the PyQtVisualizer with a 30-second chunk of real data from a BrainFlow recording"""
@@ -23,8 +26,8 @@ def test_pyqt_visualizer_with_real_data():
     # Read the data
     df = pd.read_csv(test_data_path, sep='\t', header=None)
     
-    # Get sampling rate (125 Hz for Cyton+Daisy)
-    sampling_rate = 125
+    # Get sampling rate for Cyton+Daisy using BrainFlow API
+    sampling_rate = CYTON_DAISY_SAMPLING_RATE
     
     # Calculate number of points for 30 seconds
     points_per_epoch = 30 * sampling_rate
@@ -44,16 +47,10 @@ def test_pyqt_visualizer_with_real_data():
     
     # Create channel mapping for the data
     num_channels = epoch_data.shape[0]
-    channel_mapping = [
-        ChannelIndexMapping(board_position=i+1)  # Board positions 1 to N
-        for i in range(num_channels)
-    ]
+    board_positions = [i+1 for i in range(num_channels)]  # Board positions 1 to N
     
     # Wrap data with channel mapping
-    epoch_data_keyed = NumPyDataWithBrainFlowDataKey(
-        data=epoch_data,
-        channel_mapping=channel_mapping
-    )
+    epoch_data_keyed = create_numpy_data_with_brainflow_keys(epoch_data, board_positions)
     
     # Create board_shim for testing
     params = BrainFlowInputParams()

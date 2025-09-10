@@ -11,6 +11,9 @@ import numpy as np
 from datetime import datetime, timezone
 import multiprocessing
 from brainflow.board_shim import BoardShim, BoardIds, BrainFlowInputParams
+
+# Get sampling rate using BrainFlow API - DRY principle for repeated use in tests
+CYTON_DAISY_SAMPLING_RATE = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD.value)
 import time
 import logging
 from ..realtime_with_restart.export.csv.utils import MAIN_DATA_FMT
@@ -218,7 +221,7 @@ class TestRealtimeStream(unittest.TestCase):
         self.mock_data_manager.etd_buffer_manager = self.mock_etd_buffer
         self.mock_data_manager.save_new_data = Mock()
         self.mock_data_manager._calculate_next_buffer_id_to_process.return_value = 0
-        self.mock_data_manager.next_available_epoch_on_round_robin_buffer.return_value = (True, None, 0, 1250)  # 10 seconds at 125 Hz
+        self.mock_data_manager.next_available_epoch_on_round_robin_buffer.return_value = (True, None, 0, int(10 * CYTON_DAISY_SAMPLING_RATE))  # 10 seconds
         self.mock_data_manager.manage_epoch.return_value = [1]  # Mock sleep stage prediction
         self.mock_data_manager.add_sleep_stage_to_csv = Mock()
         self.mock_data_manager.visualizer = self.mock_visualizer
@@ -302,7 +305,7 @@ class TestRealtimeStream(unittest.TestCase):
         
         # Mock DataFrame for file reading
         mock_df = pd.DataFrame(np.zeros((1000, 32)))
-        mock_df.iloc[:, self.mock_board_manager.board_timestamp_channel] = np.arange(1000) / 125.0  # timestamps
+        mock_df.iloc[:, self.mock_board_manager.board_timestamp_channel] = np.arange(1000) / CYTON_DAISY_SAMPLING_RATE  # timestamps
         
         # Run the pipeline
         with patch('sleep_scoring_toolkit.realtime_with_restart.main_multiprocess.pd.read_csv') as mock_read_csv:
@@ -336,7 +339,7 @@ class TestRealtimeStream(unittest.TestCase):
         print("\nTesting mock setup...")
         
         # Test BoardManager mock
-        self.assertEqual(self.mock_board_manager.sampling_rate, 125)
+        self.assertEqual(self.mock_board_manager.sampling_rate, CYTON_DAISY_SAMPLING_RATE)
         self.assertEqual(self.mock_board_manager.board_timestamp_channel, 30)
         self.assertEqual(self.mock_board_manager.board_shim.get_board_id(), BoardIds.CYTON_DAISY_BOARD)
         self.assertEqual(self.mock_board_manager.board_shim.get_exg_channels(), list(range(8)))
@@ -350,7 +353,7 @@ class TestRealtimeStream(unittest.TestCase):
         self.assertEqual(self.mock_data_manager._calculate_next_buffer_id_to_process(), 0)
         can_process, reason, start_idx, end_idx = self.mock_data_manager.next_available_epoch_on_round_robin_buffer(0)
         self.assertTrue(can_process)
-        self.assertEqual(end_idx - start_idx, 1250)  # 10 seconds at 125 Hz
+        self.assertEqual(end_idx - start_idx, int(10 * CYTON_DAISY_SAMPLING_RATE))  # 10 seconds
         print("✓ DataManager mock configured correctly")
         
         # Test ReceivedStreamedDataHandler mock

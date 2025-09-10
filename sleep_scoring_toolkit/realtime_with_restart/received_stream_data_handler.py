@@ -2,7 +2,7 @@ from sleep_scoring_toolkit.realtime_with_restart.data_manager import DataManager
 from sleep_scoring_toolkit.realtime_with_restart.board_manager import BoardManager
 from logging import Logger
 from sleep_scoring_toolkit.montage import Montage
-from sleep_scoring_toolkit.realtime_with_restart.utils.data_filtering_utils import sanitize_data
+from sleep_scoring_toolkit.realtime_with_restart.utils.data_filtering_utils import sanitize_streaming_batch
 from sleep_scoring_toolkit.realtime_with_restart.utils.session_utils import generate_session_timestamp
 import numpy as np
 
@@ -40,7 +40,7 @@ class ReceivedStreamedDataHandler:
         is_initial = last_saved_timestamp is None
         
         # Sanitize raw data to remove duplicates and fix ordering issues
-        sanitized_board_data_chunk = sanitize_data(
+        sanitized_board_data_chunk = sanitize_streaming_batch(
             raw_board_data_chunk, 
             self.board_manager.board_timestamp_channel, 
             self.logger,

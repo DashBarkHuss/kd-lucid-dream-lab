@@ -9,14 +9,17 @@ import numpy as np
 import pandas as pd
 from montage import Montage
 from pyqt_visualizer import PyQtVisualizer
-from realtime_with_restart.channel_mapping import ChannelIndexMapping, NumPyDataWithBrainFlowDataKey
+from realtime_with_restart.channel_mapping import create_numpy_data_with_brainflow_keys
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 
-def generate_sample_data(num_channels=16, num_points=3750, sampling_rate=125):
+# Get sampling rate using BrainFlow API - DRY principle for repeated use in tests
+CYTON_DAISY_SAMPLING_RATE = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD.value)
+
+def generate_sample_data(num_channels=16, num_points=3750, sampling_rate=CYTON_DAISY_SAMPLING_RATE):
     """Generate sample data for testing
-    3750 points = 30 seconds at 125Hz sampling rate"""
+    3750 points = 30 seconds at Cyton Daisy sampling rate"""
     time = np.linspace(0, 30, num_points)
     data = []
     
@@ -59,23 +62,17 @@ def test_synthetic_data():
         # Generate sample data
         data = generate_sample_data()
         
-        # Create channel mapping for the data (assuming channels 1-16 mapping)
+        # Create channel mapping for the data (assuming channels 1-16 mapping)  
         num_channels = data.shape[0]
-        channel_mapping = [
-            ChannelIndexMapping(board_position=i+1)  # Board positions 1 to N
-            for i in range(num_channels)
-        ]
+        board_positions = [i+1 for i in range(num_channels)]  # Board positions 1 to N
         
         # Wrap data with channel mapping
-        epoch_data_keyed = NumPyDataWithBrainFlowDataKey(
-            data=data,
-            channel_mapping=channel_mapping
-        )
+        epoch_data_keyed = create_numpy_data_with_brainflow_keys(data, board_positions)
         
         # Test visualization
         visualizer.plot_polysomnograph(
             epoch_data_keyed=epoch_data_keyed,
-            sampling_rate=125,
+            sampling_rate=CYTON_DAISY_SAMPLING_RATE,
             sleep_stage=2,  # N2 sleep stage
             time_offset=0,
             epoch_start_time=0
@@ -119,8 +116,8 @@ def test_real_data():
     # Read the data
     df = pd.read_csv(test_data_path, sep='\t', header=None)
     
-    # Get sampling rate (125 Hz for Cyton+Daisy)
-    sampling_rate = 125
+    # Get sampling rate for Cyton+Daisy using BrainFlow API
+    sampling_rate = CYTON_DAISY_SAMPLING_RATE
     
     # Calculate number of points for 30 seconds
     points_per_epoch = 30 * sampling_rate
@@ -137,16 +134,10 @@ def test_real_data():
     
     # Create channel mapping for the data (assuming channels 1-16 mapping)
     num_channels = epoch_data.shape[0]
-    channel_mapping = [
-        ChannelIndexMapping(board_position=i+1)  # Board positions 1 to N
-        for i in range(num_channels)
-    ]
+    board_positions = [i+1 for i in range(num_channels)]  # Board positions 1 to N
     
     # Wrap data with channel mapping
-    epoch_data_keyed = NumPyDataWithBrainFlowDataKey(
-        data=epoch_data,
-        channel_mapping=channel_mapping
-    )
+    epoch_data_keyed = create_numpy_data_with_brainflow_keys(epoch_data, board_positions)
     
     # Create board_shim for testing
     params = BrainFlowInputParams()

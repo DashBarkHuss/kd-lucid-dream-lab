@@ -112,7 +112,7 @@ def test_detect_gap(gap_handler):
         BASE_TIME + EXPECTED_INTERVAL,
         BASE_TIME + 2*EXPECTED_INTERVAL
     ])
-    has_gap, gap_size, start_idx, end_idx = gap_handler.detect_gap(timestamps, prev_timestamp)
+    has_gap, gap_size, start_idx, end_idx = gap_handler.detect_largest_gap(timestamps, prev_timestamp)
     assert has_gap
     assert abs(gap_size - (GAP_THRESHOLD + 0.01)) < FLOAT_COMPARISON_TOLERANCE
     assert start_idx == -1  # -1 indicates gap is between chunks
@@ -124,7 +124,7 @@ def test_detect_gap(gap_handler):
         BASE_TIME + EXPECTED_INTERVAL,
         BASE_TIME + 2*EXPECTED_INTERVAL + GAP_THRESHOLD + 0.01
     ])
-    has_gap, gap_size, start_idx, end_idx = gap_handler.detect_gap(timestamps)
+    has_gap, gap_size, start_idx, end_idx = gap_handler.detect_largest_gap(timestamps)
     assert has_gap
     assert abs(gap_size - (GAP_THRESHOLD + 0.01)) < FLOAT_COMPARISON_TOLERANCE
     assert start_idx == 1
