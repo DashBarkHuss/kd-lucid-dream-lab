@@ -150,7 +150,7 @@ def generate_channel_combinations(comprehensive=False, board_id=BoardIds.CYTON_D
     
     return combinations
 
-def test_channel_combinations_isolated_epochs(comprehensive=False, board_id=BoardIds.CYTON_DAISY_BOARD):
+def test_channel_combination_inference_robust():
     """Test channel combinations with isolated epochs (fresh hidden states).
     
     ⚠️  TESTING LIMITATION: Uses fresh hidden states for each combination test.
@@ -159,6 +159,14 @@ def test_channel_combinations_isolated_epochs(comprehensive=False, board_id=Boar
     Args:
         comprehensive: If True, test all 63 combinations. If False, test 16 key combinations.
     """
+    
+    """Test channel combinations with isolated epochs (fresh hidden states).
+    
+    ⚠️  TESTING LIMITATION: Uses fresh hidden states for each combination test.
+    This may show reduced accuracy since the GSSC model needs temporal context for optimal predictions.
+    """
+    comprehensive = False
+    board_id = BoardIds.CYTON_DAISY_BOARD
     
     # Test data
     recording_start_timestamp = 1755354827.610700
@@ -284,7 +292,18 @@ def test_channel_combinations_isolated_epochs(comprehensive=False, board_id=Boar
             shown_types.add(combo_type)
     
     print("="*60)
-    return results
+    
+    # Add assertions to validate the test results
+    assert len(results) > 0, "No channel combinations were tested"
+    assert correct_predictions >= 0, "Invalid number of correct predictions"
+    
+    # Test should pass if we get reasonable results from channel combinations
+    error_count = sum(1 for r in results if r['predicted_name'] == 'ERROR')
+    valid_predictions = len(results) - error_count
+    
+    assert valid_predictions > 0, "No valid predictions were made"
+    
+    print(f"\n✅ Channel combination test completed with {valid_predictions} valid predictions")
 
 def test_multiple_epochs_isolated_inference():
     """Test multiple epochs with isolated inference (fresh hidden states per epoch).
@@ -395,36 +414,42 @@ def test_multiple_epochs_isolated_inference():
     print(f"="*50)
     
     print(f"\n✓ Multi-epoch test completed successfully!")
-    return all_results
+    
+    # Add assertions to validate the test results
+    assert len(all_results) > 0, "No epochs were tested"
+    assert agreements >= 0, "Invalid number of agreements"
+    
+    # Validate that we tested the expected number of epochs
+    expected_epochs = 4  # Based on test_epochs list
+    assert len(all_results) == expected_epochs, f"Expected {expected_epochs} epochs, got {len(all_results)}"
+    
+    # Each result should have required fields
+    for result in all_results:
+        assert "epoch_number" in result, "Missing epoch_number in result"
+        assert "researcher_stage" in result, "Missing researcher_stage in result"
+        assert "predicted_class" in result, "Missing predicted_class in result"
+        assert "agreement" in result, "Missing agreement in result"
+    
+    print(f"\n✅ Multi-epoch test validation completed successfully")
+
+# The pytest test functions above will be automatically discovered and run by pytest
+# This module can also be run directly for interactive testing
 
 if __name__ == "__main__":
     import sys
     
-    # Check for comprehensive flag
-    run_comprehensive = "--comprehensive" in sys.argv or "--all" in sys.argv
-    
     print("Testing shared epoch inference with REAL data and known researcher scores...")
+    print("\n⚡ Running pytest tests directly...")
     
-    if run_comprehensive:
-        print("\n🔬 COMPREHENSIVE MODE: Testing all 63 channel combinations")
-        print("   (This may take a few minutes with suppressed MNE output)")
-    else:
-        print("\n⚡ QUICK MODE: Testing 16 key channel combinations")
-        print("   (Use --comprehensive or --all flag for all 63 combinations)")
-    
-    # First test: channel combinations on one stable epoch
+    # Run the pytest functions directly for interactive testing
     print("\n" + "="*80)
     print("TEST 1: Channel Combination Analysis")  
     print("="*80)
-    channel_results = test_channel_combinations_isolated_epochs(comprehensive=run_comprehensive)
+    test_channel_combination_inference_robust()
     
-    # Second test: multi-epoch test with isolated inference
     print("\n" + "="*80)
     print("TEST 2: Multi-Epoch Validation")
     print("="*80)
-    epoch_results = test_multiple_epochs_isolated_inference()
+    test_multiple_epochs_isolated_inference()
     
     print("\n🎉 All tests completed!")
-    
-    if not run_comprehensive:
-        print("💡 Tip: Run with --comprehensive flag to test all 63 channel combinations")

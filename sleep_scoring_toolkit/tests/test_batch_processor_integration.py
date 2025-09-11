@@ -80,9 +80,10 @@ class TestBatchProcessorIntegration:
         assert results['speed_ratio'] > 0, "Should report speed ratio"
         assert output_path.exists(), "Output file should be created"
         
-        # Verify output format
+        # Verify output format (now includes percentage columns)
         output_df = pd.read_csv(output_path)
-        expected_columns = ['timestamp_start', 'timestamp_end', 'sleep_stage', 'buffer_id']
+        expected_columns = ['timestamp_start', 'timestamp_end', 'sleep_stage', 'buffer_id', 
+                           'wake_percent', 'n1_percent', 'n2_percent', 'n3_percent', 'rem_percent']
         assert list(output_df.columns) == expected_columns, f"Expected columns {expected_columns}"
         assert len(output_df) == results['epochs_processed'], "Output rows should match processed epochs"
         
@@ -130,9 +131,10 @@ class TestBatchProcessorIntegration:
         assert result.returncode == 0, f"CLI failed with error: {result.stderr}"
         assert output_path.exists(), "CLI should create output file"
         
-        # Verify CLI output format matches direct BatchProcessor
+        # Verify CLI output format matches direct BatchProcessor (now includes percentage columns)
         cli_df = pd.read_csv(output_path)
-        expected_columns = ['timestamp_start', 'timestamp_end', 'sleep_stage', 'buffer_id']
+        expected_columns = ['timestamp_start', 'timestamp_end', 'sleep_stage', 'buffer_id',
+                           'wake_percent', 'n1_percent', 'n2_percent', 'n3_percent', 'rem_percent']
         assert list(cli_df.columns) == expected_columns, "CLI output should match BatchProcessor format"
         assert len(cli_df) >= 2, "CLI should process at least 2 epochs from 70s of data"
         

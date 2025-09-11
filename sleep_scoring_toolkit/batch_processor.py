@@ -30,6 +30,7 @@ class EpochResult(NamedTuple):
     end_time: float
     sleep_stage: int
     epoch_index: int
+    class_probabilities: np.ndarray
 
 
 
@@ -454,7 +455,8 @@ class BatchProcessor:
                 boundary['actual_start_time'], 
                 boundary['actual_end_time'], 
                 predicted_class, 
-                boundary['epoch_number'] - 1
+                boundary['epoch_number'] - 1,
+                class_probs
             ))
         
         return results_of_processed_epochs
@@ -463,12 +465,24 @@ class BatchProcessor:
         """Save processing results to CSV file."""
         df_data = []
         for result in results:
-            df_data.append({
+            # class_probabilities shape is [n_combinations, 5] - we need to average across combinations
+            avg_probs = np.mean(result.class_probabilities, axis=0)
+            percentages = avg_probs * 100  # Convert to percentages
+            percentages_flat = percentages.flatten()  # Ensure 1D array
+            
+            row = {
                 'timestamp_start': result.start_time,
                 'timestamp_end': result.end_time,
                 'sleep_stage': result.sleep_stage,
-                'buffer_id': result.epoch_index
-            })
+                'buffer_id': result.epoch_index,
+                'wake_percent': round(float(percentages_flat[0]), 1),
+                'n1_percent': round(float(percentages_flat[1]), 1),
+                'n2_percent': round(float(percentages_flat[2]), 1),
+                'n3_percent': round(float(percentages_flat[3]), 1),
+                'rem_percent': round(float(percentages_flat[4]), 1)
+            }
+            
+            df_data.append(row)
         
         df = pd.DataFrame(df_data)
         df.to_csv(output_path, index=False)
